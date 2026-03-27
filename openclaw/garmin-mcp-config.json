@@ -1,0 +1,10 @@
+{
+  "garmin": {
+    "command": "uvx",
+    "args": ["--python", "3.12", "--from", "garmin-connect-mcp", "garmin-connect-mcp"],
+    "env": {
+      "GARMIN_EMAIL": "${GARMIN_EMAIL}",
+      "GARMIN_PASSWORD": "${GARMIN_PASSWORD}"
+    }
+  }
+}
