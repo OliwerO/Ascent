@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Garmin Connect → Supabase nightly sync script.
 
+Syncs all available Garmin health/fitness data to Supabase tables.
+
 Usage:
     python garmin_sync.py                          # sync yesterday
     python garmin_sync.py --date 2026-03-20        # sync specific date
@@ -24,7 +26,6 @@ from supabase import create_client
 # Configuration
 # ---------------------------------------------------------------------------
 
-# Load .env from project root (two levels up from scripts/)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
@@ -80,11 +81,21 @@ def api_call(fn, *args, **kwargs):
 
 def safe_json(obj):
     """Ensure obj is JSON-serialisable (handles datetimes etc.)."""
+    if obj is None:
+        return None
     return json.loads(json.dumps(obj, default=str))
 
 
+def extract_score(scores, key):
+    """Extract a score value from Garmin's sleep scores (handles dict or raw)."""
+    val = scores.get(key)
+    if isinstance(val, dict):
+        return val.get("value")
+    return val
+
+
 # ---------------------------------------------------------------------------
-# Sync functions — one per table
+# Sync functions — one per table / data type
 # ---------------------------------------------------------------------------
 
 
@@ -95,14 +106,13 @@ def sync_daily_metrics(client: Garmin, sb, d: date) -> bool:
         log.warning("No daily stats for %s", ds)
         return False
 
-    # Training readiness, SpO2, respiration from separate endpoints
+    # Supplementary endpoints for fields not in get_stats
     tr = api_call(client.get_training_readiness, ds)
     spo2 = api_call(client.get_spo2_data, ds)
     resp = api_call(client.get_respiration_data, ds)
 
     training_readiness_score = None
     if tr:
-        # Endpoint may return dict or list
         if isinstance(tr, dict):
             training_readiness_score = tr.get("score") or tr.get("trainingReadinessScore")
         elif isinstance(tr, list) and tr:
@@ -178,27 +188,13 @@ def sync_sleep(client: Garmin, sb, d: date) -> bool:
         "light_sleep_seconds": daily.get("lightSleepSeconds"),
         "rem_sleep_seconds": daily.get("remSleepSeconds"),
         "awake_seconds": daily.get("awakeSleepSeconds"),
-        "overall_score": scores.get("overall", {}).get("value")
-            if isinstance(scores.get("overall"), dict)
-            else scores.get("overall") or daily.get("sleepScoreOverall"),
-        "quality_score": scores.get("quality", {}).get("value")
-            if isinstance(scores.get("quality"), dict)
-            else scores.get("quality"),
-        "duration_score": scores.get("duration", {}).get("value")
-            if isinstance(scores.get("duration"), dict)
-            else scores.get("duration"),
-        "rem_percentage_score": scores.get("remPercentage", {}).get("value")
-            if isinstance(scores.get("remPercentage"), dict)
-            else scores.get("remPercentage"),
-        "restlessness_score": scores.get("restlessness", {}).get("value")
-            if isinstance(scores.get("restlessness"), dict)
-            else scores.get("restlessness"),
-        "stress_score": scores.get("stress", {}).get("value")
-            if isinstance(scores.get("stress"), dict)
-            else scores.get("stress"),
-        "revitalization_score": scores.get("revitalization", {}).get("value")
-            if isinstance(scores.get("revitalization"), dict)
-            else scores.get("revitalization"),
+        "overall_score": extract_score(scores, "overall") or daily.get("sleepScoreOverall"),
+        "quality_score": extract_score(scores, "quality"),
+        "duration_score": extract_score(scores, "duration"),
+        "rem_percentage_score": extract_score(scores, "remPercentage"),
+        "restlessness_score": extract_score(scores, "restlessness"),
+        "stress_score": extract_score(scores, "stress"),
+        "revitalization_score": extract_score(scores, "revitalization"),
         "raw_json": safe_json(data),
     }
     sb.table("sleep").upsert(row, on_conflict="date").execute()
@@ -265,9 +261,7 @@ def sync_body_composition(client: Garmin, sb, d: date) -> bool:
             "source": "garmin",
             "raw_json": safe_json(entry),
         }
-        sb.table("body_composition").upsert(
-            row, on_conflict="date"
-        ).execute()
+        sb.table("body_composition").upsert(row, on_conflict="date").execute()
     log.info("body_composition upserted for %s", ds)
     return True
 
@@ -311,17 +305,21 @@ def sync_stress_series(client: Garmin, sb, d: date) -> bool:
 
 
 def sync_activities(client: Garmin, sb, d: date) -> bool:
-    """Sync recent activities. Deduplicates on garmin_activity_id."""
-    activities = api_call(client.get_activities, 0, 20)
+    """Sync activities using date-based endpoint. Deduplicates on garmin_activity_id."""
+    ds = d.isoformat()
+    # Use date-based endpoint for reliable backfill instead of offset-based
+    activities = api_call(client.get_activities_by_date, ds, ds)
+    if activities is None:
+        # Fallback to offset-based if date-based endpoint unavailable
+        activities = api_call(client.get_activities, 0, 20)
     if not activities:
-        log.warning("No activities returned")
-        return False
+        log.info("No activities for %s", ds)
+        return True  # Not an error — some days have no activities
 
     count = 0
     for act in activities:
-        # Filter to the target date
         act_date_str = act.get("startTimeLocal", "")[:10]
-        if act_date_str != d.isoformat():
+        if act_date_str != ds:
             continue
 
         garmin_id = str(act.get("activityId", ""))
@@ -358,9 +356,218 @@ def sync_activities(client: Garmin, sb, d: date) -> bool:
             "raw_json": safe_json(act),
         }
         sb.table("activities").upsert(row, on_conflict="garmin_activity_id").execute()
+
+        # Enrich with detailed per-activity data
+        _sync_activity_details(client, sb, garmin_id)
         count += 1
 
-    log.info("activities: %d upserted for %s", count, d.isoformat())
+    log.info("activities: %d upserted for %s", count, ds)
+    return True
+
+
+def _sync_activity_details(client: Garmin, sb, garmin_id: str):
+    """Fetch and store HR zones, splits, and weather for a single activity."""
+    hr_zones = api_call(client.get_activity_hr_in_timezones, garmin_id)
+    splits = api_call(client.get_activity_splits, garmin_id)
+    weather = api_call(client.get_activity_weather, garmin_id)
+
+    row = {
+        "garmin_activity_id": garmin_id,
+        "hr_zones": safe_json(hr_zones),
+        "splits": safe_json(splits),
+        "weather": safe_json(weather),
+        "raw_json": safe_json({
+            "hr_zones": hr_zones,
+            "splits": splits,
+            "weather": weather,
+        }),
+    }
+    sb.table("activity_details").upsert(row, on_conflict="garmin_activity_id").execute()
+    log.info("  activity_details upserted for activity %s", garmin_id)
+
+
+def sync_training_status(client: Garmin, sb, d: date) -> bool:
+    """Training status: productive/detraining labels, acute/chronic load."""
+    ds = d.isoformat()
+    data = api_call(client.get_training_status, ds)
+    if not data:
+        log.warning("No training status for %s", ds)
+        return False
+
+    # Also fetch max metrics for detailed VO2max
+    max_metrics = api_call(client.get_max_metrics, ds)
+
+    vo2max_running = None
+    vo2max_cycling = None
+    if max_metrics:
+        if isinstance(max_metrics, dict):
+            for entry in max_metrics.get("maxMetricData", [max_metrics]):
+                sport = entry.get("sport")
+                vo2 = entry.get("generic", {}).get("vo2MaxPreciseValue") or entry.get("vo2MaxPreciseValue")
+                if sport == "RUNNING":
+                    vo2max_running = vo2
+                elif sport == "CYCLING":
+                    vo2max_cycling = vo2
+        elif isinstance(max_metrics, list):
+            for entry in max_metrics:
+                sport = entry.get("sport")
+                vo2 = entry.get("generic", {}).get("vo2MaxPreciseValue") or entry.get("vo2MaxPreciseValue")
+                if sport == "RUNNING":
+                    vo2max_running = vo2
+                elif sport == "CYCLING":
+                    vo2max_cycling = vo2
+
+    if isinstance(data, dict):
+        row = {
+            "date": ds,
+            "training_status": data.get("trainingStatus") or data.get("status"),
+            "training_load_7d": data.get("acuteTrainingLoad") or data.get("shortTermTrainingLoad"),
+            "training_load_28d": data.get("chronicTrainingLoad") or data.get("longTermTrainingLoad"),
+            "training_load_balance": data.get("trainingLoadBalance"),
+            "vo2max_running": vo2max_running,
+            "vo2max_cycling": vo2max_cycling,
+            "raw_json": safe_json(data),
+        }
+    else:
+        log.info("Unexpected training status format for %s", ds)
+        return False
+
+    sb.table("training_status").upsert(row, on_conflict="date").execute()
+    log.info("training_status upserted for %s", ds)
+    return True
+
+
+def sync_performance_scores(client: Garmin, sb, d: date) -> bool:
+    """Endurance score, hill score, race predictions, fitness age."""
+    ds = d.isoformat()
+
+    endurance = api_call(client.get_endurance_score, ds, ds)
+    hill = api_call(client.get_hill_score, ds, ds)
+    races = api_call(client.get_race_predictions, ds, ds)
+    fitness_age = api_call(client.get_fitnessage_data, ds)
+
+    endurance_val = None
+    if endurance:
+        if isinstance(endurance, dict):
+            entries = endurance.get("enduranceScoreDTOList", [endurance])
+            endurance_val = entries[-1].get("overallScore") if entries else None
+        elif isinstance(endurance, list) and endurance:
+            endurance_val = endurance[-1].get("overallScore")
+
+    hill_val = None
+    if hill:
+        if isinstance(hill, dict):
+            entries = hill.get("hillScoreDTOList", [hill])
+            hill_val = entries[-1].get("overallScore") if entries else None
+        elif isinstance(hill, list) and hill:
+            hill_val = hill[-1].get("overallScore")
+
+    race_5k = race_10k = race_half = race_marathon = None
+    if races:
+        race_data = races
+        if isinstance(races, dict):
+            race_data = races.get("racePredictions", races)
+        if isinstance(race_data, list):
+            for r in race_data:
+                dist = r.get("racePredictionType") or r.get("distance") or ""
+                secs = r.get("predictedTime") or r.get("predictedTimeSeconds")
+                if "5K" in str(dist).upper() or dist == "5000":
+                    race_5k = secs
+                elif "10K" in str(dist).upper() or dist == "10000":
+                    race_10k = secs
+                elif "HALF" in str(dist).upper() or dist == "21097":
+                    race_half = secs
+                elif "MARATHON" in str(dist).upper() or dist == "42195":
+                    race_marathon = secs
+        elif isinstance(race_data, dict):
+            race_5k = race_data.get("5K") or race_data.get("fiveK")
+            race_10k = race_data.get("10K") or race_data.get("tenK")
+            race_half = race_data.get("halfMarathon")
+            race_marathon = race_data.get("marathon")
+
+    fitness_age_val = None
+    if fitness_age:
+        if isinstance(fitness_age, dict):
+            fitness_age_val = fitness_age.get("fitnessAge") or fitness_age.get("chronologicalAge")
+
+    # Only write if we have at least one value
+    if all(v is None for v in [endurance_val, hill_val, race_5k, fitness_age_val]):
+        log.info("No performance scores available for %s", ds)
+        return False
+
+    row = {
+        "date": ds,
+        "endurance_score": endurance_val,
+        "hill_score": hill_val,
+        "race_prediction_5k_seconds": race_5k,
+        "race_prediction_10k_seconds": race_10k,
+        "race_prediction_half_seconds": race_half,
+        "race_prediction_marathon_seconds": race_marathon,
+        "fitness_age": fitness_age_val,
+        "raw_json": safe_json({
+            "endurance": endurance,
+            "hill": hill,
+            "races": races,
+            "fitness_age": fitness_age,
+        }),
+    }
+    sb.table("performance_scores").upsert(row, on_conflict="date").execute()
+    log.info("performance_scores upserted for %s", ds)
+    return True
+
+
+def sync_body_battery_events(client: Garmin, sb, d: date) -> bool:
+    """Full body battery timeline + charge/drain events."""
+    ds = d.isoformat()
+    timeline = api_call(client.get_body_battery, ds, ds)
+    events = api_call(client.get_body_battery_events, ds)
+
+    if not timeline and not events:
+        log.info("No body battery events for %s", ds)
+        return False
+
+    row = {
+        "date": ds,
+        "timeline": safe_json(timeline),
+        "events": safe_json(events),
+        "raw_json": safe_json({"timeline": timeline, "events": events}),
+    }
+    sb.table("body_battery_events").upsert(row, on_conflict="date").execute()
+    log.info("body_battery_events upserted for %s", ds)
+    return True
+
+
+def sync_personal_records(client: Garmin, sb, d: date) -> bool:
+    """Sync personal records (only once per run, not date-specific)."""
+    records = api_call(client.get_personal_record)
+    if not records:
+        log.info("No personal records returned")
+        return False
+
+    if not isinstance(records, list):
+        records = [records]
+
+    count = 0
+    for rec in records:
+        record_type = rec.get("typeId") or rec.get("personalRecordType") or rec.get("prTypePk")
+        if not record_type:
+            continue
+        row = {
+            "record_type": str(record_type),
+            "value": rec.get("value") or rec.get("prValue"),
+            "activity_id": str(rec.get("activityId", "")) if rec.get("activityId") else None,
+            "recorded_at": rec.get("prStartTimeLocal", "")[:10] if rec.get("prStartTimeLocal") else None,
+            "display_value": rec.get("displayValue") or rec.get("prDisplayValue"),
+            "raw_json": safe_json(rec),
+        }
+        if not row["recorded_at"]:
+            continue
+        sb.table("personal_records").upsert(
+            row, on_conflict="record_type,recorded_at"
+        ).execute()
+        count += 1
+
+    log.info("personal_records: %d upserted", count)
     return True
 
 
@@ -368,7 +575,8 @@ def sync_activities(client: Garmin, sb, d: date) -> bool:
 # Main sync orchestrator
 # ---------------------------------------------------------------------------
 
-SYNC_FUNCTIONS = [
+# Core daily sync functions (run for every date)
+DAILY_SYNC_FUNCTIONS = [
     ("daily_metrics", sync_daily_metrics),
     ("sleep", sync_sleep),
     ("hrv", sync_hrv),
@@ -376,14 +584,22 @@ SYNC_FUNCTIONS = [
     ("heart_rate_series", sync_heart_rate_series),
     ("stress_series", sync_stress_series),
     ("activities", sync_activities),
+    ("training_status", sync_training_status),
+    ("performance_scores", sync_performance_scores),
+    ("body_battery_events", sync_body_battery_events),
+]
+
+# One-shot sync functions (run once per invocation, not per date)
+ONESHOT_SYNC_FUNCTIONS = [
+    ("personal_records", sync_personal_records),
 ]
 
 
 def sync_date(client: Garmin, sb, d: date) -> dict:
-    """Run all sync functions for a single date. Returns {table: success}."""
+    """Run all daily sync functions for a single date. Returns {table: success}."""
     log.info("=== Syncing %s ===", d.isoformat())
     results = {}
-    for name, fn in SYNC_FUNCTIONS:
+    for name, fn in DAILY_SYNC_FUNCTIONS:
         try:
             results[name] = fn(client, sb, d)
         except Exception as exc:
@@ -397,7 +613,7 @@ def main():
     parser.add_argument("--date", type=str, help="Sync a specific date (YYYY-MM-DD)")
     parser.add_argument(
         "--range", nargs=2, metavar=("START", "END"),
-        help="Sync a date range (YYYY-MM-DD YYYY-MM-DD)"
+        help="Sync a date range (YYYY-MM-DD YYYY-MM-DD)",
     )
     args = parser.parse_args()
 
@@ -427,6 +643,13 @@ def main():
     all_results = {}
     for d in dates:
         all_results[d.isoformat()] = sync_date(client, sb, d)
+
+    # Run one-shot syncs (personal records, etc.)
+    for name, fn in ONESHOT_SYNC_FUNCTIONS:
+        try:
+            fn(client, sb, dates[-1])
+        except Exception as exc:
+            log.error("Error in one-shot sync %s: %s", name, exc)
 
     # Summary
     total_ok = sum(
