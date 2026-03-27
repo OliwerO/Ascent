@@ -1,0 +1,3 @@
+Ascent project initialized from brief.
+
+Remote Control session starting...
