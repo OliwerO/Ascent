@@ -37,39 +37,19 @@ cat "$(dirname "$0")/../openclaw/garmin-mcp-config.json"
 echo ""
 echo "Make sure GARMIN_EMAIL and GARMIN_PASSWORD are set in your environment."
 
-# 4. Create coaching context file
+# 4. Deploy coaching context file
 CONTEXT_DIR="$HOME/vault/second-brain/projects/ascent"
 CONTEXT_FILE="$CONTEXT_DIR/coaching-context.md"
+SCRIPT_DIR="$(dirname "$0")"
+echo ""
+echo "--- Deploying coaching-context.md to $CONTEXT_FILE ---"
+mkdir -p "$CONTEXT_DIR"
 if [ ! -f "$CONTEXT_FILE" ]; then
-    echo ""
-    echo "--- Creating coaching-context.md ---"
-    mkdir -p "$CONTEXT_DIR"
-    cat > "$CONTEXT_FILE" << 'CTXEOF'
-# Ascent Coaching Context
-
-## Current Goals
-<!-- Updated by coach and Opus -->
-
-## Current Training Program
-<!-- Set by Opus during interactive sessions -->
-
-## Season Context
-- Current season: Winter/Spring 2026
-- Primary focus: Mountain sports (ski touring, splitboarding)
-- Secondary: Gym maintenance
-
-## Injury & Soreness Log
-<!-- Coach logs here when user reports issues -->
-
-## Learned Preferences
-<!-- Coach adds observations about what works for Oliwer -->
-
-## Coaching Decisions Log
-<!-- Coach logs day-to-day adjustments with date and reason -->
-CTXEOF
+    cp "$SCRIPT_DIR/../openclaw/coaching-context.md" "$CONTEXT_FILE"
     echo "Created: $CONTEXT_FILE"
 else
-    echo "coaching-context.md already exists, skipping."
+    echo "coaching-context.md already exists. To update, run:"
+    echo "  cp $SCRIPT_DIR/../openclaw/coaching-context.md $CONTEXT_FILE"
 fi
 
 echo ""

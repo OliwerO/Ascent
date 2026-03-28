@@ -1,54 +1,95 @@
-# Ascent — Open Tasks for Discussion
+# Ascent — Status & Next Steps
 
-## Task 1: Coaching Context Template
+> Last updated: 2026-03-28
 
-The health-coach skill reads `~/vault/second-brain/projects/ascent/coaching-context.md` for context on every interaction. The current template is bare-bones:
+-----
 
-```markdown
-## Current Goals
-## Current Training Program
-## Season Context
-## Injury & Soreness Log
-## Learned Preferences
-## Coaching Decisions Log
-```
+## Completed
 
-**Discuss:**
-- What goals should be pre-filled? (e.g., body comp targets, strength milestones, VO2max goals)
-- What's the current training program? (split, days/week, focus)
-- Any active injuries or recurring issues to note?
-- Preferences for how coaching feedback is delivered (time of day, detail level, tone)
-- Should this file be structured differently? (YAML frontmatter? Sections per season?)
+- [x] **Phase 1: Supabase Schema** — All tables deployed, seed data loaded, Phase 2 migration (005) applied
+- [x] **Phase 2: Garmin Sync Script** — `scripts/garmin_sync.py` with 11 data types, backfill flags, launchd cron at 06:00
+- [x] **Phase 3: Garmin MCP + Health Coach Skill** — Config, skill, setup script in repo (PR #4 merged)
+- [x] **Coaching Context** — Full context file at `openclaw/coaching-context.md` (goals, program, preferences, injury log)
+- [x] **Grafana Dashboard Spec** — Two dashboards + 4 alerts documented at `docs/grafana-dashboard-spec.md`
 
-## Task 2: Grafana Dashboard Planning
+-----
 
-After Phase 3, the next step is connecting Grafana Cloud to Supabase for visualization. The data available:
+## Next Steps
 
-- **Daily wellness:** HRV (trend + baseline), sleep (score + stages), resting HR, stress, body battery, training readiness, VO2max, SpO2
-- **Performance:** training status (productive/detraining), endurance score, hill score, race predictions, fitness age
-- **Body comp:** weight, body fat %, muscle mass, BMI
-- **Activities:** type, duration, HR zones, elevation, training effect, splits, weather
-- **Training:** sets, reps, volume, estimated 1RMs, PRs
+### Immediate (Jarvis on Mac)
 
-**Discuss:**
-- Which metrics do you check daily vs. weekly?
-- What alerts matter? (e.g., HRV drop >15% from baseline, sleep score <60, training status = detraining)
-- Single overview dashboard or separate dashboards per category?
-- Any specific charts you want? (e.g., weight vs. muscle mass over time, HRV 30-day rolling avg, weekly training volume by type)
-- Mobile-friendly layout? (you'll check on phone mostly?)
+1. **Pull latest and deploy Phase 3:**
+   ```bash
+   cd ~/projects/ascent
+   git pull origin claude/save-ascent-spec-ob2rG
+   bash scripts/setup_phase3.sh
+   ```
+   Then add `openclaw/garmin-mcp-config.json` contents to openclaw.json under `mcp_servers` and restart the gateway.
 
-## Task 3: Supabase Schema Verification
+2. **Verify first Garmin sync (tomorrow after 06:00):**
+   ```bash
+   cat ~/projects/ascent/logs/sync.log
+   ```
+   If rate limit is still active, manually retry:
+   ```bash
+   cd ~/projects/ascent && source venv/bin/activate
+   rm -rf ~/.garth/
+   python scripts/garmin_sync.py --date 2026-03-27
+   ```
 
-Phase 1 tables + Phase 2 migration should all be live. Worth verifying:
+3. **Backfill historical data** (once sync works):
+   ```bash
+   python scripts/garmin_sync.py --range 2026-01-01 2026-03-27
+   ```
 
-- All 22 tables exist with correct columns and constraints
-- Generated columns work (weight_kg, volume_kg, estimated_1rm)
-- Views work (daily_summary)
-- Indexes are created
-- Seed data present (biomarker definitions, exercises)
-- RLS policies — currently none set. Should we add any? (The anon key has full access right now)
+### Requires Computer Access (Oliwer)
 
-**Discuss:**
-- Is RLS needed? (Single user, but anon key in .env on Mac)
-- Should we add a service_role key for the sync script and restrict anon to read-only?
-- Any missing columns discovered after looking at actual Garmin API responses?
+4. **Supabase schema verification:**
+   - Confirm all 27 tables exist (22 from Phase 1 + 5 from Phase 2 migration)
+   - Test generated columns (weight_kg, volume_kg, estimated_1rm)
+   - Verify daily_summary view returns data
+   - Check seed data: biomarker_definitions, exercises
+   - Decide on RLS: add read-only policy for anon key, service_role for sync script?
+
+5. **Test MCP integration:**
+   - Ask Jarvis "how was my sleep last night?" — should return actual Garmin data
+   - Ask Jarvis "what's my HRV trend?" — should give contextual analysis
+   - Verify skill visible in `/context detail`
+
+### Build Next
+
+6. **Grafana Cloud setup:**
+   - Create Grafana Cloud account (free tier is sufficient)
+   - Add Supabase as PostgreSQL data source
+   - Build Dashboard 1 (Daily Overview) per `docs/grafana-dashboard-spec.md`
+   - Build Dashboard 2 (Training Detail)
+   - Configure 4 alerts → Telegram via Jarvis webhook
+
+7. **Calendar integration:**
+   - Explore pushing daily training plan to Google Calendar
+   - Claude has Google Calendar MCP access; OpenClaw does not yet
+   - Options: Claude pushes events, or add calendar MCP to OpenClaw
+
+8. **First Opus session** (after 4-6 weeks of data):
+   - Design detailed training program with progression scheme
+   - Create nutrition plan
+   - Structure mobility routine
+   - Set specific targets based on baseline data
+
+-----
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `scripts/garmin_sync.py` | Nightly Garmin → Supabase sync |
+| `scripts/requirements.txt` | Python dependencies |
+| `scripts/com.ascent.garmin-sync.plist` | macOS launchd cron config |
+| `scripts/setup_phase3.sh` | One-shot Phase 3 deployment |
+| `openclaw/garmin-mcp-config.json` | MCP server config for OpenClaw |
+| `openclaw/skills/health-coach/SKILL.md` | Health coach skill definition |
+| `openclaw/coaching-context.md` | Coaching context (goals, program, preferences) |
+| `docs/grafana-dashboard-spec.md` | Dashboard & alert specifications |
+| `sql/001_schema.sql` | Phase 1 database schema |
+| `sql/005_additional_garmin_tables.sql` | Phase 2 additional tables |
+| `.env.example` | Required environment variables |
