@@ -701,3 +701,75 @@ You are Oliwer's personal health coach with access to Garmin data via MCP tools.
 - [ ] Jarvis responds to "how was my sleep last night?" with actual Garmin data
 - [ ] Jarvis responds to "what's my HRV trend?" with contextual analysis
 - [ ] Gateway restarted and skill visible in `/context detail`
+
+## Training Expansion (Phases 7–10)
+
+Ascent is being expanded from a coaching analysis system into a fully autonomous closed-loop training platform. The complete specification lives in `docs/training-expansion-brief.md`. Read that file before working on any Phase 7+ task.
+
+### Key Context for All Phases
+
+- **Garmin integration** uses unofficial Python libraries (`garth` preferred, `garminconnect` fallback). No official developer API access.
+- **Workout generation** reads `coaching-context.md` (Opus-authored) and applies progressive overload rules against Garmin performance data.
+- **Google Calendar** events are created automatically for every training session.
+- **Telegram** is the only user interaction channel — no manual computer interaction required.
+- Resort snowboarding and other unplanned activities are detected from Garmin data and factored into weekly training load.
+
+### New Supabase Tables (Phases 7–10)
+
+Tables to be created when executing these phases:
+- `garmin_auth` — Garmin Connect credentials (Phase 7a)
+- `garmin_activities` — synced activity data (Phase 7a)
+- `garmin_daily_metrics` — HRV, body battery, sleep, stress (Phase 7a)
+- `planned_workouts` — generated workout definitions with Garmin/Calendar IDs (Phase 8)
+- `exercise_progression` — per-exercise progression tracking (Phase 8)
+- `calendar_events` — Google Calendar event sync (Phase 9)
+
+Full schemas with SQL are in `docs/training-expansion-brief.md`.
+
+### New Scripts (Phases 7–10)
+
+- `scripts/garmin_sync.py` — pull Garmin data to Supabase (Phase 7a)
+- `scripts/garmin_workout_push.py` — push workouts to Garmin Connect (Phase 7b)
+- `scripts/workout_generator.py` — generate weekly workouts with progressive overload (Phase 8)
+
+### OpenClaw Cron Jobs (Phase 10)
+
+| Time | Job | Agent |
+|------|-----|-------|
+| Daily 06:00 | `garmin_daily_sync` | Script |
+| Daily 06:30 | `daily_readiness_check` | Haiku |
+| Sunday 20:00 | `weekly_analysis` | Claude Code |
+| Sunday 20:30 | `workout_generation` | Claude Code |
+| Sunday 20:45 | `weekly_summary` | Claude Code |
+| On trigger | `opus_data_prep` | Script |
+
+### Critical Decisions
+
+These are locked and must not be changed without an Opus session:
+
+- Coach EXECUTES plans, never creates them. Plan creation is Opus's role.
+- `coaching-context.md` is the central state file for all plan data.
+- Micro-adjustments (≤10-15% volume reduction) can happen at Claude Code tier without Opus replanning.
+- Target weights MUST be pre-filled on Garmin watch — athlete should never have to look up what weight to use.
+- Daily adjustments require Telegram confirmation before applying.
+- Training times default to: gym 19:00 weekday evenings, touring 17:00 weekdays / 07:00 weekends.
+
+### Open Items (Blocked on Garmin Spike)
+
+Before starting Phase 7 implementation, the Garmin auth spike must be completed. Results determine:
+- Which Python library to use
+- Whether custom exercises are supported
+- Whether target weights can be pre-filled per set
+- What per-set data Garmin returns after completion
+
+Spike document: `spikes/garmin-auth-spike.md`
+
+### Phase Dependencies
+```
+KB (knowledge base) ──────────► Phase 6 (Opus plan)
+GS (Garmin spike) ──► Phase 7a ──► Phase 8 (workout gen)
+                └─► Phase 7b ──┘        │
+                              Phase 9 (calendar)
+Phase 5 (weekly analysis) ──────────►      │
+                              Phase 10 (orchestration)
+```
