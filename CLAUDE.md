@@ -716,15 +716,23 @@ Ascent is being expanded from a coaching analysis system into a fully autonomous
 
 ### New Supabase Tables (Phases 7–10)
 
-Tables to be created when executing these phases:
-- `garmin_auth` — Garmin Connect credentials (Phase 7a)
-- `garmin_activities` — synced activity data (Phase 7a)
-- `garmin_daily_metrics` — HRV, body battery, sleep, stress (Phase 7a)
+**Schema conflict resolved (2026-03-30):** Three tables from the original expansion brief
+were dropped as redundant — see `docs/schema-conflict-resolution.md` for full rationale.
+
+Dropped (already covered by Phase 1-2):
+- ~~`garmin_auth`~~ — auth handled by garth tokens on filesystem (`~/.garth/`)
+- ~~`garmin_activities`~~ — covered by `activities` + `activity_details`
+- ~~`garmin_daily_metrics`~~ — covered by `daily_metrics` + `sleep` + `hrv`
+
+Tables to be created:
 - `planned_workouts` — generated workout definitions with Garmin/Calendar IDs (Phase 8)
 - `exercise_progression` — per-exercise progression tracking (Phase 8)
-- `calendar_events` — Google Calendar event sync (Phase 9)
 
-Full schemas with SQL are in `docs/training-expansion-brief.md`.
+Migration: `sql/006_training_expansion.sql`
+
+**Note:** Phase 7a (Garmin data pull) is effectively complete — `garmin_sync.py` already
+pulls all 11 data types to existing tables. The Garmin Auth Spike is only needed to
+validate the push side (uploading workouts to the watch).
 
 ### New Scripts (Phases 7–10)
 
