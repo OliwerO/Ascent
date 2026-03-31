@@ -34,7 +34,7 @@ GARMIN_PASSWORD = os.environ["GARMIN_PASSWORD"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 
-GARTH_HOME = Path.home() / ".garth"
+TOKEN_STORE = PROJECT_ROOT / "garmin_tokens.json"
 API_DELAY = 1  # seconds between Garmin API calls
 
 logging.basicConfig(
@@ -49,18 +49,74 @@ log = logging.getLogger("garmin_sync")
 # ---------------------------------------------------------------------------
 
 
+def _refresh_tokens_from_safari():
+    """Extract fresh Garmin tokens from Safari's cookie store."""
+    try:
+        import browser_cookie3
+        import requests
+
+        cj = browser_cookie3.safari(domain_name='garmin.com')
+        jwt_web = None
+        csrf_token = None
+        cookie_dict = {}
+
+        for c in cj:
+            if 'garmin' in c.domain or 'connect' in c.domain:
+                cookie_dict[c.name] = c.value
+            if c.name == 'JWT_WEB':
+                jwt_web = c.value
+
+        if not jwt_web:
+            return False
+
+        # Fetch CSRF from the page meta tag
+        sess = requests.Session()
+        for c in cj:
+            sess.cookies.set(c.name, c.value, domain=c.domain, path=c.path)
+        import re
+        r = sess.get('https://connect.garmin.com/modern/', headers={
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15',
+        })
+        match = re.search(r'<meta[^>]*csrf[^>]*content="([^"]+)"', r.text, re.IGNORECASE)
+        if match:
+            csrf_token = match.group(1)
+
+        if not csrf_token:
+            return False
+
+        import json as _json
+        token_data = {'jwt_web': jwt_web, 'csrf_token': csrf_token, 'cookies': cookie_dict}
+        TOKEN_STORE.write_text(_json.dumps(token_data, indent=2))
+        log.info("Refreshed tokens from Safari cookies")
+        return True
+    except Exception as exc:
+        log.debug("Safari token refresh failed: %s", exc)
+        return False
+
+
 def get_garmin_client() -> Garmin:
     """Authenticate with Garmin Connect, reusing stored tokens when possible."""
-    client = Garmin()
+    tokenstore = str(TOKEN_STORE)
     try:
-        client.login(str(GARTH_HOME))
+        client = Garmin()
+        client.login(tokenstore)
         log.info("Resumed Garmin session from stored tokens")
     except Exception:
-        log.info("Stored tokens expired or missing — logging in with credentials")
-        client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
-        client.login()
-        client.garth.dump(str(GARTH_HOME))
-        log.info("Login successful, tokens saved to %s", GARTH_HOME)
+        log.info("Stored tokens expired or missing — trying Safari cookies")
+        if _refresh_tokens_from_safari():
+            client = Garmin()
+            client.login(tokenstore)
+            log.info("Resumed Garmin session from Safari cookies")
+        else:
+            log.info("Safari refresh failed — trying credential login with MFA")
+            client = Garmin(
+                GARMIN_EMAIL,
+                GARMIN_PASSWORD,
+                prompt_mfa=lambda: input("Enter MFA code from email: "),
+            )
+            client.login()
+            client.client.dump(tokenstore)
+            log.info("Login successful, tokens saved to %s", TOKEN_STORE)
     return client
 
 
@@ -92,6 +148,16 @@ def extract_score(scores, key):
     if isinstance(val, dict):
         return val.get("value")
     return val
+
+
+def _ms_to_iso(ts):
+    """Convert a millisecond epoch timestamp to ISO 8601 string, or pass through strings."""
+    if ts is None:
+        return None
+    if isinstance(ts, (int, float)) and ts > 1_000_000_000_000:
+        from datetime import datetime, timezone
+        return datetime.fromtimestamp(ts / 1000, tz=timezone.utc).isoformat()
+    return ts
 
 
 # ---------------------------------------------------------------------------
@@ -134,29 +200,32 @@ def sync_daily_metrics(client: Garmin, sb, d: date) -> bool:
             vals = [r.get("value") for r in resp if r.get("value")]
             resp_avg = sum(vals) / len(vals) if vals else None
 
+    def to_int(v):
+        return int(v) if v is not None else None
+
     row = {
         "date": ds,
-        "total_steps": stats.get("totalSteps"),
+        "total_steps": to_int(stats.get("totalSteps")),
         "total_distance_meters": stats.get("totalDistanceMeters"),
-        "active_calories": stats.get("activeKilocalories"),
-        "total_calories": stats.get("totalKilocalories"),
-        "floors_ascended": stats.get("floorsAscended"),
-        "floors_descended": stats.get("floorsDescended"),
-        "intensity_minutes": stats.get("intensityMinutesGoal"),
-        "moderate_intensity_minutes": stats.get("moderateIntensityMinutes"),
-        "vigorous_intensity_minutes": stats.get("vigorousIntensityMinutes"),
-        "resting_hr": stats.get("restingHeartRate"),
-        "min_hr": stats.get("minHeartRate"),
-        "max_hr": stats.get("maxHeartRate"),
-        "avg_hr": stats.get("averageHeartRate"),
-        "avg_stress_level": stats.get("averageStressLevel"),
-        "max_stress_level": stats.get("maxStressLevel"),
-        "rest_stress_duration": stats.get("restStressDuration"),
-        "activity_stress_duration": stats.get("activityStressDuration"),
-        "body_battery_highest": stats.get("bodyBatteryHighestValue"),
-        "body_battery_lowest": stats.get("bodyBatteryLowestValue"),
-        "body_battery_charged": stats.get("bodyBatteryChargedValue"),
-        "body_battery_drained": stats.get("bodyBatteryDrainedValue"),
+        "active_calories": to_int(stats.get("activeKilocalories")),
+        "total_calories": to_int(stats.get("totalKilocalories")),
+        "floors_ascended": to_int(stats.get("floorsAscended")),
+        "floors_descended": to_int(stats.get("floorsDescended")),
+        "intensity_minutes": to_int(stats.get("intensityMinutesGoal")),
+        "moderate_intensity_minutes": to_int(stats.get("moderateIntensityMinutes")),
+        "vigorous_intensity_minutes": to_int(stats.get("vigorousIntensityMinutes")),
+        "resting_hr": to_int(stats.get("restingHeartRate")),
+        "min_hr": to_int(stats.get("minHeartRate")),
+        "max_hr": to_int(stats.get("maxHeartRate")),
+        "avg_hr": to_int(stats.get("averageHeartRate")),
+        "avg_stress_level": to_int(stats.get("averageStressLevel")),
+        "max_stress_level": to_int(stats.get("maxStressLevel")),
+        "rest_stress_duration": to_int(stats.get("restStressDuration")),
+        "activity_stress_duration": to_int(stats.get("activityStressDuration")),
+        "body_battery_highest": to_int(stats.get("bodyBatteryHighestValue")),
+        "body_battery_lowest": to_int(stats.get("bodyBatteryLowestValue")),
+        "body_battery_charged": to_int(stats.get("bodyBatteryChargedValue")),
+        "body_battery_drained": to_int(stats.get("bodyBatteryDrainedValue")),
         "training_readiness_score": training_readiness_score,
         "training_load": stats.get("trainingLoadBalance"),
         "vo2max": stats.get("vO2MaxValue"),
@@ -181,8 +250,8 @@ def sync_sleep(client: Garmin, sb, d: date) -> bool:
 
     row = {
         "date": ds,
-        "sleep_start": daily.get("sleepStartTimestampLocal") or daily.get("sleepStart"),
-        "sleep_end": daily.get("sleepEndTimestampLocal") or daily.get("sleepEnd"),
+        "sleep_start": _ms_to_iso(daily.get("sleepStartTimestampLocal") or daily.get("sleepStart")),
+        "sleep_end": _ms_to_iso(daily.get("sleepEndTimestampLocal") or daily.get("sleepEnd")),
         "total_sleep_seconds": daily.get("sleepTimeSeconds"),
         "deep_sleep_seconds": daily.get("deepSleepSeconds"),
         "light_sleep_seconds": daily.get("lightSleepSeconds"),
@@ -222,7 +291,6 @@ def sync_hrv(client: Garmin, sb, d: date) -> bool:
         "baseline_balanced_upper": baseline.get("balancedUpper"),
         "status": summary.get("status"),
         "readings": safe_json(data.get("hrvReadings", [])) if isinstance(data, dict) else None,
-        "raw_json": safe_json(data) if isinstance(data, dict) else None,
     }
     sb.table("hrv").upsert(row, on_conflict="date").execute()
     log.info("hrv upserted for %s", ds)
@@ -326,6 +394,9 @@ def sync_activities(client: Garmin, sb, d: date) -> bool:
         if not garmin_id:
             continue
 
+        def _int(v):
+            return int(v) if v is not None else None
+
         row = {
             "garmin_activity_id": garmin_id,
             "date": act_date_str,
@@ -334,11 +405,11 @@ def sync_activities(client: Garmin, sb, d: date) -> bool:
                 else str(act.get("activityType", "unknown")),
             "activity_name": act.get("activityName"),
             "start_time": act.get("startTimeGMT") or act.get("startTimeLocal"),
-            "duration_seconds": int(act["duration"]) if act.get("duration") else None,
+            "duration_seconds": _int(act.get("duration")),
             "distance_meters": act.get("distance"),
-            "calories": act.get("calories"),
-            "avg_hr": act.get("averageHR"),
-            "max_hr": act.get("maxHR"),
+            "calories": _int(act.get("calories")),
+            "avg_hr": _int(act.get("averageHR")),
+            "max_hr": _int(act.get("maxHR")),
             "avg_speed": act.get("averageSpeed"),
             "max_speed": act.get("maxSpeed"),
             "elevation_gain": act.get("elevationGain"),
@@ -544,11 +615,15 @@ def sync_personal_records(client: Garmin, sb, d: date) -> bool:
         log.info("No personal records returned")
         return False
 
+    if isinstance(records, dict):
+        records = records.get("personalRecords", records.get("records", [records]))
     if not isinstance(records, list):
         records = [records]
 
     count = 0
     for rec in records:
+        if not isinstance(rec, dict):
+            continue
         record_type = rec.get("typeId") or rec.get("personalRecordType") or rec.get("prTypePk")
         if not record_type:
             continue
@@ -556,7 +631,7 @@ def sync_personal_records(client: Garmin, sb, d: date) -> bool:
             "record_type": str(record_type),
             "value": rec.get("value") or rec.get("prValue"),
             "activity_id": str(rec.get("activityId", "")) if rec.get("activityId") else None,
-            "recorded_at": rec.get("prStartTimeLocal", "")[:10] if rec.get("prStartTimeLocal") else None,
+            "recorded_at": str(rec.get("prStartTimeLocalFormatted", "") or "")[:10] or None,
             "display_value": rec.get("displayValue") or rec.get("prDisplayValue"),
             "raw_json": safe_json(rec),
         }
@@ -639,9 +714,15 @@ def main():
     client = get_garmin_client()
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    # Sync each date
+    # Sync each date (re-auth every 8 dates to avoid JWT expiry)
     all_results = {}
-    for d in dates:
+    for i, d in enumerate(dates):
+        if i > 0 and i % 8 == 0:
+            log.info("Refreshing auth tokens...")
+            try:
+                client = get_garmin_client()
+            except Exception as exc:
+                log.warning("Token refresh failed, continuing with current session: %s", exc)
         all_results[d.isoformat()] = sync_date(client, sb, d)
 
     # Run one-shot syncs (personal records, etc.)

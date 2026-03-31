@@ -1,6 +1,6 @@
 # Ascent — Status & Next Steps
 
-> Last updated: 2026-03-30
+> Last updated: 2026-03-31
 > Single source of truth for all task status, dependencies, and next actions.
 > CLAUDE.md has architecture/context. This file has what to DO.
 
@@ -10,17 +10,17 @@
 
 | Phase | Name | Status | Notes |
 |-------|------|--------|-------|
-| 1 | Supabase Schema + Seed Data | **Done** | 27 tables + seed data deployed |
-| 2 | Garmin Sync Script | **Done** | `garmin_sync.py` — 11 data types, backfill, cron |
-| 3 | Garmin MCP + Health Coach Skill | **Done** | Config + skill in repo, needs Mac deploy |
-| 4 | Grafana Dashboards | Spec done, not built | `docs/grafana-dashboard-spec.md` |
+| 1 | Supabase Schema + Seed Data | **Done** | 27 tables + seed data deployed + Phase 8 migration run |
+| 2 | Garmin Sync Script | **Done** | `garmin_sync.py` — garminconnect 0.2.41, Safari cookie auth, session keeper, 3-month backfill complete |
+| 3 | Garmin MCP + Health Coach Skill | **Deployed on Mac** | MCP config in openclaw.json, skill deployed, gateway restarted |
+| 4 | Grafana Dashboards | Spec done, not built | Grafana Cloud account created, Supabase connection blocked (IPv6/pooler issue) |
 | 5 | Weekly Analysis Script | Not started | Blocked on data in Supabase |
-| KB | Scientific Knowledge Base | **Exists in Obsidian** | Needs sync to repo |
-| GS | Garmin Auth Spike | Not started | **Critical blocker** for push side |
+| KB | Scientific Knowledge Base | **Synced to repo** | 8 files in `docs/knowledge-base/` |
+| GS | Garmin Auth Spike | **Partially obsolete** | garth deprecated; using garminconnect web-session branch. Auth blocked by Cloudflare/rate limit. |
 | 6 | First Opus Planning Session | Not started | Blocked on KB + data accumulation |
 | 7a | Garmin Data Pull | **Effectively done** | `garmin_sync.py` already covers this |
 | 7b | Garmin Workout Push | Scaffolded | `garmin_workout_push.py` — blocked on spike |
-| 8 | Workout Generation Engine | Scaffolded | `workout_generator.py` — blocked on Phase 6 |
+| 8 | Workout Generation Engine | Scaffolded | `workout_generator.py` — blocked on Phase 6. DB tables created. |
 | 9 | Google Calendar Integration | Not started | Blocked on Phase 8 |
 | 10 | Autonomous Orchestration | Not started | Blocked on 7a, 8, 9 |
 
@@ -29,16 +29,29 @@
 Three tables proposed in the expansion brief were dropped as redundant.
 See `docs/schema-conflict-resolution.md`. New migration: `sql/006_training_expansion.sql`.
 
+### Garmin auth status (2026-03-31)
+
+- `garth` library **deprecated** as of v0.8.0 (2026-03-28). Garmin added Cloudflare protection to SSO endpoints mid-March 2026.
+- Upgraded to `garminconnect 0.2.41` (web-session branch) — uses mobile API + JWT auth.
+- Mobile API works but triggers aggressive account-level rate limiting (429).
+- Launchd plist fixed to use venv Python.
+- MFA support added to sync script.
+- **Resolved (2026-03-31):** Auth working via Safari cookie extraction (`browser_cookie3`).
+  Session kept alive by `garmin_session_refresh.sh` (launchd, every 4h).
+  Sync script patched with `Sec-Fetch-*` headers for Cloudflare compatibility.
+  3-month backfill complete: 90 days of data (Jan 1 – Mar 31), 47 activities.
+- MFA is permanently enabled (ECG feature, irreversible). Safari session approach is the long-term solution.
+- Body composition: no Garmin scale. User does gym body comp scans — input via screenshot/Telegram → Claude Vision parsing.
+
 -----
 
 ## Dependency Chain
 
 ```
 Things that can happen NOW (parallel):
-  ├── Garmin Auth Spike (Mac, real credentials)
-  ├── Knowledge Base sync (Obsidian → repo)
-  ├── Mac deployment (Phase 3 setup, first sync, backfill)
-  └── Grafana Cloud setup
+  ├── Complete Garmin first login (rate limit cooldown, then garmin_login_once.py)
+  ├── Grafana Cloud: fix Supabase connection (get pooler details from dashboard)
+  └── Backfill historical Garmin data (once login works)
 
 After Garmin Spike completes:
   └── Phase 7b: implement garmin_workout_push.py
@@ -56,53 +69,32 @@ After KB + 4-6 weeks of Garmin data:
 
 ### High Priority
 
-- [ ] **Deploy Phase 3 on Mac:**
-  ```bash
-  cd ~/projects/ascent
-  git pull origin claude/save-ascent-spec-ob2rG
-  bash scripts/setup_phase3.sh
-  ```
-  Add `openclaw/garmin-mcp-config.json` to openclaw.json under `mcp_servers`, restart gateway.
+- [x] **Deploy Phase 3 on Mac** (done 2026-03-31)
+- [x] **Sync knowledge base** from Obsidian to repo (done 2026-03-31)
+- [x] **Copy training-expansion-brief.md to Obsidian vault** (done 2026-03-31)
+- [x] **Fix launchd plist** — was using system Python, now uses venv (done 2026-03-31)
+- [x] **Run Phase 8 migration** — `sql/006_training_expansion.sql` (done 2026-03-31)
 
-- [ ] **Verify first Garmin sync** (check after 06:00):
-  ```bash
-  cat ~/projects/ascent/logs/sync.log
-  ```
-  If rate limit active, manually retry:
+- [ ] **Complete first Garmin login** (blocked on rate limit cooldown):
   ```bash
   cd ~/projects/ascent && source venv/bin/activate
-  python scripts/garmin_sync.py --date 2026-03-29
+  python scripts/garmin_login_once.py
   ```
+  Apple Reminder set for 2026-04-01 09:00.
 
-- [ ] **Backfill historical data** (once sync works):
+- [ ] **Backfill historical data** (once login works):
   ```bash
-  python scripts/garmin_sync.py --range 2026-01-01 2026-03-29
-  ```
-
-- [ ] **Run Garmin Auth Spike** — critical blocker for workout push:
-  ```bash
-  # Follow spikes/garmin-auth-spike.md step by step
-  # Tests: auth persistence, activity pull, workout push, watch sync
-  # Record results in the evaluation matrix
-  ```
-
-- [ ] **Sync knowledge base** from Obsidian to repo:
-  ```bash
-  cp -r ~/vault/second-brain/projects/ascent/knowledge-base/ ~/projects/ascent/docs/knowledge-base/
-  ```
-
-- [ ] **Copy training-expansion-brief.md to Obsidian vault:**
-  ```bash
-  cp ~/projects/ascent/docs/training-expansion-brief.md ~/vault/second-brain/projects/ascent/
+  python scripts/garmin_sync.py --range 2026-01-01 2026-03-31
   ```
 
 ### Medium Priority
 
-- [ ] **Supabase verification:**
-  - Confirm all 27 tables + generated columns work
-  - Run `sql/006_training_expansion.sql` to add Phase 8 tables
-  - Verify daily_summary view returns data after first sync
-  - Decide on RLS policy (read-only anon key vs service_role)
+- [x] **Supabase verification** (done 2026-03-31):
+  - 24 tables confirmed (19 Phase 1 + 5 Phase 2 + 2 Phase 8, minus 4 unused)
+  - Seed data: 60 biomarkers, 40 exercises, 1 blood panel with 50 results
+  - Phase 8 migration run: `planned_workouts` + `exercise_progression` created
+  - Daily_summary view will return data after first Garmin sync
+  - RLS policy: still TBD
 
 - [ ] **Test MCP integration** (after Phase 3 deploy):
   - "how was my sleep last night?" → actual Garmin data

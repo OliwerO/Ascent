@@ -1,5 +1,11 @@
 # Garmin Auth Spike — Test Plan
 
+> **Updated 2026-03-31:** `garth` is deprecated (v0.8.0, 2026-03-28). Garmin added Cloudflare
+> protection to SSO endpoints mid-March 2026. Option A (garth) is dead. Option B
+> (garminconnect) has been updated to the `web-session` branch (v0.2.41) which uses mobile
+> API + JWT auth. The mobile API works but has aggressive account-level rate limiting.
+> See TASKS.md for current auth status.
+
 ## Objective
 
 Validate that we can reliably authenticate with Garmin Connect and perform both read (pull activities) and write (push workouts) operations from a Python script. This is the critical dependency for Phases 7-10.
@@ -10,7 +16,10 @@ Validate that we can reliably authenticate with Garmin Connect and perform both 
 
 Test in order of preference. Stop at the first one that works reliably for both read AND write.
 
-### Option A: `garth` (OAuth-based, recommended)
+### Option A: `garth` (OAuth-based) — DEPRECATED
+
+> **DEAD as of 2026-03-28.** Library officially deprecated. Garmin's Cloudflare protection
+> blocks the SSO endpoints garth relies on. Do not use.
 
 More modern library that uses Garmin's OAuth flow and stores tokens that can be refreshed.
 
@@ -67,9 +76,14 @@ except Exception as e:
     print(f"❌ Sleep failed: {e}")
 ```
 
-### Option B: `garminconnect` (session-based)
+### Option B: `garminconnect` web-session branch (JWT-based) — CURRENT CHOICE
 
-More established library, but relies on session cookies that expire.
+> **Installed:** `pip install git+https://github.com/cyberjunky/python-garminconnect.git@web-session`
+> Uses mobile API (`/mobile/api/login`) with Android User-Agent to bypass Cloudflare,
+> then trades for JWT web session. Supports MFA. Tokens saved to `garmin_tokens.json`.
+> Rate limit is account-level, not IP-level.
+
+More established library, updated to use JWT-based auth.
 
 ```bash
 pip install garminconnect

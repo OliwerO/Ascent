@@ -7,4 +7,11 @@ __pycache__/
 .venv/
 logs/
 .garmin/
+.garmin-browser/
+garmin_tokens.json
 *.garmin_session*
+.agents/
+.claude/
+skills/
+skills-lock.json
+venv/

@@ -6,7 +6,7 @@
     <string>com.ascent.garmin-sync</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/python3</string>
+        <string>/Users/jarvisforoli/projects/ascent/venv/bin/python</string>
         <string>/Users/jarvisforoli/projects/ascent/scripts/garmin_sync.py</string>
     </array>
     <key>StartCalendarInterval</key>
