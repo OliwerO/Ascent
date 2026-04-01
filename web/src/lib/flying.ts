@@ -1,4 +1,4 @@
-export type FlightType = 'xc' | 'soaring' | 'sled_ride' | 'hike_and_fly'
+export type FlightType = 'xc' | 'soaring' | 'glide_down' | 'hike_and_fly'
 
 export interface FlightData {
   date: string
@@ -24,7 +24,7 @@ export interface FlightData {
 }
 
 export function classifyFlight(elevationGain: number, distance: number): FlightType {
-  if (elevationGain < 100) return 'sled_ride'
+  if (elevationGain < 100) return 'glide_down'
   if (distance > 20000) return 'xc'
   return 'soaring'
 }

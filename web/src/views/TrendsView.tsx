@@ -364,7 +364,7 @@ function FlyingSection({ activities }: { activities: any[] }) {
     switch (type) {
       case 'xc': return 'XC'
       case 'soaring': return 'Soaring'
-      case 'sled_ride': return 'Sled ride'
+      case 'glide_down': return 'Glide down'
       case 'hike_and_fly': return 'Hike & fly'
       default: return type
     }
@@ -374,7 +374,7 @@ function FlyingSection({ activities }: { activities: any[] }) {
     switch (type) {
       case 'xc': return 'text-accent-orange'
       case 'soaring': return 'text-accent-yellow'
-      case 'sled_ride': return 'text-text-muted'
+      case 'glide_down': return 'text-text-muted'
       case 'hike_and_fly': return 'text-accent-green'
       default: return 'text-text-secondary'
     }

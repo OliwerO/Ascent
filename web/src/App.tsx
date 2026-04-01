@@ -1,5 +1,5 @@
-import { useState, lazy, Suspense } from 'react'
-import { Mountain, Calendar, Dumbbell, Heart, TrendingUp, Target } from 'lucide-react'
+import { useState, lazy, Suspense, useCallback } from 'react'
+import { Mountain, Calendar, Dumbbell, Heart, TrendingUp, Target, RefreshCw } from 'lucide-react'
 import { LoadingState } from './components/LoadingState'
 
 const TodayView = lazy(() => import('./views/TodayView'))
@@ -22,6 +22,10 @@ type TabId = (typeof tabs)[number]['id']
 
 function App() {
   const [activeTab, setActiveTab] = useState<TabId>('today')
+  const [refreshKey, setRefreshKey] = useState(0)
+  const handleRefresh = useCallback(() => {
+    setRefreshKey((k) => k + 1)
+  }, [])
 
   return (
     <div className="min-h-screen bg-bg-primary">
@@ -32,21 +36,30 @@ function App() {
             <span className="text-accent-green text-lg">&#9650;</span>
             <span>Ascent</span>
           </h1>
-          <span className="text-[11px] text-text-muted font-medium">
-            {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] text-text-muted font-medium">
+              {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+            </span>
+            <button
+              onClick={handleRefresh}
+              className="text-text-muted hover:text-text-secondary active:rotate-180 transition-all duration-300"
+              title="Refresh data"
+            >
+              <RefreshCw size={14} />
+            </button>
+          </div>
         </div>
       </header>
 
       {/* Content */}
       <main className="max-w-2xl mx-auto px-4 py-5 pb-28 space-y-4">
         <Suspense fallback={<LoadingState />}>
-          {activeTab === 'today' && <TodayView />}
-          {activeTab === 'week' && <WeekView />}
-          {activeTab === 'plan' && <TrainingPlanView />}
-          {activeTab === 'recovery' && <RecoveryView />}
-          {activeTab === 'trends' && <TrendsView />}
-          {activeTab === 'goals' && <GoalsView />}
+          {activeTab === 'today' && <TodayView key={refreshKey} />}
+          {activeTab === 'week' && <WeekView key={refreshKey} />}
+          {activeTab === 'plan' && <TrainingPlanView key={refreshKey} />}
+          {activeTab === 'recovery' && <RecoveryView key={refreshKey} />}
+          {activeTab === 'trends' && <TrendsView key={refreshKey} />}
+          {activeTab === 'goals' && <GoalsView key={refreshKey} />}
         </Suspense>
       </main>
 
