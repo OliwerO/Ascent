@@ -36,6 +36,11 @@ export default function WeekView() {
   const weekStart = startOfWeek(now, { weekStartsOn: 1 })
   const weekEnd = endOfWeek(now, { weekStartsOn: 1 })
 
+  const prevWeekStart = new Date(weekStart)
+  prevWeekStart.setDate(prevWeekStart.getDate() - 7)
+  const prevWeekEnd = new Date(weekEnd)
+  prevWeekEnd.setDate(prevWeekEnd.getDate() - 7)
+
   // Filter activities to current week
   const weekActivities = useMemo(() => {
     if (!activitiesHook.data) return []
@@ -43,6 +48,14 @@ export default function WeekView() {
       isWithinInterval(new Date(a.date), { start: weekStart, end: weekEnd })
     )
   }, [activitiesHook.data, weekStart.getTime(), weekEnd.getTime()])
+
+  // Filter activities to previous week
+  const prevWeekActivities = useMemo(() => {
+    if (!activitiesHook.data) return []
+    return activitiesHook.data.filter((a: any) =>
+      isWithinInterval(new Date(a.date), { start: prevWeekStart, end: prevWeekEnd })
+    )
+  }, [activitiesHook.data, prevWeekStart.getTime(), prevWeekEnd.getTime()])
 
   // Quick stats
   const totalElevation = useMemo(
@@ -57,6 +70,46 @@ export default function WeekView() {
     () => weekActivities.reduce((sum: number, a: any) => sum + (a.calories || 0), 0),
     [weekActivities]
   )
+
+  // Previous week stats for comparison
+  const prevElevation = useMemo(
+    () => prevWeekActivities.reduce((sum: number, a: any) => sum + (a.elevation_gain || 0), 0),
+    [prevWeekActivities]
+  )
+  const prevGymSessions = useMemo(
+    () => prevWeekActivities.filter((a: any) => a.activity_type === 'strength_training').length,
+    [prevWeekActivities]
+  )
+  const prevCalories = useMemo(
+    () => prevWeekActivities.reduce((sum: number, a: any) => sum + (a.calories || 0), 0),
+    [prevWeekActivities]
+  )
+
+  // Comparison helper
+  const pctChange = (curr: number, prev: number) => {
+    if (prev === 0) return null
+    return Math.round(((curr - prev) / prev) * 100)
+  }
+
+  // Weekly activity summary
+  const weeklySummary = useMemo(() => {
+    const strength = weekActivities.filter((a: any) => a.activity_type === 'strength_training').length
+    const mountain = weekActivities.filter((a: any) =>
+      ['resort_snowboarding', 'backcountry_snowboarding', 'resort_skiing', 'backcountry_skiing', 'hiking', 'ski_touring', 'splitboarding'].includes(a.activity_type)
+    ).length
+    const other = weekActivities.length - strength - mountain
+
+    if (weekActivities.length === 0) return null
+
+    const parts: string[] = []
+    if (strength > 0) parts.push(`${strength} strength session${strength > 1 ? 's' : ''}`)
+    if (mountain > 0) parts.push(`${mountain} mountain day${mountain > 1 ? 's' : ''}`)
+    if (other > 0) parts.push(`${other} other`)
+
+    const total = weekActivities.length
+    const label = total >= 4 ? 'Active week' : total >= 2 ? 'Moderate week' : 'Light week'
+    return `${label}: ${parts.join(' + ')}`
+  }, [weekActivities])
 
   // HRV sparkline data (14d, chronological)
   const hrvSparkline = useMemo(() => {
@@ -123,13 +176,26 @@ export default function WeekView() {
             {Math.round(totalElevation)}
             <span className="text-xs text-text-muted ml-1">m</span>
           </div>
+          {prevElevation > 0 && (() => {
+            const pct = pctChange(totalElevation, prevElevation)
+            return pct != null ? (
+              <div className={`text-[10px] font-medium ${pct >= 0 ? 'text-accent-green' : 'text-accent-red'}`}>
+                {pct >= 0 ? '↑' : '↓'} {pct >= 0 ? '+' : ''}{pct}% vs last wk
+              </div>
+            ) : null
+          })()}
         </Card>
         <Card>
-          <div className="text-xs text-text-muted">Gym</div>
+          <div className="text-xs text-text-muted">Strength</div>
           <div className="text-xl font-bold text-text-primary">
             {gymSessions}
             <span className="text-xs text-text-muted ml-1">sessions</span>
           </div>
+          {prevGymSessions > 0 && gymSessions !== prevGymSessions && (
+            <div className={`text-[10px] font-medium ${gymSessions >= prevGymSessions ? 'text-accent-green' : 'text-accent-red'}`}>
+              {gymSessions > prevGymSessions ? '↑' : '↓'} {prevGymSessions} last wk
+            </div>
+          )}
         </Card>
         <Card>
           <div className="text-xs text-text-muted">Calories</div>
@@ -137,11 +203,24 @@ export default function WeekView() {
             {totalCalories.toLocaleString()}
             <span className="text-xs text-text-muted ml-1">kcal</span>
           </div>
+          {prevCalories > 0 && (() => {
+            const pct = pctChange(totalCalories, prevCalories)
+            return pct != null ? (
+              <div className={`text-[10px] font-medium ${pct >= 0 ? 'text-accent-green' : 'text-accent-red'}`}>
+                {pct >= 0 ? '↑' : '↓'} {pct >= 0 ? '+' : ''}{pct}% vs last wk
+              </div>
+            ) : null
+          })()}
         </Card>
       </div>
 
       {/* Activity Log */}
       <Card title="Activity Log">
+        {weeklySummary && (
+          <div className="text-xs font-medium text-text-secondary mb-3 pb-2 border-b border-border">
+            {weeklySummary}
+          </div>
+        )}
         {weekActivities.length > 0 ? (
           <div className="space-y-3">
             {weekActivities.map((a: any, i: number) => (

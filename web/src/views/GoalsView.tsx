@@ -1,7 +1,9 @@
+import { useMemo } from 'react'
 import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
-import { useBodyComposition, useDailyMetrics } from '../hooks/useSupabase'
+import { useBodyComposition, useDailyMetrics, useActivities } from '../hooks/useSupabase'
 import { getProgramWeek } from '../lib/program'
+import { startOfWeek, endOfWeek, isWithinInterval } from 'date-fns'
 import { Target, Mountain, Dumbbell, Calendar } from 'lucide-react'
 
 function ProgressBar({ value, max, color }: { value: number; max: number; color: string }) {
@@ -19,9 +21,41 @@ function ProgressBar({ value, max, color }: { value: number; max: number; color:
 export default function GoalsView() {
   const bodyComp = useBodyComposition(90)
   const metrics = useDailyMetrics(14)
+  const activitiesHook = useActivities(14)
 
-  const loading = bodyComp.loading || metrics.loading
-  const error = bodyComp.error || metrics.error
+  const loading = bodyComp.loading || metrics.loading || activitiesHook.loading
+  const error = bodyComp.error || metrics.error || activitiesHook.error
+
+  const now = new Date()
+  const weekStart = startOfWeek(now, { weekStartsOn: 1 })
+  const weekEnd = endOfWeek(now, { weekStartsOn: 1 })
+
+  const weekActivities = useMemo(() => {
+    if (!activitiesHook.data) return []
+    return activitiesHook.data.filter((a: any) =>
+      isWithinInterval(new Date(a.date), { start: weekStart, end: weekEnd })
+    )
+  }, [activitiesHook.data, weekStart.getTime(), weekEnd.getTime()])
+
+  const gymThisWeek = useMemo(
+    () => weekActivities.filter((a: any) => a.activity_type === 'strength_training').length,
+    [weekActivities]
+  )
+  const mountainDaysThisWeek = useMemo(
+    () => weekActivities.filter((a: any) =>
+      ['resort_snowboarding', 'backcountry_snowboarding', 'resort_skiing', 'backcountry_skiing', 'hiking', 'ski_touring', 'splitboarding'].includes(a.activity_type)
+    ).length,
+    [weekActivities]
+  )
+  const weeklyElevation = useMemo(
+    () => Math.round((activitiesHook.data ?? [])
+      .filter((a: any) => {
+        const d = new Date(a.date)
+        return isWithinInterval(d, { start: weekStart, end: weekEnd })
+      })
+      .reduce((sum: number, a: any) => sum + (a.elevation_gain || 0), 0)),
+    [activitiesHook.data, weekStart.getTime(), weekEnd.getTime()]
+  )
 
   if (loading) return <LoadingState />
   if (error) return <div className="text-accent-red p-4">{error}</div>
@@ -47,26 +81,31 @@ export default function GoalsView() {
               <div className="flex-1 min-w-0">
                 <h3 className="text-sm font-semibold text-text-primary">Body Recomposition</h3>
                 <div className="mt-2 space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-text-secondary">Weight</span>
-                    <span className="text-text-primary font-medium">
-                      {latestWeight?.weight_kg
-                        ? `${latestWeight.weight_kg.toFixed(1)} kg`
-                        : '-- kg'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-text-secondary">Body Fat</span>
-                    <span className="text-text-primary font-medium">
-                      {latestBodyFat?.body_fat_pct
-                        ? `${latestBodyFat.body_fat_pct.toFixed(1)}%`
-                        : '--%'}
-                    </span>
-                  </div>
-                  <div className="mt-2 rounded-lg bg-bg-card-hover border border-border px-3 py-2 text-xs text-text-muted">
-                    No DEXA baseline yet. Body fat target will be set after first DEXA scan.
-                    Garmin scale estimates shown above.
-                  </div>
+                  {latestWeight?.weight_kg || latestBodyFat?.body_fat_pct ? (
+                    <>
+                      {latestWeight?.weight_kg && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-text-secondary">Weight</span>
+                          <span className="text-text-primary font-medium">
+                            {latestWeight.weight_kg.toFixed(1)} kg
+                          </span>
+                        </div>
+                      )}
+                      {latestBodyFat?.body_fat_pct && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-text-secondary">Body Fat</span>
+                          <span className="text-text-primary font-medium">
+                            {latestBodyFat.body_fat_pct.toFixed(1)}%
+                            <span className="text-text-muted ml-1 text-xs">(scale est.)</span>
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="rounded-lg bg-bg-card-hover border border-border px-3 py-2 text-xs text-text-muted">
+                      Baseline needed — schedule a gym scan
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -86,9 +125,8 @@ export default function GoalsView() {
                       <span className="text-text-secondary">VO2max</span>
                       <span className="text-text-primary font-medium">
                         {latestVO2?.vo2max
-                          ? `${Number(latestVO2.vo2max).toFixed(1)}`
+                          ? Number(latestVO2.vo2max).toFixed(1)
                           : '--'}
-                        <span className="text-text-muted ml-1">/ target TBD</span>
                       </span>
                     </div>
                     {latestVO2?.vo2max && (
@@ -98,8 +136,10 @@ export default function GoalsView() {
                   <div>
                     <div className="flex justify-between text-sm">
                       <span className="text-text-secondary">Weekly Elevation</span>
-                      <span className="text-text-muted font-medium">
-                        tracking in Trends view
+                      <span className="text-text-primary font-medium">
+                        {weeklyElevation > 0
+                          ? `${weeklyElevation.toLocaleString()}m`
+                          : '0m'}
                       </span>
                     </div>
                   </div>
@@ -109,49 +149,67 @@ export default function GoalsView() {
           </Card>
 
           {/* Strength */}
-          <Card>
-            <div className="flex items-start gap-3">
-              <div className="p-2 rounded-lg bg-accent-blue/20 text-accent-blue">
-                <Dumbbell size={20} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="text-sm font-semibold text-text-primary">Strength</h3>
-                <div className="mt-2">
-                  {week < 4 ? (
-                    <div className="rounded-lg bg-bg-card-hover border border-border px-3 py-2 text-xs text-text-muted">
-                      e1RM targets will be set after the Week 4 assessment (working weights
-                      established). Currently in Week {week} — building base.
+          {week < 4 ? (
+            <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-bg-card border border-border">
+              <Dumbbell size={16} className="text-accent-blue shrink-0" />
+              <span className="text-sm text-text-muted">Strength targets set after Week 4 assessment (Apr 27)</span>
+            </div>
+          ) : (
+            <Card>
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-lg bg-accent-blue/20 text-accent-blue">
+                  <Dumbbell size={20} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-semibold text-text-primary">Strength</h3>
+                  <div className="mt-2 space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-text-secondary">Squat e1RM</span>
+                      <span className="text-text-muted">awaiting data</span>
                     </div>
-                  ) : (
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-text-secondary">Squat e1RM</span>
-                        <span className="text-text-muted">awaiting data</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-text-secondary">Deadlift e1RM</span>
-                        <span className="text-text-muted">awaiting data</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-text-secondary">Bench e1RM</span>
-                        <span className="text-text-muted">awaiting data</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-text-secondary">OH Press e1RM</span>
-                        <span className="text-text-muted">awaiting data</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-text-secondary">Row e1RM</span>
-                        <span className="text-text-muted">awaiting data</span>
-                      </div>
+                    <div className="flex justify-between">
+                      <span className="text-text-secondary">Deadlift e1RM</span>
+                      <span className="text-text-muted">awaiting data</span>
                     </div>
-                  )}
+                    <div className="flex justify-between">
+                      <span className="text-text-secondary">Bench e1RM</span>
+                      <span className="text-text-muted">awaiting data</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-text-secondary">OH Press e1RM</span>
+                      <span className="text-text-muted">awaiting data</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-text-secondary">Row e1RM</span>
+                      <span className="text-text-muted">awaiting data</span>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </Card>
+            </Card>
+          )}
         </div>
       </div>
+
+      {/* This Week */}
+      <Card title="This Week">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="flex items-center gap-2">
+            <Dumbbell size={16} className="text-accent-blue shrink-0" />
+            <div>
+              <div className="text-lg font-bold text-text-primary">{gymThisWeek}<span className="text-sm text-text-muted font-normal">/3</span></div>
+              <div className="text-xs text-text-muted">Strength sessions</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Mountain size={16} className="text-mountain shrink-0" />
+            <div>
+              <div className="text-lg font-bold text-text-primary">{mountainDaysThisWeek}</div>
+              <div className="text-xs text-text-muted">Mountain days</div>
+            </div>
+          </div>
+        </div>
+      </Card>
 
       {/* Season Context */}
       <Card title="Season Context">
