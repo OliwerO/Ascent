@@ -19,16 +19,16 @@ function classifyActivity(type: string | null | undefined): string | null {
   const t = type.toLowerCase()
   if (t.includes('ski') || t.includes('snowboard') || t.includes('backcountry')) return 'ski'
   if (t.includes('hik') || t.includes('trail') || t.includes('mountaineering')) return 'hike'
-  if (t.includes('hang_gliding') || t.includes('paraglid')) return 'hike' // hike & fly
+  if (t.includes('hang_gliding') || t.includes('paraglid')) return 'fly'
   if (t.includes('run')) return 'run'
   if (t.includes('cycling') || t.includes('biking') || t.includes('ride')) return 'cycle'
-  // Skip non-elevation activities (gym, yoga, stair climbing, etc.)
   return null
 }
 
 const elevationColors: Record<string, string> = {
   ski: '#38bdf8',
   hike: '#22c55e',
+  fly: '#fb923c',
   run: '#eab308',
   cycle: '#a855f7',
 }
@@ -88,7 +88,7 @@ export default function TrendsView() {
       (weeklyElevation[weekKey].byType[actType] || 0) + a.elevation_gain
   }
 
-  const elevationTypes = ['ski', 'hike', 'run', 'cycle']
+  const elevationTypes = ['ski', 'hike', 'fly', 'run', 'cycle']
   const elevationChartData = Object.entries(weeklyElevation)
     .sort(([a], [b]) => (weekDates[a]?.getTime() ?? 0) - (weekDates[b]?.getTime() ?? 0))
     .map(([week, data]) => ({
@@ -267,7 +267,7 @@ export default function TrendsView() {
                   dataKey={type}
                   stackId="elev"
                   fill={elevationColors[type]}
-                  name={type.charAt(0).toUpperCase() + type.slice(1)}
+                  name={type === 'fly' ? 'Paragliding' : type.charAt(0).toUpperCase() + type.slice(1)}
                   radius={type === 'other' ? [2, 2, 0, 0] : [0, 0, 0, 0]}
                 />
               ))}
