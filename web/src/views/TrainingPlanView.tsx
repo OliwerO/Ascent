@@ -10,7 +10,6 @@ import {
   isDeloadWeek,
   analyzeLiftProgression,
   type SessionType,
-  type WeekSchedule,
 } from '../lib/program'
 import { format, isSameDay, startOfWeek, endOfWeek, isWithinInterval } from 'date-fns'
 import {
@@ -123,14 +122,6 @@ function acwrLabel(acwr: number): { text: string; color: string } {
   return { text: 'Significant detraining — fitness declining', color: 'text-accent-red' }
 }
 
-function dayTypeCell(dayType: string, session: SessionType | null): string {
-  if (dayType === 'gym' && session) return session
-  if (dayType === 'mountain') return '\u{1F3D4}'
-  if (dayType === 'mobility') return 'Mob'
-  if (dayType === 'intervals') return 'INT'
-  if (dayType === 'cardio') return 'Card'
-  return '\u2014'
-}
 
 function fmtDate(d: Date): string {
   return format(d, 'yyyy-MM-dd')
@@ -366,247 +357,246 @@ function WeekGrid({
 
   const weeks = useMemo(() => Array.from({ length: 8 }, (_, i) => getWeekSchedule(i + 1)), [])
 
+  // Short pill labels
+  const pillLabel = (dayType: string, session: SessionType | null, isConsolidated: boolean, dayIndex: number): string => {
+    if (dayType === 'gym' && session) {
+      if (isConsolidated && dayIndex === 0) return '\u2014'
+      const labels: Record<string, string> = {
+        B: 'Upper+Core',
+        A: 'Full Body',
+        C: 'Full Body V2',
+        A2: 'Heavy',
+        B2: 'Functional',
+      }
+      return labels[session] ?? session
+    }
+    if (dayType === 'mobility') return 'Mob'
+    if (dayType === 'intervals') return 'HIIT'
+    if (dayType === 'mountain') return '\u{1F3D4}'
+    return '\u2014'
+  }
+
+  // Pill background color
+  const pillBg = (
+    dayType: string,
+    _session: SessionType | null,
+    completed: boolean,
+    isPast: boolean,
+    isToday: boolean,
+    hasMountainActual: boolean,
+    isConsolidated: boolean,
+    dayIndex: number,
+  ): string => {
+    // Consolidated week: Monday gym becomes rest
+    if (isConsolidated && dayType === 'gym' && dayIndex === 0)
+      return 'bg-bg-primary/40 text-text-muted'
+
+    if (dayType === 'gym') {
+      if (completed) return 'bg-accent-green/20 text-accent-green'
+      if (isToday) return 'bg-accent-blue/20 text-accent-blue'
+      if (isPast) return 'bg-accent-red/20 text-accent-red'
+      return 'bg-accent-purple/20 text-accent-purple'
+    }
+    if (dayType === 'mountain') {
+      if (hasMountainActual) return 'bg-sky-500/20 text-sky-400'
+      return 'bg-sky-500/10 text-sky-400/60'
+    }
+    if (dayType === 'intervals') return 'bg-orange-500/20 text-orange-400'
+    // rest, mobility
+    return 'bg-bg-primary/40 text-text-muted'
+  }
+
   return (
     <Card title="8-Week Program">
       <div className="space-y-1">
-        {/* Header */}
-        <div className="grid grid-cols-[auto_repeat(7,1fr)] gap-1 text-[10px] text-text-muted font-medium px-1">
-          <div className="w-12" />
-          <div className="text-center">Mon</div>
-          <div className="text-center">Tue</div>
-          <div className="text-center">Wed</div>
-          <div className="text-center">Thu</div>
-          <div className="text-center">Fri</div>
-          <div className="text-center">Sat</div>
-          <div className="text-center">Sun</div>
-        </div>
-
         {weeks.map((ws) => {
           const isCurrent = ws.weekNum === currentWeek
           const isExpanded = expandedWeek === ws.weekNum
+          const isConsolidatedWeek = consolidatedWeeks.has(ws.weekNum)
+
+          // Compute week stats
+          const weekDates = ws.days.map((d) => fmtDate(d.date))
+          const gymTarget = isConsolidatedWeek ? 2 : 3
+          const gymCompleted = weekDates.filter((d) => completedDates.has(d)).length
+          const mountainCompleted = weekDates.filter((d) => mountainByDate.has(d)).length
+
+          // Effective sessions per day (handles consolidation)
+          const effectiveDays = ws.days.map((day, i) => {
+            const effectiveDayType =
+              isConsolidatedWeek && day.dayType === 'gym' && i === 0
+                ? ('rest' as const)
+                : day.dayType
+            const effectiveSession: SessionType | null =
+              isConsolidatedWeek && day.dayType === 'gym'
+                ? i === 2 ? 'A2' : i === 4 ? 'B2' : null
+                : day.session
+            return { ...day, dayType: effectiveDayType, session: effectiveSession, origIndex: i }
+          })
 
           return (
             <div key={ws.weekNum}>
-              {/* Week row */}
               <button
                 onClick={() => setExpandedWeek(isExpanded ? null : ws.weekNum)}
-                className={`w-full grid grid-cols-[auto_repeat(7,1fr)] gap-1 items-center px-1 py-1.5 rounded-lg transition-colors hover:bg-bg-card-hover ${
+                className={`w-full text-left px-3 py-2.5 rounded-lg transition-colors hover:bg-bg-card-hover ${
                   isCurrent ? 'border-l-2 border-accent-blue bg-bg-card-hover/50' : ''
                 }`}
               >
-                {/* Week label */}
-                <div className="w-12 flex items-center gap-1 text-xs text-text-secondary">
-                  {isExpanded ? (
-                    <ChevronDown size={12} />
-                  ) : (
-                    <ChevronRight size={12} />
+                {/* Top line: week number + badges + completion counts */}
+                <div className="flex items-center gap-2 mb-1.5">
+                  {isExpanded ? <ChevronDown size={14} className="text-text-muted shrink-0" /> : <ChevronRight size={14} className="text-text-muted shrink-0" />}
+                  <span className="text-sm font-medium text-text-primary">Week {ws.weekNum}</span>
+                  {isCurrent && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-blue/20 text-accent-blue font-medium">
+                      Current
+                    </span>
                   )}
-                  <span>
-                    Wk{ws.weekNum}
-                    {ws.deload && <span className="text-accent-yellow ml-0.5">{'\u2193'}</span>}
+                  {ws.deload && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-yellow/20 text-accent-yellow font-medium">
+                      Deload
+                    </span>
+                  )}
+                  {isConsolidatedWeek && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-purple/20 text-accent-purple font-medium">
+                      Consolidated
+                    </span>
+                  )}
+                  <span className="ml-auto text-xs text-text-secondary">
+                    <Dumbbell size={11} className="inline text-gym mr-0.5" />
+                    {gymCompleted}/{gymTarget}
+                    <span className="mx-1.5 text-text-muted">&middot;</span>
+                    <Mountain size={11} className="inline text-mountain mr-0.5" />
+                    {mountainCompleted}
                   </span>
                 </div>
 
-                {/* Day cells */}
-                {ws.days.map((day, i) => {
-                  const dateStr = fmtDate(day.date)
-                  const isPast = day.date < today && !isSameDay(day.date, today)
-                  const isToday = isSameDay(day.date, today)
-                  const completed = completedDates.has(dateStr)
-                  const hasMountain = mountainByDate.has(dateStr)
-                  const dayActivities = activitiesByDate.get(dateStr) ?? []
-                  const isConsolidatedWeek = consolidatedWeeks.has(ws.weekNum)
+                {/* Pill row */}
+                <div className="flex gap-1 flex-wrap ml-5">
+                  {effectiveDays.map((day, i) => {
+                    const dateStr = fmtDate(day.date)
+                    const isPast = day.date < today && !isSameDay(day.date, today)
+                    const isToday = isSameDay(day.date, today)
+                    const completed = completedDates.has(dateStr)
+                    const hasMountainActual = mountainByDate.has(dateStr)
+                    const dayActivities = activitiesByDate.get(dateStr) ?? []
 
-                  // In consolidated weeks, Monday gym is dropped (becomes rest)
-                  // and remaining gym days shift to A2 Wed + B2 Fri
-                  const effectiveDayType =
-                    isConsolidatedWeek && day.dayType === 'gym' && i === 0
-                      ? ('rest' as const)
-                      : day.dayType
-                  const effectiveSession: SessionType | null =
-                    isConsolidatedWeek && day.dayType === 'gym'
-                      ? i === 2
-                        ? 'A2'
-                        : i === 4
-                          ? 'B2'
-                          : null
-                      : day.session
+                    // Override pill for actual activity on non-gym days
+                    let label = pillLabel(day.dayType, day.session, isConsolidatedWeek, i)
+                    let bg = pillBg(day.dayType, day.session, completed, isPast, isToday, hasMountainActual, isConsolidatedWeek, i)
 
-                  let statusIcon = ''
-                  if (effectiveDayType === 'gym') {
-                    if (completed) statusIcon = '\u2713'
-                    else if (isPast) statusIcon = '\u2717'
-                    else statusIcon = '\u25CB'
-                  }
-
-                  // For past days, check if actual activity happened
-                  const actualMountain = dayActivities.some((a) =>
-                    MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type)
-                  )
-                  const actualGym = dayActivities.some(
-                    (a) => a.activity_type === 'strength_training'
-                  )
-                  const hasActualActivity = dayActivities.length > 0
-
-                  // Determine cell label and color
-                  let cellLabel: string
-                  let cellColor: string
-
-                  if ((isPast || isToday) && hasActualActivity && effectiveDayType !== 'gym') {
-                    // Non-gym day had actual activity -- show what happened
-                    if (actualMountain) {
-                      cellLabel = '\u{1F3D4}'
-                      cellColor = 'text-mountain'
-                    } else if (actualGym) {
-                      cellLabel = dayTypeCell('gym', effectiveSession)
-                      cellColor = 'text-gym'
-                    } else {
-                      cellLabel = formatActivityType(dayActivities[0].activity_type).slice(0, 4)
-                      cellColor = 'text-accent-blue'
+                    if ((isPast || isToday) && dayActivities.length > 0 && day.dayType !== 'gym') {
+                      const hasActualMtn = dayActivities.some((a) => MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type))
+                      if (hasActualMtn) {
+                        label = '\u{1F3D4}'
+                        bg = 'bg-sky-500/20 text-sky-400'
+                      }
                     }
-                  } else {
-                    cellLabel = dayTypeCell(effectiveDayType, effectiveSession)
-                    cellColor = effectiveDayType === 'gym'
-                      ? 'text-gym'
-                      : effectiveDayType === 'mountain'
-                        ? 'text-mountain'
-                        : 'text-text-muted'
-                  }
 
-                  const keyWeight =
-                    effectiveSession && SESSION_EXERCISES[effectiveSession]?.[0]
-                      ? getPlannedWeight(SESSION_EXERCISES[effectiveSession][0].name, ws.weekNum)
-                      : null
-
-                  return (
-                    <div
-                      key={i}
-                      className={`text-center text-[11px] py-1 rounded ${
-                        isToday
-                          ? 'bg-accent-blue/20 text-accent-blue font-semibold'
-                          : cellColor
-                      }`}
-                    >
-                      <div>{cellLabel}</div>
-                      {effectiveDayType === 'gym' && keyWeight != null && (
-                        <div className="text-[9px] text-text-muted">{keyWeight}kg</div>
-                      )}
-                      {effectiveDayType === 'gym' && (
-                        <div
-                          className={`text-[9px] ${
-                            completed
-                              ? 'text-accent-green'
-                              : isPast
-                                ? 'text-accent-red'
-                                : 'text-text-muted'
-                          }`}
-                        >
-                          {statusIcon}
-                        </div>
-                      )}
-                      {effectiveDayType === 'mountain' && hasMountain && (
-                        <div className="text-[9px] text-accent-green">{'\u2713'}</div>
-                      )}
-                      {effectiveDayType === 'mountain' && isPast && !hasMountain && (
-                        <div className="text-[9px] text-text-muted">{'\u2014'}</div>
-                      )}
-                    </div>
-                  )
-                })}
+                    return (
+                      <span
+                        key={i}
+                        className={`inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${bg}`}
+                        title={`${format(day.date, 'EEE d MMM')}`}
+                      >
+                        {label}
+                      </span>
+                    )
+                  })}
+                </div>
               </button>
 
-              {/* Expanded detail */}
+              {/* Expanded detail — inline */}
               {isExpanded && (
-                <WeekDetail
-                  week={ws}
-                  sessions={sessions}
-                  mountainByDate={mountainByDate}
-                />
+                <div className="ml-8 mr-2 mb-2 mt-1 space-y-3">
+                  {/* Gym days */}
+                  {effectiveDays
+                    .filter((d) => d.dayType === 'gym' && d.session)
+                    .map((day) => {
+                      const dateStr = fmtDate(day.date)
+                      const completed = completedDates.has(dateStr)
+                      const exercises = SESSION_EXERCISES[day.session!] ?? []
+                      const sessionName = SESSION_NAMES[day.session!] ?? day.session
+                      const rpeLabel = ws.deload ? 'Deload 50% vol' : ws.block === 1 ? 'RPE 6-7' : 'RPE 7-8'
+
+                      return (
+                        <div key={dateStr} className="bg-bg-primary/50 rounded-lg px-3 py-2">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Dumbbell size={13} className="text-gym shrink-0" />
+                            <span className="text-sm font-medium text-text-primary">
+                              {sessionName}
+                            </span>
+                            {completed && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-green/20 text-accent-green font-medium">
+                                Done
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-text-secondary mb-2">
+                            {format(day.date, 'EEE')} &middot; {rpeLabel}
+                          </div>
+                          <div className="space-y-0.5">
+                            {exercises.map((ex) => {
+                              const weight = getPlannedWeight(ex.name, ws.weekNum)
+                              const setsReps = ws.deload
+                                ? `${Math.ceil(ex.sets / 2)}\u00D7${ex.reps}`
+                                : `${ex.sets}\u00D7${ex.reps}`
+                              return (
+                                <div
+                                  key={ex.name}
+                                  className="flex justify-between text-xs font-mono"
+                                >
+                                  <span className="text-text-secondary">{ex.name}</span>
+                                  <span className="text-text-muted">
+                                    {setsReps}
+                                    {weight != null && weight > 0 ? ` @ ${weight}kg` : ''}
+                                  </span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
+
+                  {/* Mountain activities (actual from Garmin) */}
+                  {ws.days
+                    .filter((d) => {
+                      const dateStr = fmtDate(d.date)
+                      return mountainByDate.has(dateStr)
+                    })
+                    .flatMap((d) => {
+                      const dateStr = fmtDate(d.date)
+                      return (mountainByDate.get(dateStr) ?? []).map((a, ai) => (
+                        <div key={`${dateStr}-${ai}`} className="bg-bg-primary/50 rounded-lg px-3 py-2">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Mountain size={13} className="text-mountain shrink-0" />
+                            <span className="text-sm font-medium text-text-primary">
+                              {a.activity_name ?? formatActivityType(a.activity_type)}
+                            </span>
+                          </div>
+                          <div className="text-xs text-text-secondary">
+                            {format(new Date(a.date + 'T12:00:00'), 'EEE')}
+                            {a.duration_seconds != null && <span> &middot; {formatDuration(a.duration_seconds)}</span>}
+                            {a.elevation_gain != null && a.elevation_gain > 0 && (
+                              <span> &middot; {Math.round(a.elevation_gain)}m &uarr;</span>
+                            )}
+                            {a.avg_hr != null && <span> &middot; HR {a.avg_hr}</span>}
+                          </div>
+                        </div>
+                      ))
+                    })}
+
+                  {/* Empty state */}
+                  {effectiveDays.filter((d) => d.dayType === 'gym' && d.session).length === 0 &&
+                    ws.days.every((d) => !mountainByDate.has(fmtDate(d.date))) && (
+                    <div className="text-xs text-text-muted py-1">No recorded sessions this week</div>
+                  )}
+                </div>
               )}
             </div>
           )
         })}
       </div>
     </Card>
-  )
-}
-
-function WeekDetail({
-  week,
-  sessions,
-  mountainByDate,
-}: {
-  week: WeekSchedule
-  sessions: TrainingSession[]
-  mountainByDate: Map<string, Activity[]>
-}) {
-  const weekDates = new Set(week.days.map((d) => fmtDate(d.date)))
-
-  const weekSessions = sessions.filter((s) => weekDates.has(s.date))
-  const weekMountain = week.days
-    .filter((d) => d.dayType === 'mountain')
-    .flatMap((d) => mountainByDate.get(fmtDate(d.date)) ?? [])
-
-  return (
-    <div className="ml-12 mr-1 mb-2 space-y-2">
-      {/* Gym sessions */}
-      {weekSessions.length > 0 && (
-        <div className="space-y-1">
-          <div className="text-[10px] text-text-muted font-medium uppercase tracking-wide">
-            Gym Sessions
-          </div>
-          {weekSessions.map((s) => (
-            <div
-              key={s.id}
-              className="flex items-center gap-3 text-xs text-text-secondary bg-bg-primary/50 rounded px-2 py-1"
-            >
-              <Dumbbell size={12} className="text-gym shrink-0" />
-              <span className="font-medium text-text-primary">{s.name ?? 'Session'}</span>
-              <span>{s.date}</span>
-              {s.total_volume_kg != null && (
-                <span>{Math.round(s.total_volume_kg).toLocaleString()}kg vol</span>
-              )}
-              {s.duration_minutes != null && <span>{s.duration_minutes}min</span>}
-              {s.rating != null && <span>{'*'.repeat(s.rating)}</span>}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Mountain activities */}
-      {weekMountain.length > 0 && (
-        <div className="space-y-1">
-          <div className="text-[10px] text-text-muted font-medium uppercase tracking-wide">
-            Mountain Activities
-          </div>
-          {weekMountain.map((a, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-3 text-xs text-text-secondary bg-bg-primary/50 rounded px-2 py-1"
-            >
-              <Mountain size={12} className="text-mountain shrink-0" />
-              <span className="font-medium text-text-primary">
-                {a.activity_name ?? formatActivityType(a.activity_type)}
-              </span>
-              {a.elevation_gain != null && a.elevation_gain > 0 && (
-                <span>{Math.round(a.elevation_gain)}m vert</span>
-              )}
-              {a.duration_seconds != null && <span>{formatDuration(a.duration_seconds)}</span>}
-              {a.avg_hr != null && (
-                <span>
-                  Avg HR {a.avg_hr}
-                  {a.max_hr ? ` / ${a.max_hr}` : ''}
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {weekSessions.length === 0 && weekMountain.length === 0 && (
-        <div className="text-xs text-text-muted py-1">No recorded sessions this week</div>
-      )}
-    </div>
   )
 }
 
