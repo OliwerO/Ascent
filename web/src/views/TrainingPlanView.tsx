@@ -363,7 +363,7 @@ function WeekGrid({
       if (isConsolidated && dayIndex === 0) return '\u2014'
       const labels: Record<string, string> = {
         B: 'Upper+Core',
-        A: 'Full Body',
+        A: 'Full Body V1',
         C: 'Full Body V2',
         A2: 'Heavy',
         B2: 'Functional',
@@ -371,7 +371,7 @@ function WeekGrid({
       return labels[session] ?? session
     }
     if (dayType === 'mobility') return 'Mob'
-    if (dayType === 'intervals') return 'HIIT'
+    if (dayType === 'intervals' || dayType === 'cardio') return '\u2014'
     if (dayType === 'mountain') return '\u{1F3D4}'
     return '\u2014'
   }
@@ -401,8 +401,7 @@ function WeekGrid({
       if (hasMountainActual) return 'bg-sky-500/20 text-sky-400'
       return 'bg-sky-500/10 text-sky-400/60'
     }
-    if (dayType === 'intervals') return 'bg-orange-500/20 text-orange-400'
-    // rest, mobility
+    // rest, mobility, intervals, cardio
     return 'bg-bg-primary/40 text-text-muted'
   }
 
