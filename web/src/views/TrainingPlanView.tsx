@@ -8,10 +8,11 @@ import {
   getWeekSchedule,
   SESSION_NAMES,
   isDeloadWeek,
+  analyzeLiftProgression,
   type SessionType,
   type WeekSchedule,
 } from '../lib/program'
-import { format, isSameDay } from 'date-fns'
+import { format, isSameDay, startOfWeek, endOfWeek, isWithinInterval } from 'date-fns'
 import {
   LineChart,
   Line,
@@ -114,6 +115,14 @@ function acwrBgClass(acwr: number): string {
   return 'text-accent-red'
 }
 
+function acwrLabel(acwr: number): { text: string; color: string } {
+  if (acwr > 1.5) return { text: 'Spike risk — high injury probability', color: 'text-accent-red' }
+  if (acwr >= 1.3) return { text: 'Elevated load — monitor recovery', color: 'text-accent-yellow' }
+  if (acwr >= 0.8) return { text: 'Sweet spot — optimal training zone', color: 'text-accent-green' }
+  if (acwr >= 0.5) return { text: 'Detraining risk — consider increasing volume', color: 'text-accent-yellow' }
+  return { text: 'Significant detraining — fitness declining', color: 'text-accent-red' }
+}
+
 function dayTypeCell(dayType: string, session: SessionType | null): string {
   if (dayType === 'gym' && session) return session
   if (dayType === 'mountain') return '\u{1F3D4}'
@@ -201,7 +210,7 @@ export function TrainingPlanView() {
 
   return (
     <div className="space-y-4 pb-8">
-      <ProgramOverview />
+      <ProgramOverview activities={activities} sessions={sessions} />
       <WeekGrid activities={activities} sessions={sessions} />
       <TodaySession sessions={sessions} sets={sets} coaching={coaching} />
       <LiftProgressionTracker sessions={sessions} sets={sets} />
@@ -214,11 +223,41 @@ export function TrainingPlanView() {
 // ═══════════════════════════════════════════════════════════════════
 // 1. Program Overview
 // ═══════════════════════════════════════════════════════════════════
-function ProgramOverview() {
-  const { block, week } = getProgramWeek(new Date())
+function ProgramOverview({
+  activities,
+  sessions,
+}: {
+  activities: Activity[]
+  sessions: TrainingSession[]
+}) {
+  const today = new Date()
+  const { block, week } = getProgramWeek(today)
   const nextDeload = week <= 4 ? 4 : 8
   const rpeRange = block === 1 ? '6-7' : '7-8'
   const pctDone = (week / 8) * 100
+
+  // Current week compliance
+  const weekStart = startOfWeek(today, { weekStartsOn: 1 })
+  const weekEnd = endOfWeek(today, { weekStartsOn: 1 })
+
+  const { gymCompleted, mountainCompleted, isConsolidated, gymTarget } = useMemo(() => {
+    const inWeek = (dateStr: string) => {
+      const d = new Date(dateStr + 'T12:00:00')
+      return isWithinInterval(d, { start: weekStart, end: weekEnd })
+    }
+
+    const gym = sessions.filter((s) => inWeek(s.date)).length
+    const mountain = activities.filter(
+      (a) => MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type) && inWeek(a.date)
+    ).length
+    const consolidated = mountain >= 2
+    return {
+      gymCompleted: gym,
+      mountainCompleted: mountain,
+      isConsolidated: consolidated,
+      gymTarget: consolidated ? 2 : 3,
+    }
+  }, [activities, sessions, weekStart, weekEnd])
 
   return (
     <Card>
@@ -240,8 +279,23 @@ function ProgramOverview() {
           />
         </div>
 
+        {/* Compliance stats */}
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+          <span className={gymCompleted >= gymTarget ? 'text-accent-green' : 'text-text-secondary'}>
+            Gym: {gymCompleted}/{gymTarget}
+          </span>
+          <span className={mountainCompleted > 0 ? 'text-accent-green' : 'text-text-secondary'}>
+            Mountain: {mountainCompleted}
+          </span>
+          {isConsolidated && (
+            <span className="text-accent-yellow text-xs">
+              2x consolidated (A2 Wed + B2 Fri)
+            </span>
+          )}
+        </div>
+
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-text-secondary">
-          <span>3x/week gym + mountain days</span>
+          <span>{isConsolidated ? '2x/week gym (consolidated)' : '3x/week gym'} + mountain days</span>
           <span>RPE {rpeRange} &middot; Linear progression</span>
           <span>Next deload: Week {nextDeload}</span>
         </div>
@@ -283,6 +337,32 @@ function WeekGrid({
       })
     return m
   }, [activities])
+
+  // Build a map of all activities by date for overlay
+  const activitiesByDate = useMemo(() => {
+    const m = new Map<string, Activity[]>()
+    activities.forEach((a) => {
+      const existing = m.get(a.date) ?? []
+      existing.push(a)
+      m.set(a.date, existing)
+    })
+    return m
+  }, [activities])
+
+  // Detect consolidated weeks: weeks where 2+ mountain days occurred
+  const consolidatedWeeks = useMemo(() => {
+    const s = new Set<number>()
+    for (let w = 1; w <= 8; w++) {
+      const ws = getWeekSchedule(w)
+      const weekDates = ws.days.map((d) => fmtDate(d.date))
+      const mountainCount = weekDates.reduce(
+        (count, date) => count + (mountainByDate.has(date) ? 1 : 0),
+        0
+      )
+      if (mountainCount >= 2) s.add(w)
+    }
+    return s
+  }, [mountainByDate])
 
   const weeks = useMemo(() => Array.from({ length: 8 }, (_, i) => getWeekSchedule(i + 1)), [])
 
@@ -334,18 +414,68 @@ function WeekGrid({
                   const isToday = isSameDay(day.date, today)
                   const completed = completedDates.has(dateStr)
                   const hasMountain = mountainByDate.has(dateStr)
+                  const dayActivities = activitiesByDate.get(dateStr) ?? []
+                  const isConsolidatedWeek = consolidatedWeeks.has(ws.weekNum)
+
+                  // In consolidated weeks, Monday gym is dropped (becomes rest)
+                  // and remaining gym days shift to A2 Wed + B2 Fri
+                  const effectiveDayType =
+                    isConsolidatedWeek && day.dayType === 'gym' && i === 0
+                      ? ('rest' as const)
+                      : day.dayType
+                  const effectiveSession: SessionType | null =
+                    isConsolidatedWeek && day.dayType === 'gym'
+                      ? i === 2
+                        ? 'A2'
+                        : i === 4
+                          ? 'B2'
+                          : null
+                      : day.session
 
                   let statusIcon = ''
-                  if (day.dayType === 'gym') {
+                  if (effectiveDayType === 'gym') {
                     if (completed) statusIcon = '\u2713'
                     else if (isPast) statusIcon = '\u2717'
                     else statusIcon = '\u25CB'
                   }
 
-                  const cellLabel = dayTypeCell(day.dayType, day.session)
+                  // For past days, check if actual activity happened
+                  const actualMountain = dayActivities.some((a) =>
+                    MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type)
+                  )
+                  const actualGym = dayActivities.some(
+                    (a) => a.activity_type === 'strength_training'
+                  )
+                  const hasActualActivity = dayActivities.length > 0
+
+                  // Determine cell label and color
+                  let cellLabel: string
+                  let cellColor: string
+
+                  if ((isPast || isToday) && hasActualActivity && effectiveDayType !== 'gym') {
+                    // Non-gym day had actual activity -- show what happened
+                    if (actualMountain) {
+                      cellLabel = '\u{1F3D4}'
+                      cellColor = 'text-mountain'
+                    } else if (actualGym) {
+                      cellLabel = dayTypeCell('gym', effectiveSession)
+                      cellColor = 'text-gym'
+                    } else {
+                      cellLabel = formatActivityType(dayActivities[0].activity_type).slice(0, 4)
+                      cellColor = 'text-accent-blue'
+                    }
+                  } else {
+                    cellLabel = dayTypeCell(effectiveDayType, effectiveSession)
+                    cellColor = effectiveDayType === 'gym'
+                      ? 'text-gym'
+                      : effectiveDayType === 'mountain'
+                        ? 'text-mountain'
+                        : 'text-text-muted'
+                  }
+
                   const keyWeight =
-                    day.session && SESSION_EXERCISES[day.session]?.[0]
-                      ? getPlannedWeight(SESSION_EXERCISES[day.session][0].name, ws.weekNum)
+                    effectiveSession && SESSION_EXERCISES[effectiveSession]?.[0]
+                      ? getPlannedWeight(SESSION_EXERCISES[effectiveSession][0].name, ws.weekNum)
                       : null
 
                   return (
@@ -354,18 +484,14 @@ function WeekGrid({
                       className={`text-center text-[11px] py-1 rounded ${
                         isToday
                           ? 'bg-accent-blue/20 text-accent-blue font-semibold'
-                          : day.dayType === 'gym'
-                            ? 'text-gym'
-                            : day.dayType === 'mountain'
-                              ? 'text-mountain'
-                              : 'text-text-muted'
+                          : cellColor
                       }`}
                     >
                       <div>{cellLabel}</div>
-                      {day.dayType === 'gym' && keyWeight != null && (
+                      {effectiveDayType === 'gym' && keyWeight != null && (
                         <div className="text-[9px] text-text-muted">{keyWeight}kg</div>
                       )}
-                      {day.dayType === 'gym' && (
+                      {effectiveDayType === 'gym' && (
                         <div
                           className={`text-[9px] ${
                             completed
@@ -378,8 +504,11 @@ function WeekGrid({
                           {statusIcon}
                         </div>
                       )}
-                      {day.dayType === 'mountain' && hasMountain && (
+                      {effectiveDayType === 'mountain' && hasMountain && (
                         <div className="text-[9px] text-accent-green">{'\u2713'}</div>
+                      )}
+                      {effectiveDayType === 'mountain' && isPast && !hasMountain && (
+                        <div className="text-[9px] text-text-muted">{'\u2014'}</div>
                       )}
                     </div>
                   )
@@ -610,6 +739,21 @@ function TodaySession({
 // ═══════════════════════════════════════════════════════════════════
 // 4. Lift Progression Tracker
 // ═══════════════════════════════════════════════════════════════════
+
+const statusColors: Record<string, string> = {
+  on_track: 'text-accent-green',
+  ahead: 'text-accent-blue',
+  stalled: 'text-accent-red',
+  behind: 'text-accent-yellow',
+  no_data: 'text-text-muted',
+}
+
+const trendArrows: Record<string, string> = {
+  up: '\u2197',  // ↗
+  flat: '\u2192', // →
+  down: '\u2198', // ↘
+}
+
 function LiftProgressionTracker({
   sessions,
   sets,
@@ -618,19 +762,17 @@ function LiftProgressionTracker({
   sets: TrainingSet[]
 }) {
   const [selectedLift, setSelectedLift] = useState(COMPOUND_LIFTS[0])
+  const { week: currentWeek } = getProgramWeek(new Date())
 
-  const chartData = useMemo(() => {
-    return Array.from({ length: 8 }, (_, i) => {
-      const weekNum = i + 1
-      const planned = getPlannedWeight(selectedLift, weekNum)
-
-      // Find actual max weight for this lift in this week
-      const weekSchedule = getWeekSchedule(weekNum)
+  // Build actual weights by week for all lifts
+  const actualWeightsByWeek = useMemo(() => {
+    const map = new Map<number, number>()
+    for (let w = 1; w <= 8; w++) {
+      const weekSchedule = getWeekSchedule(w)
       const weekDates = new Set(weekSchedule.days.map((d) => fmtDate(d.date)))
       const weekSessionIds = new Set(
         sessions.filter((s) => weekDates.has(s.date)).map((s) => s.id)
       )
-
       const weekSets = sets.filter(
         (s) =>
           weekSessionIds.has(s.session_id) &&
@@ -638,31 +780,66 @@ function LiftProgressionTracker({
           s.set_type === 'working' &&
           s.weight_kg != null
       )
-
-      const actual = weekSets.length > 0 ? Math.max(...weekSets.map((s) => s.weight_kg!)) : null
-
-      return {
-        week: `Wk${weekNum}`,
-        planned,
-        actual,
-        deload: isDeloadWeek(weekNum),
+      if (weekSets.length > 0) {
+        map.set(w, Math.max(...weekSets.map((s) => s.weight_kg!)))
       }
-    })
+    }
+    return map
   }, [selectedLift, sessions, sets])
 
+  // Analyze progression
+  const analysis = useMemo(
+    () => analyzeLiftProgression(selectedLift, currentWeek, actualWeightsByWeek),
+    [selectedLift, currentWeek, actualWeightsByWeek]
+  )
+
+  const chartData = useMemo(() => {
+    return Array.from({ length: 8 }, (_, i) => {
+      const weekNum = i + 1
+      return {
+        week: `Wk${weekNum}`,
+        planned: getPlannedWeight(selectedLift, weekNum),
+        actual: actualWeightsByWeek.get(weekNum) ?? null,
+        deload: isDeloadWeek(weekNum),
+        isCurrent: weekNum === currentWeek,
+      }
+    })
+  }, [selectedLift, currentWeek, actualWeightsByWeek])
+
   return (
-    <Card title="Lift Progression">
-      <div className="space-y-3">
+    <Card>
+      <div className="space-y-4">
+        {/* Header with analysis */}
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="text-[11px] text-text-muted uppercase tracking-wider mb-1">Lift Progression</div>
+            <div className="text-base font-semibold text-text-primary">{selectedLift}</div>
+          </div>
+          <div className="text-right">
+            <div className={`text-sm font-medium ${statusColors[analysis.status]}`}>
+              {analysis.trend && trendArrows[analysis.trend]} {analysis.statusLabel}
+            </div>
+            {analysis.lastActualWeight != null && (
+              <div className="text-[11px] text-text-muted mt-0.5">
+                Last: {analysis.lastActualWeight}kg
+                {analysis.nextTargetWeight != null && (
+                  <> &rarr; Next: <span className="text-text-secondary">{analysis.nextTargetWeight}kg</span></>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Lift selector */}
         <div className="flex gap-1.5 flex-wrap">
           {COMPOUND_LIFTS.map((lift) => (
             <button
               key={lift}
               onClick={() => setSelectedLift(lift)}
-              className={`text-[10px] px-2 py-1 rounded-full border transition-colors ${
+              className={`text-[11px] px-3 py-1.5 rounded-full border transition-colors ${
                 selectedLift === lift
-                  ? 'bg-gym/20 text-gym border-gym/40'
-                  : 'text-text-muted border-border hover:text-text-secondary'
+                  ? 'bg-gym/15 text-gym border-gym/30'
+                  : 'text-text-muted border-border-subtle hover:text-text-secondary hover:border-border'
               }`}
             >
               {lift.replace('Barbell ', '').replace('DB ', '')}
@@ -676,12 +853,12 @@ function LiftProgressionTracker({
             <LineChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
               <XAxis
                 dataKey="week"
-                tick={{ fontSize: 10, fill: '#555570' }}
+                tick={{ fontSize: 10, fill: '#5a5a6e' }}
                 axisLine={false}
                 tickLine={false}
               />
               <YAxis
-                tick={{ fontSize: 10, fill: '#555570' }}
+                tick={{ fontSize: 10, fill: '#5a5a6e' }}
                 axisLine={false}
                 tickLine={false}
                 domain={['auto', 'auto']}
@@ -690,17 +867,17 @@ function LiftProgressionTracker({
               />
               <Tooltip
                 contentStyle={{
-                  background: '#1a1a2e',
-                  border: '1px solid #2a2a4a',
-                  borderRadius: 8,
+                  background: '#1c1c24',
+                  border: '1px solid #2a2a36',
+                  borderRadius: 12,
                   fontSize: 11,
-                  color: '#e4e4ef',
+                  color: '#ececf0',
                 }}
               />
               <Line
                 type="monotone"
                 dataKey="planned"
-                stroke="#555570"
+                stroke="#5a5a6e"
                 strokeDasharray="4 4"
                 strokeWidth={1.5}
                 dot={false}
@@ -709,9 +886,9 @@ function LiftProgressionTracker({
               <Line
                 type="monotone"
                 dataKey="actual"
-                stroke="#a855f7"
-                strokeWidth={2}
-                dot={{ r: 4, fill: '#a855f7', stroke: '#1a1a2e', strokeWidth: 2 }}
+                stroke="#a78bfa"
+                strokeWidth={2.5}
+                dot={{ r: 5, fill: '#a78bfa', stroke: '#1c1c24', strokeWidth: 2 }}
                 connectNulls={false}
                 name="Actual"
               />
@@ -719,16 +896,25 @@ function LiftProgressionTracker({
           </ResponsiveContainer>
         </div>
 
-        {/* Starting / current weight legend */}
-        <div className="flex gap-4 text-[10px] text-text-muted">
-          <span className="flex items-center gap-1">
-            <span className="w-4 h-px bg-text-muted inline-block" style={{ borderTop: '1.5px dashed #555570' }} />
-            Planned
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-gym inline-block" />
-            Actual
-          </span>
+        {/* Legend + stall warning */}
+        <div className="flex items-center justify-between">
+          <div className="flex gap-4 text-[10px] text-text-muted">
+            <span className="flex items-center gap-1.5">
+              <span className="w-5 h-px inline-block" style={{ borderTop: '1.5px dashed #5a5a6e' }} />
+              Baseline plan
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-gym inline-block" />
+              Your lifts
+            </span>
+          </div>
+          {analysis.weeksAtSameWeight >= 2 && (
+            <div className="text-[10px] text-accent-red">
+              {analysis.weeksAtSameWeight >= 3
+                ? 'Drop 10% & rebuild recommended'
+                : 'Hold weight, focus on reps'}
+            </div>
+          )}
         </div>
       </div>
     </Card>
@@ -801,6 +987,9 @@ function EnduranceLoadTracker({ activities }: { activities: Activity[] }) {
             <div className={`text-xs font-semibold mt-1 ${acwrBgClass(acwrElev)}`}>
               ACWR {acwrElev.toFixed(2)}
             </div>
+            <div className={`text-[10px] mt-0.5 ${acwrLabel(acwrElev).color}`}>
+              {acwrLabel(acwrElev).text}
+            </div>
           </div>
           <div className="bg-bg-primary/50 rounded-lg p-2">
             <div className="text-[10px] text-text-muted">Weekly Mountain Duration</div>
@@ -813,6 +1002,34 @@ function EnduranceLoadTracker({ activities }: { activities: Activity[] }) {
             <div className={`text-xs font-semibold mt-1 ${acwrBgClass(acwrDur)}`}>
               ACWR {acwrDur.toFixed(2)}
             </div>
+            <div className={`text-[10px] mt-0.5 ${acwrLabel(acwrDur).color}`}>
+              {acwrLabel(acwrDur).text}
+            </div>
+          </div>
+        </div>
+
+        {/* This week vs plan context */}
+        <div className="bg-bg-primary/50 rounded-lg p-2">
+          <div className="text-[10px] text-text-muted mb-1">This week vs typical</div>
+          <div className="text-xs text-text-secondary">
+            {fourWeekAvgElev > 0 ? (
+              <>
+                Vertical: {thisWeekElev.toLocaleString()}m vs {Math.round(fourWeekAvgElev).toLocaleString()}m avg
+                <span className={`ml-1 font-semibold ${
+                  thisWeekElev > fourWeekAvgElev * 1.3
+                    ? 'text-accent-red'
+                    : thisWeekElev < fourWeekAvgElev * 0.7
+                      ? 'text-accent-yellow'
+                      : 'text-accent-green'
+                }`}>
+                  ({thisWeekElev > fourWeekAvgElev
+                    ? `+${Math.round(((thisWeekElev - fourWeekAvgElev) / fourWeekAvgElev) * 100)}%`
+                    : `${Math.round(((thisWeekElev - fourWeekAvgElev) / fourWeekAvgElev) * 100)}%`})
+                </span>
+              </>
+            ) : (
+              <span className="text-text-muted">Not enough history for comparison</span>
+            )}
           </div>
         </div>
 
@@ -926,3 +1143,5 @@ function SessionHistory({
     </Card>
   )
 }
+
+export default TrainingPlanView

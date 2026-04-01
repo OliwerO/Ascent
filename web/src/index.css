@@ -1,31 +1,80 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg-primary: #0a0a0f;
-  --color-bg-secondary: #12121a;
-  --color-bg-card: #1a1a2e;
-  --color-bg-card-hover: #222240;
-  --color-border: #2a2a4a;
-  --color-text-primary: #e4e4ef;
-  --color-text-secondary: #8888a8;
-  --color-text-muted: #555570;
-  --color-accent-green: #22c55e;
-  --color-accent-yellow: #eab308;
-  --color-accent-red: #ef4444;
-  --color-accent-blue: #3b82f6;
-  --color-accent-purple: #a855f7;
+  /* Backgrounds — warm dark tones inspired by Vexora */
+  --color-bg-primary: #0c0c10;
+  --color-bg-secondary: #141418;
+  --color-bg-card: #1c1c24;
+  --color-bg-card-hover: #24242e;
+  --color-bg-elevated: #222230;
+  --color-border: #2a2a36;
+  --color-border-subtle: #1e1e28;
+
+  /* Text — softer whites */
+  --color-text-primary: #ececf0;
+  --color-text-secondary: #9494a8;
+  --color-text-muted: #5a5a6e;
+
+  /* Status — warmer greens and ambers */
+  --color-accent-green: #34d399;
+  --color-accent-yellow: #f59e0b;
+  --color-accent-red: #f87171;
+  --color-accent-blue: #60a5fa;
+  --color-accent-purple: #a78bfa;
+  --color-accent-orange: #fb923c;
+
+  /* Activity types */
   --color-mountain: #38bdf8;
-  --color-gym: #a855f7;
+  --color-gym: #a78bfa;
+  --color-rest: #5a5a6e;
+
+  /* Glow effects */
+  --color-glow-green: rgba(52, 211, 153, 0.12);
+  --color-glow-yellow: rgba(245, 158, 11, 0.12);
+  --color-glow-red: rgba(248, 113, 113, 0.12);
+  --color-glow-blue: rgba(96, 165, 250, 0.12);
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 }
 
 body {
   margin: 0;
   background: var(--color-bg-primary);
   color: var(--color-text-primary);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar for dark theme */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 2px;
+}
+
+/* Number styling — tabular figures for aligned data */
+.font-data {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }

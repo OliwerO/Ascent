@@ -98,6 +98,11 @@ export const STARTING_WEIGHTS: Record<string, { weight: number; increment: numbe
   'KB Farmer Carry': { weight: 24, increment: 2 },
 }
 
+/**
+ * Get the baseline planned weight for a given week.
+ * This is the "if everything goes perfectly" target — the coaching agent
+ * and actual performance data override this in practice.
+ */
 export function getPlannedWeight(exercise: string, week: number): number | null {
   const config = STARTING_WEIGHTS[exercise]
   if (!config || config.increment === 0) return config?.weight ?? null
@@ -114,4 +119,111 @@ export function getPlannedWeight(exercise: string, week: number): number | null 
   }
 
   return config.weight + increments * config.increment
+}
+
+/**
+ * Analyze actual lift performance vs the plan.
+ * Returns progression status and next recommended weight.
+ *
+ * Rules from coaching-context.md:
+ * - If RPE >= 8 before week 3: hold weight, add reps
+ * - If same weight 2+ consecutive weeks: stall detected
+ * - If stalled 3 weeks: drop 10%, increase to 12 reps, rebuild
+ * - Block 2 resumes at week 3 actual weight + increment (not planned)
+ */
+export type ProgressionStatus = 'on_track' | 'ahead' | 'stalled' | 'behind' | 'no_data'
+
+export interface LiftAnalysis {
+  status: ProgressionStatus
+  statusLabel: string
+  lastActualWeight: number | null
+  nextTargetWeight: number | null
+  weeksAtSameWeight: number
+  trend: 'up' | 'flat' | 'down' | null
+}
+
+export function analyzeLiftProgression(
+  exercise: string,
+  currentWeek: number,
+  actualWeightsByWeek: Map<number, number>, // week -> max weight used
+): LiftAnalysis {
+  const config = STARTING_WEIGHTS[exercise]
+  if (!config) return { status: 'no_data', statusLabel: 'Unknown exercise', lastActualWeight: null, nextTargetWeight: null, weeksAtSameWeight: 0, trend: null }
+
+  // Find most recent actual weight
+  let lastActualWeight: number | null = null
+  let lastActualWeek: number | null = null
+  for (let w = currentWeek; w >= 1; w--) {
+    if (actualWeightsByWeek.has(w)) {
+      lastActualWeight = actualWeightsByWeek.get(w)!
+      lastActualWeek = w
+      break
+    }
+  }
+
+  if (lastActualWeight === null) {
+    return {
+      status: 'no_data',
+      statusLabel: 'No sessions yet',
+      lastActualWeight: null,
+      nextTargetWeight: getPlannedWeight(exercise, Math.min(currentWeek, 3)),
+      weeksAtSameWeight: 0,
+      trend: null,
+    }
+  }
+
+  // Count consecutive weeks at same weight
+  let weeksAtSameWeight = 0
+  for (let w = lastActualWeek!; w >= 1; w--) {
+    const wt = actualWeightsByWeek.get(w)
+    if (wt === lastActualWeight) weeksAtSameWeight++
+    else break
+  }
+
+  // Determine trend from last 3 data points
+  const recentWeights: number[] = []
+  for (let w = lastActualWeek!; w >= 1 && recentWeights.length < 3; w--) {
+    if (actualWeightsByWeek.has(w)) recentWeights.unshift(actualWeightsByWeek.get(w)!)
+  }
+  let trend: 'up' | 'flat' | 'down' | null = null
+  if (recentWeights.length >= 2) {
+    const last = recentWeights[recentWeights.length - 1]
+    const prev = recentWeights[recentWeights.length - 2]
+    if (last > prev) trend = 'up'
+    else if (last < prev) trend = 'down'
+    else trend = 'flat'
+  }
+
+  // Compare actual vs planned
+  const plannedForLastWeek = getPlannedWeight(exercise, lastActualWeek!)
+
+  let status: ProgressionStatus
+  let statusLabel: string
+  let nextTargetWeight: number | null
+
+  if (weeksAtSameWeight >= 3 && config.increment > 0) {
+    // Stalled 3+ weeks: drop 10%, rebuild
+    status = 'stalled'
+    statusLabel = `Stalled ${weeksAtSameWeight} weeks — consider drop & rebuild`
+    nextTargetWeight = Math.round(lastActualWeight * 0.9 / config.increment) * config.increment
+  } else if (weeksAtSameWeight >= 2 && config.increment > 0) {
+    // Stalled 2 weeks: hold one more
+    status = 'stalled'
+    statusLabel = `Same weight for ${weeksAtSameWeight} weeks`
+    nextTargetWeight = lastActualWeight // hold
+  } else if (plannedForLastWeek && lastActualWeight > plannedForLastWeek) {
+    status = 'ahead'
+    statusLabel = 'Ahead of plan'
+    nextTargetWeight = lastActualWeight + config.increment
+  } else if (plannedForLastWeek && lastActualWeight < plannedForLastWeek - config.increment) {
+    status = 'behind'
+    statusLabel = 'Behind plan'
+    nextTargetWeight = lastActualWeight + config.increment
+  } else {
+    status = 'on_track'
+    statusLabel = 'On track'
+    nextTargetWeight = lastActualWeight + config.increment
+  }
+
+  return { status, statusLabel, lastActualWeight, nextTargetWeight, weeksAtSameWeight, trend }
 }

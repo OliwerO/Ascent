@@ -88,11 +88,40 @@ export default function RecoveryView() {
       value: d.resting_hr,
     }))
 
-  // Detect rising resting HR trend (last 3 values increasing)
-  const risingHR =
-    restingHRData.length >= 3 &&
-    restingHRData[restingHRData.length - 1].value > restingHRData[restingHRData.length - 2].value &&
-    restingHRData[restingHRData.length - 2].value > restingHRData[restingHRData.length - 3].value
+  // Detect rising resting HR trend: compare last 3 days avg vs previous 7 days avg
+  const recentHR3 = restingHRData.slice(-3)
+  const previousHR7 = restingHRData.slice(Math.max(0, restingHRData.length - 10), Math.max(0, restingHRData.length - 3))
+  const recentHRAvg = recentHR3.length > 0
+    ? recentHR3.reduce((s: number, d: any) => s + d.value, 0) / recentHR3.length : null
+  const previousHRAvg = previousHR7.length > 0
+    ? previousHR7.reduce((s: number, d: any) => s + d.value, 0) / previousHR7.length : null
+  const hrRiseDelta = recentHRAvg != null && previousHRAvg != null
+    ? Math.round((recentHRAvg - previousHRAvg) * 10) / 10 : null
+  const risingHR = hrRiseDelta != null && hrRiseDelta > 3
+
+  // --- HRV trend context ---
+  const currentHRVStatus = todayHRV?.status?.toUpperCase() ?? null
+  let hrvConsecutiveDays = 0
+  if (currentHRVStatus && hrv.data) {
+    for (const d of hrv.data as any[]) {
+      if (d.status?.toUpperCase() === currentHRVStatus) hrvConsecutiveDays++
+      else break
+    }
+  }
+  const hrv14DayValues = (hrv.data ?? []).filter((d: any) => d.last_night_avg != null) as any[]
+  const hrv14DayAvg = hrv14DayValues.length > 0
+    ? hrv14DayValues.reduce((s: number, d: any) => s + d.last_night_avg, 0) / hrv14DayValues.length
+    : null
+  const hrvPctChange = todayHRV?.last_night_avg != null && hrv14DayAvg != null && hrv14DayAvg > 0
+    ? Math.round(((todayHRV.last_night_avg - hrv14DayAvg) / hrv14DayAvg) * 100)
+    : null
+
+  // --- Sleep trend context ---
+  const sleep7Days = (sleep.data ?? []).slice(0, 7).filter((d: any) => d.total_sleep_seconds != null) as any[]
+  const sleepWeeklyAvg = sleep7Days.length > 0
+    ? sleep7Days.reduce((s: number, d: any) => s + d.total_sleep_seconds / 3600, 0) / sleep7Days.length
+    : null
+  const nightsBelow6h = sleep7Days.filter((d: any) => d.total_sleep_seconds / 3600 < 6).length
 
   // --- Fatigue flags ---
   const hrvValues = (hrv.data ?? []).slice(0, 7).filter((d: any) => d.last_night_avg != null)
@@ -131,11 +160,36 @@ export default function RecoveryView() {
   const flagTRLow = trainingReadiness != null && trainingReadiness < 40
 
   const fatigueFlags = [
-    { label: 'HRV suppressed (>10% below avg for 3+ days)', active: flagHRVSuppressed },
-    { label: 'Resting HR elevated (+5bpm for 3+ days)', active: flagHRElevated },
-    { label: 'Sleep avg <6.5h this week', active: flagSleepLow },
-    { label: 'Body Battery <30', active: flagBBLow },
-    { label: 'Training Readiness <40', active: flagTRLow },
+    {
+      label: flagHRVSuppressed
+        ? `HRV suppressed: ${hrvSuppressedDays} of 7 days >10% below avg${hrvAvg ? ` (avg ${Math.round(hrvAvg)}ms)` : ''}`
+        : `HRV stable${hrvAvg ? ` (${Math.round(hrvAvg)}ms 7d avg)` : ''}`,
+      active: flagHRVSuppressed,
+    },
+    {
+      label: flagHRElevated
+        ? `Resting HR elevated: ${hrElevatedDays} of 7 days >5bpm above avg${restingHRAvg ? ` (avg ${Math.round(restingHRAvg)})` : ''}`
+        : `Resting HR normal${restingHRAvg ? ` (${Math.round(restingHRAvg)}bpm 7d avg)` : ''}`,
+      active: flagHRElevated,
+    },
+    {
+      label: flagSleepLow
+        ? `Sleep low: ${sleepAvgHours != null ? sleepAvgHours.toFixed(1) : '?'}h avg this week (<6.5h threshold)`
+        : `Sleep adequate${sleepAvgHours != null ? ` (${sleepAvgHours.toFixed(1)}h avg)` : ''}`,
+      active: flagSleepLow,
+    },
+    {
+      label: flagBBLow
+        ? `Body Battery critically low: ${bodyBattery} (<30 threshold)`
+        : `Body Battery OK${bodyBattery != null ? ` (${bodyBattery})` : ''}`,
+      active: flagBBLow,
+    },
+    {
+      label: flagTRLow
+        ? `Training Readiness low: ${trainingReadiness} (<40 threshold)`
+        : `Training Readiness OK${trainingReadiness != null ? ` (${trainingReadiness})` : ''}`,
+      active: flagTRLow,
+    },
   ]
   const activeFlagCount = fatigueFlags.filter((f) => f.active).length
 
@@ -176,6 +230,24 @@ export default function RecoveryView() {
             thresholds={{ green: 60, yellow: 40 }}
           />
         </div>
+        <div className="text-[11px] text-text-muted mt-2 space-y-0.5">
+          {currentHRVStatus && (
+            <div>
+              HRV {currentHRVStatus.toLowerCase()}
+              {hrvConsecutiveDays > 1 && <> for {hrvConsecutiveDays} days</>}
+              {hrvPctChange != null && <> &middot; {hrvPctChange > 0 ? '+' : ''}{hrvPctChange}% vs 14d avg</>}
+            </div>
+          )}
+          {sleepWeeklyAvg != null && (
+            <div>
+              Sleep {sleepWeeklyAvg.toFixed(1)}h avg
+              {nightsBelow6h > 0 ? <> &middot; {nightsBelow6h} night{nightsBelow6h > 1 ? 's' : ''} &lt;6h</> : ' &middot; on target'}
+            </div>
+          )}
+          {risingHR && hrRiseDelta != null && (
+            <div className="text-accent-yellow">Resting HR rising +{hrRiseDelta.toFixed(1)}bpm</div>
+          )}
+        </div>
 
         {/* Verdict */}
         <div
@@ -197,6 +269,26 @@ export default function RecoveryView() {
 
       {/* HRV Trend (14d) */}
       <Card title="HRV Trend (14d)">
+        {currentHRVStatus && (
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3 text-xs text-text-secondary">
+            <span>
+              Status: <span className={hrvDegraded ? 'text-accent-yellow' : 'text-accent-green'}>
+                {currentHRVStatus.toLowerCase()}
+              </span>
+              {hrvConsecutiveDays > 1 && <> ({hrvConsecutiveDays} days)</>}
+            </span>
+            {hrvPctChange != null && (
+              <span>
+                vs 14d avg: <span className={hrvPctChange < -10 ? 'text-accent-red' : hrvPctChange < 0 ? 'text-accent-yellow' : 'text-accent-green'}>
+                  {hrvPctChange > 0 ? '+' : ''}{hrvPctChange}%
+                </span>
+              </span>
+            )}
+            {hrv14DayAvg != null && (
+              <span>{Math.round(hrv14DayAvg)}ms 14d avg</span>
+            )}
+          </div>
+        )}
         {hrvChartData.length > 0 ? (
           <ResponsiveContainer width="100%" height={180}>
             <AreaChart data={hrvChartData}>
@@ -259,6 +351,24 @@ export default function RecoveryView() {
 
       {/* Sleep Trend (14d) */}
       <Card title="Sleep Trend (14d)">
+        {sleepWeeklyAvg != null && (
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3 text-xs text-text-secondary">
+            <span>
+              7d avg: <span className={sleepWeeklyAvg >= 7 ? 'text-accent-green' : sleepWeeklyAvg >= 6 ? 'text-accent-yellow' : 'text-accent-red'}>
+                {sleepWeeklyAvg.toFixed(1)}h
+              </span>
+              <span className="text-text-muted"> / 7-8h target</span>
+            </span>
+            {nightsBelow6h > 0 && (
+              <span className="text-accent-red">
+                {nightsBelow6h} night{nightsBelow6h > 1 ? 's' : ''} &lt;6h this week
+              </span>
+            )}
+            {nightsBelow6h === 0 && (
+              <span className="text-accent-green">No short nights this week</span>
+            )}
+          </div>
+        )}
         {sleepChartData.length > 0 ? (
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={sleepChartData}>
@@ -290,10 +400,15 @@ export default function RecoveryView() {
       <Card title="Resting HR Trend (14d)">
         {restingHRData.length > 0 ? (
           <>
-            {risingHR && (
+            {risingHR && hrRiseDelta != null && (
               <div className="flex items-center gap-2 mb-2 text-accent-yellow text-xs">
                 <AlertTriangle size={14} />
-                <span>Rising trend detected</span>
+                <span>Rising trend: +{hrRiseDelta.toFixed(1)}bpm (3d avg vs prior 7d avg)</span>
+              </div>
+            )}
+            {!risingHR && recentHRAvg != null && previousHRAvg != null && (
+              <div className="text-xs text-text-muted mb-2">
+                3d avg {Math.round(recentHRAvg)}bpm &middot; 7d avg {Math.round(previousHRAvg)}bpm
               </div>
             )}
             <ResponsiveContainer width="100%" height={160}>

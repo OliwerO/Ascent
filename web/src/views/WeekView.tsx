@@ -93,6 +93,15 @@ export default function WeekView() {
       })
   }, [sleepHook.data])
 
+  // Sleep intelligence: last 7 days stats
+  const sleepStats = useMemo(() => {
+    const last7 = sleepBars.slice(-7)
+    if (last7.length === 0) return { avg: 0, belowSix: 0, count: 0 }
+    const avg = last7.reduce((sum, d) => sum + d.hours, 0) / last7.length
+    const belowSix = last7.filter((d) => d.hours > 0 && d.hours < 6).length
+    return { avg: Number(avg.toFixed(1)), belowSix, count: last7.length }
+  }, [sleepBars])
+
   if (loading) return <LoadingState />
   if (error) return <div className="text-accent-red p-4">{error}</div>
 
@@ -206,6 +215,39 @@ export default function WeekView() {
           </ResponsiveContainer>
         ) : (
           <div className="text-sm text-text-muted">Not enough data</div>
+        )}
+        {/* Sleep intelligence stats */}
+        {sleepStats.count > 0 && (
+          <div className="mt-3 space-y-1.5">
+            <div className="flex items-center gap-3 text-xs">
+              <span className="text-text-muted">Weekly avg:</span>
+              <span className={`font-semibold ${
+                sleepStats.avg >= 7 ? 'text-accent-green'
+                  : sleepStats.avg >= 6 ? 'text-accent-yellow'
+                  : 'text-accent-red'
+              }`}>
+                {sleepStats.avg}h
+              </span>
+              <span className="text-text-muted">
+                (target: 7-8h)
+              </span>
+            </div>
+            <div className="flex items-center gap-3 text-xs">
+              <span className="text-text-muted">Nights below 6h:</span>
+              <span className={`font-semibold ${
+                sleepStats.belowSix === 0 ? 'text-accent-green'
+                  : sleepStats.belowSix <= 1 ? 'text-accent-yellow'
+                  : 'text-accent-red'
+              }`}>
+                {sleepStats.belowSix} / {sleepStats.count}
+              </span>
+            </div>
+            {sleepStats.avg < 6.5 && (
+              <div className="text-xs font-semibold text-accent-red mt-1 py-1 px-2 bg-accent-red/10 rounded">
+                Sleep is the bottleneck — below critical threshold
+              </div>
+            )}
+          </div>
         )}
       </Card>
     </div>

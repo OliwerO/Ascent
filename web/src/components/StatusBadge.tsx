@@ -6,10 +6,22 @@ interface Props {
   status?: 'green' | 'yellow' | 'red' | null
 }
 
-const colors = {
-  green: 'bg-accent-green/20 text-accent-green border-accent-green/30',
-  yellow: 'bg-accent-yellow/20 text-accent-yellow border-accent-yellow/30',
-  red: 'bg-accent-red/20 text-accent-red border-accent-red/30',
+const styles = {
+  green: {
+    bg: 'bg-glow-green border-accent-green/20',
+    value: 'text-accent-green',
+    dot: 'bg-accent-green',
+  },
+  yellow: {
+    bg: 'bg-glow-yellow border-accent-yellow/20',
+    value: 'text-accent-yellow',
+    dot: 'bg-accent-yellow',
+  },
+  red: {
+    bg: 'bg-glow-red border-accent-red/20',
+    value: 'text-accent-red',
+    dot: 'bg-accent-red',
+  },
 }
 
 export function StatusBadge({ value, thresholds, label, unit, status: explicitStatus }: Props) {
@@ -22,11 +34,17 @@ export function StatusBadge({ value, thresholds, label, unit, status: explicitSt
     else status = 'red'
   }
 
+  const s = styles[status]
+
   return (
-    <div className={`rounded-lg border px-3 py-2 ${colors[status]}`}>
-      <div className="text-xs opacity-70">{label}</div>
-      <div className="text-lg font-semibold">
-        {value ?? '—'}{unit && <span className="text-xs ml-1 opacity-70">{unit}</span>}
+    <div className={`rounded-2xl border px-4 py-3 ${s.bg}`}>
+      <div className="flex items-center gap-1.5 mb-1">
+        <div className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+        <span className="text-[11px] text-text-muted uppercase tracking-wider">{label}</span>
+      </div>
+      <div className={`text-2xl font-semibold font-data ${s.value}`}>
+        {value ?? '—'}
+        {unit && <span className="text-sm ml-1 font-normal opacity-60">{unit}</span>}
       </div>
     </div>
   )
