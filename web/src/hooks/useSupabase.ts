@@ -88,6 +88,18 @@ export function useDailyMetrics(days = 7) {
   }, [days])
 }
 
+export function useTrainingStatus(days = 7) {
+  return useFetch('training_status', async () => {
+    const { data, error } = await supabase
+      .from('training_status')
+      .select('date,training_status,training_load_7d,training_load_28d,raw_json')
+      .gte('date', fmt(daysAgo(days)))
+      .order('date', { ascending: false })
+    if (error) throw error
+    return data
+  }, [days])
+}
+
 export function useBodyComposition(days = 90) {
   return useFetch('body_composition', async () => {
     const { data, error } = await supabase

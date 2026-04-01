@@ -29,9 +29,9 @@ function App() {
 
   return (
     <div className="min-h-screen bg-bg-primary">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-bg-primary/90 backdrop-blur-xl border-b border-border-subtle">
-        <div className="max-w-2xl mx-auto px-5 py-3.5 flex items-center justify-between">
+      {/* Header — pt-[env(safe-area-inset-top)] for notch/status bar */}
+      <header className="sticky top-0 z-50 bg-bg-primary/90 backdrop-blur-xl border-b border-border-subtle pt-[env(safe-area-inset-top)]">
+        <div className="max-w-2xl mx-auto px-5 py-3 flex items-center justify-between">
           <h1 className="text-base font-semibold tracking-tight flex items-center gap-2">
             <span className="text-accent-green text-lg">&#9650;</span>
             <span>Ascent</span>
