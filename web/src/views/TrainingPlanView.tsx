@@ -89,6 +89,27 @@ const COMPOUND_LIFTS = [
   'Overhead Press',
 ]
 
+// Map Garmin/DB exercise names → program exercise names
+const EXERCISE_NAME_MAP: Record<string, string> = {
+  'Dumbbell Bench Press': 'DB Bench Press',
+  'Kettlebell Swing': 'KB Swings',
+  'Kettlebell Halo': 'KB Halo',
+  'Turkish Get-Up': 'KB Turkish Get-up',
+  'Turkish Get-up': 'KB Turkish Get-up',
+  'Arm Circles': 'KB Halo',
+  'Barbell Back Squat': 'Barbell Back Squat',
+  'Barbell Row': 'Barbell Row',
+  'Chin-Up': 'Chin-ups',
+  'Incline Dumbbell Press': 'DB Incline Press',
+  'Seated Cable Row': 'Cable Row',
+  'Lateral Raise': 'Lateral Raises',
+  'Bulgarian Split Squat': 'Bulgarian Split Squat',
+}
+
+function normalizeName(dbName: string): string {
+  return EXERCISE_NAME_MAP[dbName] ?? dbName
+}
+
 // ─── Helpers ───────────────────────────────────────────────────────
 function formatDuration(seconds: number | null | undefined): string {
   if (!seconds) return '--'
@@ -669,9 +690,9 @@ function TodaySession({
                   ? `${ex.sets}\u00D7${ex.reps} @ ${plannedWt}kg`
                   : `${ex.sets}\u00D7${ex.reps}`
 
-                // Find actual sets for this exercise
+                // Find actual sets for this exercise (normalize DB names to program names)
                 const actualSetsForExercise = todaySets.filter(
-                  (s) => s.exercises?.name === ex.name && s.set_type === 'working'
+                  (s) => s.exercises?.name != null && normalizeName(s.exercises.name) === ex.name && s.set_type === 'working'
                 )
 
                 let actualStr = '\u2014'
@@ -750,10 +771,53 @@ function LiftProgressionTracker({
   sessions: TrainingSession[]
   sets: TrainingSet[]
 }) {
-  const [selectedLift, setSelectedLift] = useState(COMPOUND_LIFTS[0])
   const { week: currentWeek } = getProgramWeek(new Date())
 
-  // Build actual weights by week for all lifts
+  // Build list of exercises with actual data (normalized to program names)
+  const exercisesWithData = useMemo(() => {
+    const names = new Set<string>()
+    sets.forEach((s) => {
+      if (s.exercises?.name && s.set_type === 'working' && s.weight_kg != null) {
+        names.add(normalizeName(s.exercises.name))
+      }
+    })
+    return names
+  }, [sets])
+
+  // All program exercises (from all sessions)
+  const allProgramExercises = useMemo(() => {
+    const names = new Set<string>()
+    Object.values(SESSION_EXERCISES).forEach((exList) => {
+      exList.forEach((ex) => names.add(ex.name))
+    })
+    return names
+  }, [])
+
+  // Prioritized lift list: exercises with data first, then program exercises, skip others
+  const liftOptions = useMemo(() => {
+    const withData: string[] = []
+    const programOnly: string[] = []
+
+    // First: program exercises that have data
+    for (const name of COMPOUND_LIFTS) {
+      if (exercisesWithData.has(name)) withData.push(name)
+      else programOnly.push(name)
+    }
+    // Then: other exercises with data that aren't in COMPOUND_LIFTS
+    exercisesWithData.forEach((name) => {
+      if (!COMPOUND_LIFTS.includes(name) && allProgramExercises.has(name)) {
+        withData.push(name)
+      }
+    })
+    // Then: remaining program exercises without data (collapsed by default)
+    return { withData, programOnly }
+  }, [exercisesWithData, allProgramExercises])
+
+  const defaultLift = liftOptions.withData[0] ?? liftOptions.programOnly[0] ?? COMPOUND_LIFTS[0]
+  const [selectedLift, setSelectedLift] = useState(defaultLift)
+  const [showAll, setShowAll] = useState(false)
+
+  // Build actual weights by week for selected lift
   const actualWeightsByWeek = useMemo(() => {
     const map = new Map<number, number>()
     for (let w = 1; w <= 8; w++) {
@@ -765,7 +829,8 @@ function LiftProgressionTracker({
       const weekSets = sets.filter(
         (s) =>
           weekSessionIds.has(s.session_id) &&
-          s.exercises?.name === selectedLift &&
+          s.exercises?.name != null &&
+          normalizeName(s.exercises.name) === selectedLift &&
           s.set_type === 'working' &&
           s.weight_kg != null
       )
@@ -819,21 +884,42 @@ function LiftProgressionTracker({
           </div>
         </div>
 
-        {/* Lift selector */}
+        {/* Lift selector — exercises with data shown first */}
         <div className="flex gap-1.5 flex-wrap">
-          {COMPOUND_LIFTS.map((lift) => (
+          {liftOptions.withData.map((lift) => (
             <button
               key={lift}
               onClick={() => setSelectedLift(lift)}
               className={`text-[11px] px-3 py-1.5 rounded-full border transition-colors ${
                 selectedLift === lift
                   ? 'bg-gym/15 text-gym border-gym/30'
-                  : 'text-text-muted border-border-subtle hover:text-text-secondary hover:border-border'
+                  : 'text-text-secondary border-border hover:text-text-primary hover:border-border'
               }`}
             >
-              {lift.replace('Barbell ', '').replace('DB ', '')}
+              {lift.replace('Barbell ', '').replace('DB ', '').replace('KB ', '')}
             </button>
           ))}
+          {showAll && liftOptions.programOnly.map((lift) => (
+            <button
+              key={lift}
+              onClick={() => setSelectedLift(lift)}
+              className={`text-[11px] px-3 py-1.5 rounded-full border transition-colors ${
+                selectedLift === lift
+                  ? 'bg-gym/15 text-gym border-gym/30'
+                  : 'text-text-muted border-border-subtle hover:text-text-secondary'
+              }`}
+            >
+              {lift.replace('Barbell ', '').replace('DB ', '').replace('KB ', '')}
+            </button>
+          ))}
+          {liftOptions.programOnly.length > 0 && (
+            <button
+              onClick={() => setShowAll(!showAll)}
+              className="text-[10px] px-2 py-1.5 text-text-muted hover:text-text-secondary"
+            >
+              {showAll ? 'less' : `+${liftOptions.programOnly.length} more`}
+            </button>
+          )}
         </div>
 
         {/* Chart */}

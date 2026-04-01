@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { Card } from '../components/Card'
 import { Sparkline } from '../components/Sparkline'
 import { LoadingState } from '../components/LoadingState'
-import { useHRV, useActivities, useSleep } from '../hooks/useSupabase'
+import { useHRV, useActivities, useSleep, useBodyComposition } from '../hooks/useSupabase'
 import { startOfWeek, endOfWeek, format, isWithinInterval } from 'date-fns'
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts'
 
@@ -28,9 +28,10 @@ export default function WeekView() {
   const activitiesHook = useActivities(14)
   const hrvHook = useHRV(14)
   const sleepHook = useSleep(14)
+  const bodyCompHook = useBodyComposition(30)
 
-  const loading = activitiesHook.loading || hrvHook.loading || sleepHook.loading
-  const error = activitiesHook.error || hrvHook.error || sleepHook.error
+  const loading = activitiesHook.loading || hrvHook.loading || sleepHook.loading || bodyCompHook.loading
+  const error = activitiesHook.error || hrvHook.error || sleepHook.error || bodyCompHook.error
 
   const now = new Date()
   const weekStart = startOfWeek(now, { weekStartsOn: 1 })
@@ -66,10 +67,21 @@ export default function WeekView() {
     () => weekActivities.filter((a: any) => a.activity_type === 'strength_training').length,
     [weekActivities]
   )
-  const totalCalories = useMemo(
-    () => weekActivities.reduce((sum: number, a: any) => sum + (a.calories || 0), 0),
-    [weekActivities]
-  )
+  // Latest body composition data
+  const bodyComp = useMemo(() => {
+    if (!bodyCompHook.data || bodyCompHook.data.length === 0) return null
+    const latest = bodyCompHook.data[0] as any
+    const prev = bodyCompHook.data.length > 1 ? bodyCompHook.data[1] as any : null
+    return {
+      weight: latest.weight_kg,
+      bodyFat: latest.body_fat_pct,
+      date: latest.date,
+      prevWeight: prev?.weight_kg ?? null,
+      prevBodyFat: prev?.body_fat_pct ?? null,
+      weightIsRecent: latest.weight_kg != null,
+      bodyFatIsRecent: latest.body_fat_pct != null,
+    }
+  }, [bodyCompHook.data])
 
   // Previous week stats for comparison
   const prevElevation = useMemo(
@@ -80,10 +92,7 @@ export default function WeekView() {
     () => prevWeekActivities.filter((a: any) => a.activity_type === 'strength_training').length,
     [prevWeekActivities]
   )
-  const prevCalories = useMemo(
-    () => prevWeekActivities.reduce((sum: number, a: any) => sum + (a.calories || 0), 0),
-    [prevWeekActivities]
-  )
+  // Calories card removed — replaced by body comp
 
   // Comparison helper
   const pctChange = (curr: number, prev: number) => {
@@ -198,19 +207,26 @@ export default function WeekView() {
           )}
         </Card>
         <Card>
-          <div className="text-xs text-text-muted">Calories</div>
-          <div className="text-xl font-bold text-text-primary">
-            {totalCalories.toLocaleString()}
-            <span className="text-xs text-text-muted ml-1">kcal</span>
-          </div>
-          {prevCalories > 0 && (() => {
-            const pct = pctChange(totalCalories, prevCalories)
-            return pct != null ? (
-              <div className={`text-[10px] font-medium ${pct >= 0 ? 'text-accent-green' : 'text-accent-red'}`}>
-                {pct >= 0 ? '↑' : '↓'} {pct >= 0 ? '+' : ''}{pct}% vs last wk
+          <div className="text-xs text-text-muted">Body Comp</div>
+          {bodyComp?.weight ? (
+            <>
+              <div className="text-xl font-bold text-text-primary">
+                {bodyComp.weight.toFixed(1)}
+                <span className="text-xs text-text-muted ml-1">kg</span>
               </div>
-            ) : null
-          })()}
+              {bodyComp.bodyFat != null ? (
+                <div className="text-[10px] font-medium text-text-secondary">
+                  {bodyComp.bodyFat.toFixed(1)}% bf
+                </div>
+              ) : bodyComp.prevWeight != null ? (
+                <div className={`text-[10px] font-medium ${bodyComp.weight <= bodyComp.prevWeight ? 'text-accent-green' : 'text-accent-yellow'}`}>
+                  {bodyComp.weight < bodyComp.prevWeight ? '↓' : bodyComp.weight > bodyComp.prevWeight ? '↑' : '→'} {Math.abs(bodyComp.weight - bodyComp.prevWeight).toFixed(1)}kg
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="text-sm text-text-muted mt-1">No data</div>
+          )}
         </Card>
       </div>
 
