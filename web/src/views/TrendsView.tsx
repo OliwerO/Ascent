@@ -1,7 +1,10 @@
+import { useMemo } from 'react'
 import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
 import { useHRV, useBodyComposition, useActivities, useDailyMetrics } from '../hooks/useSupabase'
+import { pairHikeAndFly, formatAirtime, formatClimbRate, formatDistance } from '../lib/flying'
 import { format, startOfWeek, subDays } from 'date-fns'
+import { Wind } from 'lucide-react'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, ResponsiveContainer, Tooltip, Legend,
@@ -317,6 +320,9 @@ export default function TrendsView() {
         )}
       </Card>
 
+      {/* Flying / Paragliding */}
+      <FlyingSection activities={activities.data ?? []} />
+
       {/* e1RM Progression */}
       <Card title="e1RM Progression">
         <div className="flex items-center justify-center h-32 text-text-muted text-sm">
@@ -324,5 +330,139 @@ export default function TrendsView() {
         </div>
       </Card>
     </div>
+  )
+}
+
+// ─── Flying Section ────────────────────────────────────────────────
+function FlyingSection({ activities }: { activities: any[] }) {
+  const flights = useMemo(() => {
+    const flyActivities = activities.filter(
+      (a: any) => a.activity_type === 'hang_gliding'
+    )
+    if (!flyActivities.length) return []
+    return pairHikeAndFly(flyActivities, activities)
+  }, [activities])
+
+  // Season totals
+  const totals = useMemo(() => {
+    if (!flights.length) return null
+    return {
+      flights: flights.length,
+      xcFlights: flights.filter((f) => f.flightType === 'xc').length,
+      totalAirtime: flights.reduce((s, f) => s + f.airtime, 0),
+      totalDistance: flights.reduce((s, f) => s + f.distance, 0),
+      totalThermalGain: flights.reduce((s, f) => s + f.thermalGain, 0),
+      maxAltitude: Math.max(...flights.map((f) => f.maxAltitude ?? 0)),
+      bestClimb: Math.max(...flights.map((f) => f.maxClimbRate ?? 0)),
+      longestXC: Math.max(...flights.map((f) => f.distance)),
+    }
+  }, [flights])
+
+  if (!flights.length) return null
+
+  const flightTypeLabel = (type: string) => {
+    switch (type) {
+      case 'xc': return 'XC'
+      case 'soaring': return 'Soaring'
+      case 'sled_ride': return 'Sled ride'
+      case 'hike_and_fly': return 'Hike & fly'
+      default: return type
+    }
+  }
+
+  const flightTypeColor = (type: string) => {
+    switch (type) {
+      case 'xc': return 'text-accent-orange'
+      case 'soaring': return 'text-accent-yellow'
+      case 'sled_ride': return 'text-text-muted'
+      case 'hike_and_fly': return 'text-accent-green'
+      default: return 'text-text-secondary'
+    }
+  }
+
+  return (
+    <Card>
+      <div className="space-y-4">
+        {/* Header */}
+        <div className="flex items-center gap-2">
+          <Wind size={16} className="text-accent-orange" />
+          <span className="text-xs uppercase tracking-wider text-text-muted font-medium">
+            Paragliding
+          </span>
+        </div>
+
+        {/* Season totals */}
+        {totals && (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div>
+              <div className="text-[11px] text-text-muted">Flights</div>
+              <div className="text-xl font-semibold font-data text-text-primary">
+                {totals.flights}
+                {totals.xcFlights > 0 && (
+                  <span className="text-xs text-accent-orange ml-1">{totals.xcFlights} XC</span>
+                )}
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] text-text-muted">Total airtime</div>
+              <div className="text-xl font-semibold font-data text-text-primary">
+                {formatAirtime(totals.totalAirtime)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] text-text-muted">Thermals climbed</div>
+              <div className="text-xl font-semibold font-data text-accent-orange">
+                {formatDistance(totals.totalThermalGain)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] text-text-muted">Total distance</div>
+              <div className="text-xl font-semibold font-data text-text-primary">
+                {formatDistance(totals.totalDistance)}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Season records */}
+        {totals && (
+          <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-text-secondary">
+            <span>Max alt: <span className="text-text-primary font-medium">{Math.round(totals.maxAltitude)}m</span></span>
+            <span>Best climb: <span className="text-text-primary font-medium">{formatClimbRate(totals.bestClimb)}</span></span>
+            <span>Longest: <span className="text-text-primary font-medium">{formatDistance(totals.longestXC)}</span></span>
+          </div>
+        )}
+
+        {/* Recent flights */}
+        <div className="space-y-2">
+          <div className="text-[11px] text-text-muted uppercase tracking-wider">Recent flights</div>
+          {flights.slice(0, 5).map((f, i) => (
+            <div key={i} className="flex items-center justify-between py-2 border-b border-border-subtle last:border-0">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-text-primary truncate">
+                    {f.activityName?.replace(' Hang Gliding', '') ?? f.date}
+                  </span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full border border-current/20 ${flightTypeColor(f.flightType)}`}>
+                    {flightTypeLabel(f.flightType)}
+                  </span>
+                </div>
+                <div className="flex gap-3 mt-0.5 text-xs text-text-muted">
+                  <span>{format(new Date(f.date), 'MMM d')}</span>
+                  <span>{formatAirtime(f.airtime)}</span>
+                  <span>{formatDistance(f.distance)}</span>
+                  {f.thermalGain > 100 && <span>{Math.round(f.thermalGain)}m ↑</span>}
+                </div>
+              </div>
+              {f.hikeActivity && (
+                <div className="text-[10px] text-accent-green ml-2">
+                  +{Math.round(f.hikeActivity.elevationGain)}m hike
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </Card>
   )
 }

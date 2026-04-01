@@ -68,7 +68,7 @@ export function useActivities(days = 14) {
   return useFetch('activities', async () => {
     const { data, error } = await supabase
       .from('activities')
-      .select('date,activity_type,activity_name,duration_seconds,calories,elevation_gain,avg_hr,max_hr,garmin_activity_id')
+      .select('date,activity_type,activity_name,duration_seconds,calories,elevation_gain,elevation_loss,distance_meters,avg_hr,max_hr,avg_speed,max_speed,start_time,garmin_activity_id,raw_json')
       .gte('date', fmt(daysAgo(days)))
       .order('date', { ascending: false })
     if (error) throw error
