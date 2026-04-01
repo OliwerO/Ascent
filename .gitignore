@@ -8,7 +8,9 @@ __pycache__/
 logs/
 .garmin/
 .garmin-browser/
+.garth/
 garmin_tokens.json
+garmin_tokens.json.old
 *.garmin_session*
 .agents/
 .claude/

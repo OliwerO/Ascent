@@ -12,9 +12,11 @@
 |-------|------|--------|-------|
 | 1 | Supabase Schema + Seed Data | **Done** | 27 tables + seed data deployed + Phase 8 migration run |
 | 2 | Garmin Sync Script | **Done** | `garmin_sync.py` — garminconnect 0.2.41, Safari cookie auth, session keeper, 3-month backfill complete |
-| 3 | Garmin MCP + Health Coach Skill | **Deployed on Mac** | MCP config in openclaw.json, skill deployed, gateway restarted |
-| 4 | Grafana Dashboards | Spec done, not built | Grafana Cloud account created, Supabase connection blocked (IPv6/pooler issue) |
-| 5 | Weekly Analysis Script | Not started | Blocked on data in Supabase |
+| 3 | Health Coach Skill | **Deployed** | Supabase REST API (Garmin MCP broken by Cloudflare). Skill on OpenClaw, Telegram working. |
+| 4a | Grafana Alerts | Ready to build | Grafana Cloud connected via session pooler (IPv4). Alert engine role only. |
+| 4b | Health Webapp (React/Vercel) | Not started | Replaces Grafana as primary visual dashboard. Spec: `docs/dashboard-and-channels-spec.md` |
+| 4c | Slack Channels | Ready to build | `#ascent-daily` (briefing + alerts) + `#ascent-training` (plans + analysis) |
+| 5 | Weekly Analysis Script | Not started | Posts to `#ascent-training` on Sundays |
 | KB | Scientific Knowledge Base | **Synced to repo** | 8 files in `docs/knowledge-base/` |
 | GS | Garmin Auth Spike | **Partially obsolete** | garth deprecated; using garminconnect web-session branch. Auth blocked by Cloudflare/rate limit. |
 | 6 | First Opus Planning Session | Not started | Blocked on KB + data accumulation |

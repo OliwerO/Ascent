@@ -4,7 +4,7 @@
 Syncs all available Garmin health/fitness data to Supabase tables.
 
 Usage:
-    python garmin_sync.py                          # sync yesterday
+    python garmin_sync.py                          # sync yesterday + today
     python garmin_sync.py --date 2026-03-20        # sync specific date
     python garmin_sync.py --range 2026-03-01 2026-03-20  # sync date range
 """
@@ -18,6 +18,7 @@ import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+import garth
 from dotenv import load_dotenv
 from garminconnect import Garmin
 from supabase import create_client
@@ -34,7 +35,8 @@ GARMIN_PASSWORD = os.environ["GARMIN_PASSWORD"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 
-TOKEN_STORE = PROJECT_ROOT / "garmin_tokens.json"
+TOKEN_STORE = PROJECT_ROOT / "garmin_tokens.json"  # legacy, kept for reference
+GARTH_TOKEN_DIR = PROJECT_ROOT / ".garth"
 API_DELAY = 1  # seconds between Garmin API calls
 
 logging.basicConfig(
@@ -49,74 +51,48 @@ log = logging.getLogger("garmin_sync")
 # ---------------------------------------------------------------------------
 
 
-def _refresh_tokens_from_safari():
-    """Extract fresh Garmin tokens from Safari's cookie store."""
+def _garth_login() -> garth.Client:
+    """Authenticate via garth (OAuth1/OAuth2, long-lived tokens).
+
+    Auth priority:
+      1. Resume from .garth/ directory (OAuth1 token lasts ~1 year)
+      2. Credential login via SSO (one-time, may need MFA)
+    """
+    token_dir = str(GARTH_TOKEN_DIR)
+
+    # --- Step 1: Try resuming saved OAuth tokens ---
     try:
-        import browser_cookie3
-        import requests
+        garth.resume(token_dir)
+        garth.client.username
+        log.info("Resumed garth session from saved OAuth tokens")
+        return garth.client
+    except Exception as e:
+        log.info("Garth token resume failed: %s", e)
 
-        cj = browser_cookie3.safari(domain_name='garmin.com')
-        jwt_web = None
-        csrf_token = None
-        cookie_dict = {}
-
-        for c in cj:
-            if 'garmin' in c.domain or 'connect' in c.domain:
-                cookie_dict[c.name] = c.value
-            if c.name == 'JWT_WEB':
-                jwt_web = c.value
-
-        if not jwt_web:
-            return False
-
-        # Fetch CSRF from the page meta tag
-        sess = requests.Session()
-        for c in cj:
-            sess.cookies.set(c.name, c.value, domain=c.domain, path=c.path)
-        import re
-        r = sess.get('https://connect.garmin.com/modern/', headers={
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15',
-        })
-        match = re.search(r'<meta[^>]*csrf[^>]*content="([^"]+)"', r.text, re.IGNORECASE)
-        if match:
-            csrf_token = match.group(1)
-
-        if not csrf_token:
-            return False
-
-        import json as _json
-        token_data = {'jwt_web': jwt_web, 'csrf_token': csrf_token, 'cookies': cookie_dict}
-        TOKEN_STORE.write_text(_json.dumps(token_data, indent=2))
-        log.info("Refreshed tokens from Safari cookies")
-        return True
-    except Exception as exc:
-        log.debug("Safari token refresh failed: %s", exc)
-        return False
+    # --- Step 2: Fresh login ---
+    log.info("Attempting garth credential login via SSO")
+    garth.login(GARMIN_EMAIL, GARMIN_PASSWORD)
+    garth.save(token_dir)
+    log.info("Garth login successful, tokens saved to %s", GARTH_TOKEN_DIR)
+    return garth.client
 
 
 def get_garmin_client() -> Garmin:
-    """Authenticate with Garmin Connect, reusing stored tokens when possible."""
-    tokenstore = str(TOKEN_STORE)
-    try:
-        client = Garmin()
-        client.login(tokenstore)
-        log.info("Resumed Garmin session from stored tokens")
-    except Exception:
-        log.info("Stored tokens expired or missing — trying Safari cookies")
-        if _refresh_tokens_from_safari():
-            client = Garmin()
-            client.login(tokenstore)
-            log.info("Resumed Garmin session from Safari cookies")
-        else:
-            log.info("Safari refresh failed — trying credential login with MFA")
-            client = Garmin(
-                GARMIN_EMAIL,
-                GARMIN_PASSWORD,
-                prompt_mfa=lambda: input("Enter MFA code from email: "),
-            )
-            client.login()
-            client.client.dump(tokenstore)
-            log.info("Login successful, tokens saved to %s", TOKEN_STORE)
+    """Build a Garmin API client backed by garth's long-lived OAuth tokens.
+
+    Uses garth for authentication (OAuth1 tokens last ~1 year, auto-refresh
+    OAuth2 access tokens). Injects garth's Client into garminconnect's Garmin
+    class so all 127+ API methods work with garth's auth.
+    """
+    garth_client = _garth_login()
+
+    # Build Garmin wrapper without triggering its own auth
+    client = Garmin()
+    client.client = garth_client
+    client.display_name = garth_client.username or GARMIN_EMAIL
+
+    # Save tokens after successful auth (garth auto-refreshes OAuth2)
+    garth.save(str(GARTH_TOKEN_DIR))
     return client
 
 
@@ -155,7 +131,7 @@ def _ms_to_iso(ts):
     if ts is None:
         return None
     if isinstance(ts, (int, float)) and ts > 1_000_000_000_000:
-        from datetime import datetime, timezone
+        from datetime import timezone
         return datetime.fromtimestamp(ts / 1000, tz=timezone.utc).isoformat()
     return ts
 
@@ -514,7 +490,7 @@ def sync_performance_scores(client: Garmin, sb, d: date) -> bool:
 
     endurance = api_call(client.get_endurance_score, ds, ds)
     hill = api_call(client.get_hill_score, ds, ds)
-    races = api_call(client.get_race_predictions, ds, ds)
+    races = api_call(client.get_race_predictions)
     fitness_age = api_call(client.get_fitnessage_data, ds)
 
     endurance_val = None
@@ -706,7 +682,10 @@ def main():
     elif args.date:
         dates = [date.fromisoformat(args.date)]
     else:
-        dates = [date.today() - timedelta(days=1)]
+        # Default: sync both yesterday and today.
+        # Yesterday has final data; today has morning metrics (body battery,
+        # training readiness) needed by the coaching agent at 09:20.
+        dates = [date.today() - timedelta(days=1), date.today()]
 
     log.info("Syncing %d date(s): %s → %s", len(dates), dates[0], dates[-1])
 
@@ -731,6 +710,9 @@ def main():
             fn(client, sb, dates[-1])
         except Exception as exc:
             log.error("Error in one-shot sync %s: %s", name, exc)
+
+    # Save tokens at end of session to capture any mid-session refreshes
+    _save_tokens(client)
 
     # Summary
     total_ok = sum(
