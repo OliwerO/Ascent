@@ -4,11 +4,28 @@ import { LoadingState } from '../components/LoadingState'
 import { useHRV, useBodyComposition, useActivities, useDailyMetrics } from '../hooks/useSupabase'
 import { pairHikeAndFly, formatAirtime, formatClimbRate, formatDistance } from '../lib/flying'
 import { format, startOfWeek, subDays } from 'date-fns'
-import { Wind, RefreshCw } from 'lucide-react'
+import { Wind, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, ResponsiveContainer, Tooltip, Legend,
 } from 'recharts'
+
+function InfoPanel({ title, children }: { title: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="mt-2">
+      <button onClick={() => setOpen(!open)} className="flex items-center gap-1 text-[11px] text-text-muted hover:text-text-secondary transition-colors">
+        {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        {title}
+      </button>
+      {open && (
+        <div className="mt-1.5 text-[11px] text-text-muted leading-relaxed bg-bg-primary/50 rounded-lg px-3 py-2 space-y-1.5">
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
 
 const darkTooltipStyle = {
   backgroundColor: '#1a1a2e',
@@ -83,23 +100,48 @@ export default function TrendsView() {
     }))
 
   // --- Body Composition ---
-  const bodyCompData = (bodyComp.data ?? [])
+  // Weight + muscle chart (kg scale)
+  const massChartData = (bodyComp.data ?? [])
     .slice()
     .reverse()
-    .filter((d: any) => d.weight_kg != null || d.body_fat_pct != null)
+    .filter((d: any) => d.weight_kg != null)
     .map((d: any) => ({
       date: format(new Date(d.date), 'MMM d'),
       weight: d.weight_kg ? +d.weight_kg.toFixed(1) : null,
-      bodyFat: d.body_fat_pct ? +d.body_fat_pct.toFixed(1) : null,
       muscleMass: d.muscle_mass_grams ? +(d.muscle_mass_grams / 1000).toFixed(1) : null,
-      leanMass: d.lean_body_mass_grams ? +(d.lean_body_mass_grams / 1000).toFixed(1) : null,
-      bodyWater: d.body_water_pct ? +d.body_water_pct.toFixed(1) : null,
-      source: d.source,
     }))
 
-  // Latest body comp snapshot (for summary stats)
+  // Body fat % chart (separate scale)
+  const fatChartData = (bodyComp.data ?? [])
+    .slice()
+    .reverse()
+    .filter((d: any) => d.body_fat_pct != null)
+    .map((d: any) => ({
+      date: format(new Date(d.date), 'MMM d'),
+      bodyFat: +d.body_fat_pct.toFixed(1),
+    }))
+
+  // Latest body comp snapshot
   const latestComp = (bodyComp.data ?? []).find((d: any) => d.body_fat_pct != null) as any
   const bioAges = latestComp?.raw_json?.bio_age ?? null
+  const rawMetrics = latestComp?.raw_json?.body_metrics ?? []
+
+  // Extract quality & segmental metrics from raw_json
+  const rawByType: Record<string, number> = {}
+  for (const m of rawMetrics) {
+    if (m.value != null) rawByType[m.type] = m.value
+  }
+  const phaseAngle = rawByType['BODY_PHASE_ANGLE']
+  const phaseAngleRange = { low: rawByType['BODY_PHASE_ANGLE_LOW'], top: rawByType['BODY_PHASE_ANGLE_TOP'] }
+  const ecwTbw = rawByType['ECW_TBW_PERCENT']
+  const segmental = {
+    leftArm: rawByType['SEGMENTAL_MUSCLE_LEFT_ARM_KG'],
+    rightArm: rawByType['SEGMENTAL_MUSCLE_RIGHT_ARM_KG'],
+    leftLeg: rawByType['SEGMENTAL_MUSCLE_LEFT_LEG_KG'],
+    rightLeg: rawByType['SEGMENTAL_MUSCLE_RIGHT_LEG_KG'],
+    trunk: rawByType['SEGMENTAL_MUSCLE_TRUNK_KG'],
+  }
+  const hasSegmental = segmental.leftArm != null
 
   // --- Weekly Elevation (12 weeks) ---
   const twelveWeeksAgo = subDays(new Date(), 84)
@@ -213,9 +255,9 @@ export default function TrendsView() {
         )}
       </Card>
 
-      {/* Body Composition */}
+      {/* Body Composition — Header + Sync */}
       <Card>
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-1">
           <span className="text-xs uppercase tracking-wider text-text-muted font-medium">Body Composition</span>
           <button
             onClick={handleEgymSync}
@@ -231,146 +273,238 @@ export default function TrendsView() {
             {syncResult}
           </div>
         )}
-        {bodyCompData.length > 0 ? (
+
+        {latestComp ? (
           <>
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={bodyCompData}>
-                <XAxis
-                  dataKey="date"
-                  tick={{ fill: '#555570', fontSize: 10 }}
-                  axisLine={{ stroke: '#2a2a4a' }}
-                  tickLine={false}
-                  interval="preserveStartEnd"
-                />
-                <YAxis
-                  yAxisId="weight"
-                  tick={{ fill: '#555570', fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={40}
-                  unit=" kg"
-                  domain={['dataMin - 1', 'dataMax + 1']}
-                />
-                <YAxis
-                  yAxisId="bf"
-                  orientation="right"
-                  tick={{ fill: '#555570', fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={40}
-                  unit="%"
-                  domain={['dataMin - 2', 'dataMax + 2']}
-                />
-                <Tooltip contentStyle={darkTooltipStyle} />
-                <Legend
-                  wrapperStyle={{ color: '#8888a8', fontSize: 12 }}
-                />
-                <Line
-                  yAxisId="weight"
-                  type="monotone"
-                  dataKey="weight"
-                  stroke="#3b82f6"
-                  strokeWidth={2}
-                  dot={false}
-                  name="Weight (kg)"
-                  connectNulls
-                />
-                <Line
-                  yAxisId="bf"
-                  type="monotone"
-                  dataKey="bodyFat"
-                  stroke="#a855f7"
-                  strokeWidth={2}
-                  dot={false}
-                  name="Body Fat %"
-                  connectNulls
-                />
-                <Line
-                  yAxisId="weight"
-                  type="monotone"
-                  dataKey="muscleMass"
-                  stroke="#22c55e"
-                  strokeWidth={2}
-                  dot={false}
-                  name="Muscle (kg)"
-                  connectNulls
-                />
-              </LineChart>
-            </ResponsiveContainer>
-
-            {/* Latest scan summary */}
-            {latestComp && (
-              <div className="mt-4 pt-3 border-t border-border">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] text-text-muted uppercase tracking-wider">Latest scan</span>
-                  <span className="text-[11px] text-text-muted">{format(new Date(latestComp.date), 'MMM d, yyyy')}</span>
+            {/* Hero stats — the 3 numbers that matter most */}
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div>
+                <div className="text-[10px] text-text-muted">Weight</div>
+                <div className="text-lg font-bold text-text-primary">
+                  {latestComp.weight_kg?.toFixed(1) ?? '--'}
+                  <span className="text-[10px] text-text-muted ml-0.5">kg</span>
                 </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <div className="text-[10px] text-text-muted">Weight</div>
-                    <div className="text-sm font-semibold text-text-primary">
-                      {latestComp.weight_kg?.toFixed(1) ?? '--'} <span className="text-[10px] text-text-muted">kg</span>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-text-muted">Body Fat</div>
-                    <div className="text-sm font-semibold text-accent-purple">
-                      {latestComp.body_fat_pct?.toFixed(1) ?? '--'}<span className="text-[10px] text-text-muted">%</span>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-text-muted">Skeletal Muscle</div>
-                    <div className="text-sm font-semibold text-accent-green">
-                      {latestComp.muscle_mass_grams ? (latestComp.muscle_mass_grams / 1000).toFixed(1) : '--'} <span className="text-[10px] text-text-muted">kg</span>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-text-muted">Lean Mass</div>
-                    <div className="text-sm font-semibold text-text-primary">
-                      {latestComp.lean_body_mass_grams ? (latestComp.lean_body_mass_grams / 1000).toFixed(1) : '--'} <span className="text-[10px] text-text-muted">kg</span>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-text-muted">Body Water</div>
-                    <div className="text-sm font-semibold text-blue-400">
-                      {latestComp.body_water_pct?.toFixed(1) ?? '--'}<span className="text-[10px] text-text-muted">%</span>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-text-muted">BMI</div>
-                    <div className="text-sm font-semibold text-text-secondary">
-                      {latestComp.bmi?.toFixed(1) ?? '--'}
-                    </div>
-                  </div>
+              </div>
+              <div>
+                <div className="text-[10px] text-text-muted">Body Fat</div>
+                <div className="text-lg font-bold text-accent-purple">
+                  {latestComp.body_fat_pct?.toFixed(1) ?? '--'}
+                  <span className="text-[10px] text-text-muted ml-0.5">%</span>
                 </div>
+              </div>
+              <div>
+                <div className="text-[10px] text-text-muted">Muscle</div>
+                <div className="text-lg font-bold text-accent-green">
+                  {latestComp.muscle_mass_grams ? (latestComp.muscle_mass_grams / 1000).toFixed(1) : '--'}
+                  <span className="text-[10px] text-text-muted ml-0.5">kg</span>
+                </div>
+              </div>
+            </div>
 
-                {/* Bio Ages */}
-                {bioAges && (
-                  <div className="mt-3 pt-2 border-t border-border">
-                    <div className="text-[10px] text-text-muted mb-1.5">Bio Age</div>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                      {bioAges.totalBioAge != null && (
-                        <span>Total: <span className={`font-semibold ${bioAges.totalBioAge <= 28 ? 'text-accent-green' : 'text-accent-yellow'}`}>{bioAges.totalBioAge}</span></span>
-                      )}
-                      {bioAges.muscleBioAge != null && (
-                        <span>Muscle: <span className="font-semibold text-accent-green">{bioAges.muscleBioAge}</span></span>
-                      )}
-                      {bioAges.metabolicAge != null && (
-                        <span>Metabolic: <span className={`font-semibold ${bioAges.metabolicAge <= 30 ? 'text-accent-green' : 'text-accent-yellow'}`}>{bioAges.metabolicAge}</span></span>
-                      )}
-                      {bioAges.cardioAge != null && (
-                        <span>Cardio: <span className="font-semibold text-accent-green">{bioAges.cardioAge}</span></span>
-                      )}
-                    </div>
-                  </div>
-                )}
+            {latestComp.date && (
+              <div className="text-[10px] text-text-muted mb-1">
+                Last scan: {format(new Date(latestComp.date), 'MMM d, yyyy')}
               </div>
             )}
+
+            <InfoPanel title="What do these mean?">
+              <p><strong className="text-text-secondary">Body Fat %</strong> — Percentage of total weight that is fat. 12–18% is athletic for men. Lower = more defined, but below 10% is hard to sustain.</p>
+              <p><strong className="text-text-secondary">Skeletal Muscle Mass</strong> — Weight of muscles attached to bones (the ones you train). The primary metric for tracking strength gains. More muscle = higher metabolism + better performance.</p>
+              <p><strong className="text-text-secondary">Recomp goal:</strong> Muscle up + fat down simultaneously. Track both — weight alone is misleading since muscle is denser than fat.</p>
+            </InfoPanel>
           </>
         ) : (
           <div className="text-text-muted text-sm">No body composition data available</div>
         )}
       </Card>
+
+      {/* Weight & Muscle Mass trend (kg scale) */}
+      {massChartData.length > 1 && (
+        <Card title="Weight & Muscle (90d)">
+          <ResponsiveContainer width="100%" height={180}>
+            <LineChart data={massChartData}>
+              <XAxis dataKey="date" tick={{ fill: '#555570', fontSize: 10 }} axisLine={{ stroke: '#2a2a4a' }} tickLine={false} interval="preserveStartEnd" />
+              <YAxis yAxisId="w" tick={{ fill: '#555570', fontSize: 11 }} axisLine={false} tickLine={false} width={40} unit=" kg" domain={['dataMin - 1', 'dataMax + 1']} />
+              <YAxis yAxisId="m" orientation="right" tick={{ fill: '#555570', fontSize: 11 }} axisLine={false} tickLine={false} width={40} unit=" kg" domain={['dataMin - 1', 'dataMax + 1']} />
+              <Tooltip contentStyle={darkTooltipStyle} />
+              <Legend wrapperStyle={{ color: '#8888a8', fontSize: 11 }} />
+              <Line yAxisId="w" type="monotone" dataKey="weight" stroke="#3b82f6" strokeWidth={2} dot={{ fill: '#3b82f6', r: 3 }} name="Weight" connectNulls />
+              <Line yAxisId="m" type="monotone" dataKey="muscleMass" stroke="#22c55e" strokeWidth={2} dot={{ fill: '#22c55e', r: 3 }} name="Skeletal Muscle" connectNulls />
+            </LineChart>
+          </ResponsiveContainer>
+        </Card>
+      )}
+
+      {/* Body Fat % trend (separate scale) */}
+      {fatChartData.length > 1 && (
+        <Card title="Body Fat % (90d)">
+          <ResponsiveContainer width="100%" height={160}>
+            <AreaChart data={fatChartData}>
+              <defs>
+                <linearGradient id="bfGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="date" tick={{ fill: '#555570', fontSize: 10 }} axisLine={{ stroke: '#2a2a4a' }} tickLine={false} interval="preserveStartEnd" />
+              <YAxis tick={{ fill: '#555570', fontSize: 11 }} axisLine={false} tickLine={false} width={35} unit="%" domain={['dataMin - 1', 'dataMax + 1']} />
+              <Tooltip contentStyle={darkTooltipStyle} />
+              <Area type="monotone" dataKey="bodyFat" stroke="#a855f7" fill="url(#bfGrad)" strokeWidth={2} dot={{ fill: '#a855f7', r: 3 }} name="Body Fat %" connectNulls />
+            </AreaChart>
+          </ResponsiveContainer>
+        </Card>
+      )}
+
+      {/* Muscle Quality & Balance */}
+      {(phaseAngle != null || hasSegmental) && (
+        <Card title="Muscle Quality & Balance">
+          {/* Phase Angle + ECW/TBW */}
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            {phaseAngle != null && (
+              <div>
+                <div className="text-[10px] text-text-muted">Phase Angle</div>
+                <div className="text-lg font-bold text-text-primary">
+                  {phaseAngle.toFixed(1)}<span className="text-[10px] text-text-muted ml-0.5">°</span>
+                </div>
+                <div className="text-[10px] text-text-muted">
+                  Range: {phaseAngleRange.low?.toFixed(1)}–{phaseAngleRange.top?.toFixed(1)}°
+                  {phaseAngle > (phaseAngleRange.top ?? 6) && (
+                    <span className="text-accent-green ml-1">above avg</span>
+                  )}
+                </div>
+              </div>
+            )}
+            {ecwTbw != null && (
+              <div>
+                <div className="text-[10px] text-text-muted">ECW/TBW Ratio</div>
+                <div className={`text-lg font-bold ${ecwTbw <= 40 ? 'text-accent-green' : 'text-accent-yellow'}`}>
+                  {ecwTbw.toFixed(1)}<span className="text-[10px] text-text-muted ml-0.5">%</span>
+                </div>
+                <div className="text-[10px] text-text-muted">
+                  {ecwTbw <= 39.5 ? 'Healthy' : ecwTbw <= 40 ? 'Normal' : 'Elevated — check recovery'}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Segmental muscle balance */}
+          {hasSegmental && (
+            <div className="border-t border-border pt-3">
+              <div className="text-[10px] text-text-muted mb-2 uppercase tracking-wider">Segmental Muscle Mass</div>
+              <div className="space-y-2">
+                {/* Arms */}
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="w-14 text-text-muted text-right">Arms</span>
+                  <div className="flex-1 flex items-center gap-1">
+                    <span className="text-text-secondary w-12 text-right">{segmental.leftArm?.toFixed(2)}</span>
+                    <div className="flex-1 flex h-3 rounded-full overflow-hidden bg-bg-primary">
+                      <div className="bg-blue-500/60 h-full" style={{ width: `${(segmental.leftArm ?? 0) / ((segmental.leftArm ?? 0) + (segmental.rightArm ?? 0)) * 100}%` }} />
+                      <div className="bg-blue-400 h-full" style={{ width: `${(segmental.rightArm ?? 0) / ((segmental.leftArm ?? 0) + (segmental.rightArm ?? 0)) * 100}%` }} />
+                    </div>
+                    <span className="text-text-secondary w-12">{segmental.rightArm?.toFixed(2)}</span>
+                  </div>
+                  {segmental.leftArm != null && segmental.rightArm != null && (
+                    <span className={`text-[10px] w-8 ${Math.abs(segmental.leftArm - segmental.rightArm) / Math.max(segmental.leftArm, segmental.rightArm) > 0.05 ? 'text-accent-yellow' : 'text-accent-green'}`}>
+                      {Math.abs(((segmental.rightArm - segmental.leftArm) / Math.max(segmental.leftArm, segmental.rightArm)) * 100).toFixed(0)}%
+                    </span>
+                  )}
+                </div>
+                {/* Legs */}
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="w-14 text-text-muted text-right">Legs</span>
+                  <div className="flex-1 flex items-center gap-1">
+                    <span className="text-text-secondary w-12 text-right">{segmental.leftLeg?.toFixed(2)}</span>
+                    <div className="flex-1 flex h-3 rounded-full overflow-hidden bg-bg-primary">
+                      <div className="bg-emerald-500/60 h-full" style={{ width: `${(segmental.leftLeg ?? 0) / ((segmental.leftLeg ?? 0) + (segmental.rightLeg ?? 0)) * 100}%` }} />
+                      <div className="bg-emerald-400 h-full" style={{ width: `${(segmental.rightLeg ?? 0) / ((segmental.leftLeg ?? 0) + (segmental.rightLeg ?? 0)) * 100}%` }} />
+                    </div>
+                    <span className="text-text-secondary w-12">{segmental.rightLeg?.toFixed(2)}</span>
+                  </div>
+                  {segmental.leftLeg != null && segmental.rightLeg != null && (
+                    <span className={`text-[10px] w-8 ${Math.abs(segmental.leftLeg - segmental.rightLeg) / Math.max(segmental.leftLeg, segmental.rightLeg) > 0.05 ? 'text-accent-yellow' : 'text-accent-green'}`}>
+                      {Math.abs(((segmental.rightLeg - segmental.leftLeg) / Math.max(segmental.leftLeg, segmental.rightLeg)) * 100).toFixed(0)}%
+                    </span>
+                  )}
+                </div>
+                {/* Trunk */}
+                {segmental.trunk != null && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="w-14 text-text-muted text-right">Trunk</span>
+                    <span className="text-text-secondary font-medium">{segmental.trunk.toFixed(1)} kg</span>
+                  </div>
+                )}
+              </div>
+              <div className="text-[9px] text-text-muted mt-2">L / R shown · {'>'} 5% asymmetry flagged yellow</div>
+            </div>
+          )}
+
+          <InfoPanel title="Why these matter">
+            <p><strong className="text-text-secondary">Phase Angle</strong> — Measures cell membrane integrity and muscle quality. Higher = healthier cells, better hydration of muscle tissue. Rising phase angle during training confirms quality muscle gain, not just mass. Range 6.5–8.0° is excellent for athletes.</p>
+            <p><strong className="text-text-secondary">ECW/TBW Ratio</strong> — Extracellular water vs total body water. Below 40% is healthy. Elevated values can indicate inflammation, overtraining, or poor recovery. Track after hard training blocks.</p>
+            <p><strong className="text-text-secondary">L/R Balance</strong> — Asymmetric sports (snowboarding, one-sided carries) can create imbalances. {'>'} 5% difference increases injury risk. Address with unilateral exercises (Bulgarian split squats, single-arm rows).</p>
+          </InfoPanel>
+        </Card>
+      )}
+
+      {/* Bio Age + Secondary Metrics */}
+      {(bioAges || latestComp) && (
+        <Card title="Health Markers">
+          {/* Bio Ages */}
+          {bioAges && (
+            <div className="grid grid-cols-4 gap-3 mb-3">
+              {[
+                { label: 'Total', value: bioAges.totalBioAge, threshold: 28 },
+                { label: 'Muscle', value: bioAges.muscleBioAge, threshold: 28 },
+                { label: 'Metabolic', value: bioAges.metabolicAge, threshold: 30 },
+                { label: 'Cardio', value: bioAges.cardioAge, threshold: 28 },
+              ].filter(b => b.value != null).map(b => (
+                <div key={b.label}>
+                  <div className="text-[10px] text-text-muted">{b.label}</div>
+                  <div className={`text-lg font-bold ${b.value <= b.threshold ? 'text-accent-green' : 'text-accent-yellow'}`}>
+                    {b.value}
+                  </div>
+                  <div className="text-[9px] text-text-muted">bio age</div>
+                </div>
+              ))}
+            </div>
+          )}
+          {bioAges?.metabolicAge != null && bioAges.metabolicAge > 28 && (
+            <div className="text-xs text-accent-yellow bg-accent-yellow/10 px-2 py-1 rounded mb-3">
+              Metabolic age {bioAges.metabolicAge} is above actual age (28) — recomp will improve this
+            </div>
+          )}
+          <InfoPanel title="About bio ages">
+            <p><strong className="text-text-secondary">Bio Age</strong> — eGym's composite score comparing your fitness to population averages. Lower than actual age = better than average for your age group.</p>
+            <p><strong className="text-text-secondary">Muscle bio age</strong> — Based on strength testing across all machines. Improve with progressive overload.</p>
+            <p><strong className="text-text-secondary">Metabolic bio age</strong> — Driven by body fat %, visceral fat, and BMI. The hardest to improve — responds to sustained caloric deficit + training consistency over months.</p>
+            <p><strong className="text-text-secondary">Cardio bio age</strong> — Based on resting HR and cardio performance. Your 44 bpm resting HR is excellent. Mountain sports keep this low.</p>
+          </InfoPanel>
+
+          {/* Secondary metrics */}
+          {latestComp && (
+            <div className="grid grid-cols-3 gap-3 pt-2 border-t border-border">
+              <div>
+                <div className="text-[10px] text-text-muted">Lean Mass</div>
+                <div className="text-sm font-semibold text-text-primary">
+                  {latestComp.lean_body_mass_grams ? (latestComp.lean_body_mass_grams / 1000).toFixed(1) : '--'} <span className="text-[10px] text-text-muted">kg</span>
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] text-text-muted">Body Water</div>
+                <div className={`text-sm font-semibold ${latestComp.body_water_pct >= 55 ? 'text-blue-400' : 'text-accent-yellow'}`}>
+                  {latestComp.body_water_pct?.toFixed(1) ?? '--'}<span className="text-[10px] text-text-muted">%</span>
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] text-text-muted">Visceral Fat</div>
+                <div className={`text-sm font-semibold ${(latestComp.visceral_fat_rating ?? 0) <= 10 ? 'text-accent-green' : 'text-accent-yellow'}`}>
+                  {latestComp.visceral_fat_rating ?? '--'}
+                </div>
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* Weekly Elevation */}
       <Card title="Weekly Elevation (12 weeks)">
