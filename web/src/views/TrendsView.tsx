@@ -14,14 +14,16 @@ const darkTooltipStyle = {
   color: '#e4e4ef',
 }
 
-function classifyActivity(type: string | null | undefined): string {
-  if (!type) return 'other'
+function classifyActivity(type: string | null | undefined): string | null {
+  if (!type) return null
   const t = type.toLowerCase()
   if (t.includes('ski') || t.includes('snowboard') || t.includes('backcountry')) return 'ski'
   if (t.includes('hik') || t.includes('trail') || t.includes('mountaineering')) return 'hike'
+  if (t.includes('hang_gliding') || t.includes('paraglid')) return 'hike' // hike & fly
   if (t.includes('run')) return 'run'
   if (t.includes('cycling') || t.includes('biking') || t.includes('ride')) return 'cycle'
-  return 'other'
+  // Skip non-elevation activities (gym, yoga, stair climbing, etc.)
+  return null
 }
 
 const elevationColors: Record<string, string> = {
@@ -29,7 +31,6 @@ const elevationColors: Record<string, string> = {
   hike: '#22c55e',
   run: '#eab308',
   cycle: '#a855f7',
-  other: '#555570',
 }
 
 export default function TrendsView() {
@@ -70,22 +71,26 @@ export default function TrendsView() {
   const twelveWeeksAgo = subDays(new Date(), 84)
   const weeklyElevation: Record<string, { total: number; byType: Record<string, number> }> = {}
 
+  const weekDates: Record<string, Date> = {}
   for (const a of activities.data ?? []) {
     const actDate = new Date(a.date)
     if (actDate < twelveWeeksAgo || !a.elevation_gain) continue
-    const weekKey = format(startOfWeek(actDate, { weekStartsOn: 1 }), 'MMM d')
+    const actType = classifyActivity(a.activity_type)
+    if (!actType) continue // skip gym, yoga, etc.
+    const weekStart = startOfWeek(actDate, { weekStartsOn: 1 })
+    const weekKey = format(weekStart, 'MMM d')
     if (!weeklyElevation[weekKey]) {
       weeklyElevation[weekKey] = { total: 0, byType: {} }
+      weekDates[weekKey] = weekStart
     }
-    const actType = classifyActivity(a.activity_type)
     weeklyElevation[weekKey].total += a.elevation_gain
     weeklyElevation[weekKey].byType[actType] =
       (weeklyElevation[weekKey].byType[actType] || 0) + a.elevation_gain
   }
 
-  const elevationTypes = ['ski', 'hike', 'run', 'cycle', 'other']
+  const elevationTypes = ['ski', 'hike', 'run', 'cycle']
   const elevationChartData = Object.entries(weeklyElevation)
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => (weekDates[a]?.getTime() ?? 0) - (weekDates[b]?.getTime() ?? 0))
     .map(([week, data]) => ({
       week,
       total: Math.round(data.total),
