@@ -17,3 +17,4 @@ garmin_tokens.json.old
 skills/
 skills-lock.json
 venv/
+bin/

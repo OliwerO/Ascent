@@ -1,6 +1,6 @@
 # Ascent — Status & Next Steps
 
-> Last updated: 2026-03-31
+> Last updated: 2026-04-01
 > Single source of truth for all task status, dependencies, and next actions.
 > CLAUDE.md has architecture/context. This file has what to DO.
 
@@ -44,6 +44,14 @@ See `docs/schema-conflict-resolution.md`. New migration: `sql/006_training_expan
   3-month backfill complete: 90 days of data (Jan 1 – Mar 31), 47 activities.
 - MFA is permanently enabled (ECG feature, irreversible). Safari session approach is the long-term solution.
 - Body composition: no Garmin scale. User does gym body comp scans — input via screenshot/Telegram → Claude Vision parsing.
+
+### eGym body scan sync (2026-04-01)
+
+- `egym_sync.py` pulls body composition from eGym via `egym-exporter` (Go binary, Prometheus metrics).
+- Binary: `bin/egym_exporter` (Darwin arm64, gitignored). Source: `github.com/soerenuhrbach/egym-exporter`.
+- Upserts to `body_composition` with `source='egym'`. Migration `008_body_comp_source_unique.sql` adds unique constraint on `(date, source)` to support multiple sources per date.
+- Env vars: `EGYM_BRAND`, `EGYM_USERNAME`, `EGYM_PASSWORD`.
+- Captures: weight, body fat %, BMI, muscle mass, bone mass, body water %, visceral fat, metabolic age, lean body mass, plus bio age metrics in raw_json.
 
 -----
 
@@ -135,6 +143,7 @@ After KB + 4-6 weeks of Garmin data:
 |------|---------|
 | **Scripts** | |
 | `scripts/garmin_sync.py` | Nightly Garmin → Supabase sync (Phase 2/7a) |
+| `scripts/egym_sync.py` | eGym body scan → Supabase sync (body composition) |
 | `scripts/garmin_workout_push.py` | Push workouts to Garmin watch (Phase 7b, scaffolded) |
 | `scripts/workout_generator.py` | Generate weekly workouts (Phase 8, scaffolded) |
 | `scripts/setup_phase3.sh` | One-shot Phase 3 Mac deployment |
@@ -147,6 +156,7 @@ After KB + 4-6 weeks of Garmin data:
 | `sql/004_seed_blood_test_2026_02_26.sql` | Blood test results |
 | `sql/005_additional_garmin_tables.sql` | Phase 2 additional tables (5 tables) |
 | `sql/006_training_expansion.sql` | Phase 8 tables (planned_workouts, exercise_progression) |
+| `sql/008_body_comp_source_unique.sql` | Unique constraint on (date, source) for multi-source body comp |
 | **Docs** | |
 | `docs/training-expansion-brief.md` | Full Phase 7-10 specification |
 | `docs/schema-conflict-resolution.md` | Why 3 tables were dropped |

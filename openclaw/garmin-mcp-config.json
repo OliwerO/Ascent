@@ -1,10 +1,10 @@
 {
-  "garmin": {
-    "command": "uvx",
-    "args": ["--python", "3.12", "--from", "garmin-connect-mcp", "garmin-connect-mcp"],
+  "_note": "Garmin MCP disabled — Cloudflare blocks garminconnect auth. Using Supabase MCP instead (data synced nightly by garmin_sync.py).",
+  "supabase": {
+    "command": "npx",
+    "args": ["-y", "@supabase/mcp-server-supabase@latest"],
     "env": {
-      "GARMIN_EMAIL": "${GARMIN_EMAIL}",
-      "GARMIN_PASSWORD": "${GARMIN_PASSWORD}"
+      "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}"
     }
   }
 }

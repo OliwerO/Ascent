@@ -67,19 +67,23 @@ export default function WeekView() {
     () => weekActivities.filter((a: any) => a.activity_type === 'strength_training').length,
     [weekActivities]
   )
-  // Latest body composition data
+  // Latest body composition data — show last available regardless of week
   const bodyComp = useMemo(() => {
     if (!bodyCompHook.data || bodyCompHook.data.length === 0) return null
-    const latest = bodyCompHook.data[0] as any
-    const prev = bodyCompHook.data.length > 1 ? bodyCompHook.data[1] as any : null
+    // Find latest with weight
+    const withWeight = bodyCompHook.data.filter((d: any) => d.weight_kg != null)
+    const withFat = bodyCompHook.data.filter((d: any) => d.body_fat_pct != null)
+    const withMuscle = bodyCompHook.data.filter((d: any) => d.muscle_mass_grams != null)
+    const latest = withWeight[0] as any ?? withFat[0] as any
+    if (!latest) return null
+    const prev = withWeight.length > 1 ? withWeight[1] as any : null
     return {
       weight: latest.weight_kg,
-      bodyFat: latest.body_fat_pct,
+      bodyFat: withFat[0]?.body_fat_pct ?? null,
+      muscleMass: withMuscle[0]?.muscle_mass_grams ? withMuscle[0].muscle_mass_grams / 1000 : null,
       date: latest.date,
+      bodyFatDate: withFat[0]?.date ?? null,
       prevWeight: prev?.weight_kg ?? null,
-      prevBodyFat: prev?.body_fat_pct ?? null,
-      weightIsRecent: latest.weight_kg != null,
-      bodyFatIsRecent: latest.body_fat_pct != null,
     }
   }, [bodyCompHook.data])
 
@@ -208,21 +212,26 @@ export default function WeekView() {
         </Card>
         <Card>
           <div className="text-xs text-text-muted">Body Comp</div>
-          {bodyComp?.weight ? (
+          {bodyComp ? (
             <>
               <div className="text-xl font-bold text-text-primary">
-                {bodyComp.weight.toFixed(1)}
+                {bodyComp.weight?.toFixed(1) ?? '--'}
                 <span className="text-xs text-text-muted ml-1">kg</span>
               </div>
-              {bodyComp.bodyFat != null ? (
+              {bodyComp.bodyFat != null && (
                 <div className="text-[10px] font-medium text-text-secondary">
                   {bodyComp.bodyFat.toFixed(1)}% bf
+                  {bodyComp.muscleMass != null && ` · ${bodyComp.muscleMass.toFixed(1)}kg muscle`}
                 </div>
-              ) : bodyComp.prevWeight != null ? (
+              )}
+              {bodyComp.prevWeight != null && bodyComp.weight != null && bodyComp.weight !== bodyComp.prevWeight && (
                 <div className={`text-[10px] font-medium ${bodyComp.weight <= bodyComp.prevWeight ? 'text-accent-green' : 'text-accent-yellow'}`}>
-                  {bodyComp.weight < bodyComp.prevWeight ? '↓' : bodyComp.weight > bodyComp.prevWeight ? '↑' : '→'} {Math.abs(bodyComp.weight - bodyComp.prevWeight).toFixed(1)}kg
+                  {bodyComp.weight < bodyComp.prevWeight ? '↓' : '↑'} {Math.abs(bodyComp.weight - bodyComp.prevWeight).toFixed(1)}kg
                 </div>
-              ) : null}
+              )}
+              <div className="text-[9px] text-text-muted mt-0.5">
+                {format(new Date(bodyComp.date), 'MMM d')}
+              </div>
             </>
           ) : (
             <div className="text-sm text-text-muted mt-1">No data</div>

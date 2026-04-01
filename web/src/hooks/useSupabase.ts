@@ -104,7 +104,7 @@ export function useBodyComposition(days = 90) {
   return useFetch('body_composition', async () => {
     const { data, error } = await supabase
       .from('body_composition')
-      .select('date,weight_kg,body_fat_pct,muscle_mass_grams')
+      .select('date,weight_kg,body_fat_pct,muscle_mass_grams,body_water_pct,lean_body_mass_grams,bmi,visceral_fat_rating,metabolic_age,bone_mass_grams,source,raw_json')
       .gte('date', fmt(daysAgo(days)))
       .order('date', { ascending: false })
     if (error) throw error

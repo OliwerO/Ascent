@@ -1,10 +1,10 @@
-import { useMemo } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
 import { useHRV, useBodyComposition, useActivities, useDailyMetrics } from '../hooks/useSupabase'
 import { pairHikeAndFly, formatAirtime, formatClimbRate, formatDistance } from '../lib/flying'
 import { format, startOfWeek, subDays } from 'date-fns'
-import { Wind } from 'lucide-react'
+import { Wind, RefreshCw } from 'lucide-react'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, ResponsiveContainer, Tooltip, Legend,
@@ -42,6 +42,29 @@ export default function TrendsView() {
   const activities = useActivities(90)
   const metrics = useDailyMetrics(90)
 
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<string | null>(null)
+
+  const handleEgymSync = useCallback(async () => {
+    setSyncing(true)
+    setSyncResult(null)
+    try {
+      const resp = await fetch('/api/egym-sync', { method: 'POST' })
+      const data = await resp.json()
+      if (data.ok) {
+        setSyncResult(`Synced: ${data.weight_kg?.toFixed(1)}kg / ${data.body_fat_pct?.toFixed(1)}% bf`)
+        // Reload page after short delay to show new data
+        setTimeout(() => window.location.reload(), 1500)
+      } else {
+        setSyncResult(data.error || data.message || 'Sync failed')
+      }
+    } catch (e) {
+      setSyncResult(`Error: ${e}`)
+    } finally {
+      setSyncing(false)
+    }
+  }, [])
+
   const loading = hrv.loading || bodyComp.loading || activities.loading || metrics.loading
   const error = hrv.error || bodyComp.error || activities.error || metrics.error
 
@@ -63,12 +86,20 @@ export default function TrendsView() {
   const bodyCompData = (bodyComp.data ?? [])
     .slice()
     .reverse()
-    .filter((d: any) => d.weight_kg != null)
+    .filter((d: any) => d.weight_kg != null || d.body_fat_pct != null)
     .map((d: any) => ({
       date: format(new Date(d.date), 'MMM d'),
       weight: d.weight_kg ? +d.weight_kg.toFixed(1) : null,
       bodyFat: d.body_fat_pct ? +d.body_fat_pct.toFixed(1) : null,
+      muscleMass: d.muscle_mass_grams ? +(d.muscle_mass_grams / 1000).toFixed(1) : null,
+      leanMass: d.lean_body_mass_grams ? +(d.lean_body_mass_grams / 1000).toFixed(1) : null,
+      bodyWater: d.body_water_pct ? +d.body_water_pct.toFixed(1) : null,
+      source: d.source,
     }))
+
+  // Latest body comp snapshot (for summary stats)
+  const latestComp = (bodyComp.data ?? []).find((d: any) => d.body_fat_pct != null) as any
+  const bioAges = latestComp?.raw_json?.bio_age ?? null
 
   // --- Weekly Elevation (12 weeks) ---
   const twelveWeeksAgo = subDays(new Date(), 84)
@@ -183,62 +214,159 @@ export default function TrendsView() {
       </Card>
 
       {/* Body Composition */}
-      <Card title="Body Composition">
+      <Card>
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-xs uppercase tracking-wider text-text-muted font-medium">Body Composition</span>
+          <button
+            onClick={handleEgymSync}
+            disabled={syncing}
+            className="flex items-center gap-1.5 text-[11px] text-accent-green hover:text-accent-green/80 disabled:opacity-50 transition-colors"
+          >
+            <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
+            {syncing ? 'Syncing...' : 'Sync eGym'}
+          </button>
+        </div>
+        {syncResult && (
+          <div className={`text-xs mb-2 px-2 py-1 rounded ${syncResult.startsWith('Synced') ? 'bg-accent-green/10 text-accent-green' : 'bg-accent-red/10 text-accent-red'}`}>
+            {syncResult}
+          </div>
+        )}
         {bodyCompData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={bodyCompData}>
-              <XAxis
-                dataKey="date"
-                tick={{ fill: '#555570', fontSize: 10 }}
-                axisLine={{ stroke: '#2a2a4a' }}
-                tickLine={false}
-                interval="preserveStartEnd"
-              />
-              <YAxis
-                yAxisId="weight"
-                tick={{ fill: '#555570', fontSize: 11 }}
-                axisLine={false}
-                tickLine={false}
-                width={40}
-                unit=" kg"
-                domain={['dataMin - 1', 'dataMax + 1']}
-              />
-              <YAxis
-                yAxisId="bf"
-                orientation="right"
-                tick={{ fill: '#555570', fontSize: 11 }}
-                axisLine={false}
-                tickLine={false}
-                width={40}
-                unit="%"
-                domain={['dataMin - 2', 'dataMax + 2']}
-              />
-              <Tooltip contentStyle={darkTooltipStyle} />
-              <Legend
-                wrapperStyle={{ color: '#8888a8', fontSize: 12 }}
-              />
-              <Line
-                yAxisId="weight"
-                type="monotone"
-                dataKey="weight"
-                stroke="#3b82f6"
-                strokeWidth={2}
-                dot={false}
-                name="Weight (kg)"
-                connectNulls
-              />
-              <Line
-                yAxisId="bf"
-                type="monotone"
-                dataKey="bodyFat"
-                stroke="#a855f7"
-                strokeWidth={2}
-                dot={false}
-                name="Body Fat %"
-                connectNulls
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          <>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={bodyCompData}>
+                <XAxis
+                  dataKey="date"
+                  tick={{ fill: '#555570', fontSize: 10 }}
+                  axisLine={{ stroke: '#2a2a4a' }}
+                  tickLine={false}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  yAxisId="weight"
+                  tick={{ fill: '#555570', fontSize: 11 }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={40}
+                  unit=" kg"
+                  domain={['dataMin - 1', 'dataMax + 1']}
+                />
+                <YAxis
+                  yAxisId="bf"
+                  orientation="right"
+                  tick={{ fill: '#555570', fontSize: 11 }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={40}
+                  unit="%"
+                  domain={['dataMin - 2', 'dataMax + 2']}
+                />
+                <Tooltip contentStyle={darkTooltipStyle} />
+                <Legend
+                  wrapperStyle={{ color: '#8888a8', fontSize: 12 }}
+                />
+                <Line
+                  yAxisId="weight"
+                  type="monotone"
+                  dataKey="weight"
+                  stroke="#3b82f6"
+                  strokeWidth={2}
+                  dot={false}
+                  name="Weight (kg)"
+                  connectNulls
+                />
+                <Line
+                  yAxisId="bf"
+                  type="monotone"
+                  dataKey="bodyFat"
+                  stroke="#a855f7"
+                  strokeWidth={2}
+                  dot={false}
+                  name="Body Fat %"
+                  connectNulls
+                />
+                <Line
+                  yAxisId="weight"
+                  type="monotone"
+                  dataKey="muscleMass"
+                  stroke="#22c55e"
+                  strokeWidth={2}
+                  dot={false}
+                  name="Muscle (kg)"
+                  connectNulls
+                />
+              </LineChart>
+            </ResponsiveContainer>
+
+            {/* Latest scan summary */}
+            {latestComp && (
+              <div className="mt-4 pt-3 border-t border-border">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] text-text-muted uppercase tracking-wider">Latest scan</span>
+                  <span className="text-[11px] text-text-muted">{format(new Date(latestComp.date), 'MMM d, yyyy')}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <div className="text-[10px] text-text-muted">Weight</div>
+                    <div className="text-sm font-semibold text-text-primary">
+                      {latestComp.weight_kg?.toFixed(1) ?? '--'} <span className="text-[10px] text-text-muted">kg</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-text-muted">Body Fat</div>
+                    <div className="text-sm font-semibold text-accent-purple">
+                      {latestComp.body_fat_pct?.toFixed(1) ?? '--'}<span className="text-[10px] text-text-muted">%</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-text-muted">Skeletal Muscle</div>
+                    <div className="text-sm font-semibold text-accent-green">
+                      {latestComp.muscle_mass_grams ? (latestComp.muscle_mass_grams / 1000).toFixed(1) : '--'} <span className="text-[10px] text-text-muted">kg</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-text-muted">Lean Mass</div>
+                    <div className="text-sm font-semibold text-text-primary">
+                      {latestComp.lean_body_mass_grams ? (latestComp.lean_body_mass_grams / 1000).toFixed(1) : '--'} <span className="text-[10px] text-text-muted">kg</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-text-muted">Body Water</div>
+                    <div className="text-sm font-semibold text-blue-400">
+                      {latestComp.body_water_pct?.toFixed(1) ?? '--'}<span className="text-[10px] text-text-muted">%</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-text-muted">BMI</div>
+                    <div className="text-sm font-semibold text-text-secondary">
+                      {latestComp.bmi?.toFixed(1) ?? '--'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bio Ages */}
+                {bioAges && (
+                  <div className="mt-3 pt-2 border-t border-border">
+                    <div className="text-[10px] text-text-muted mb-1.5">Bio Age</div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                      {bioAges.totalBioAge != null && (
+                        <span>Total: <span className={`font-semibold ${bioAges.totalBioAge <= 28 ? 'text-accent-green' : 'text-accent-yellow'}`}>{bioAges.totalBioAge}</span></span>
+                      )}
+                      {bioAges.muscleBioAge != null && (
+                        <span>Muscle: <span className="font-semibold text-accent-green">{bioAges.muscleBioAge}</span></span>
+                      )}
+                      {bioAges.metabolicAge != null && (
+                        <span>Metabolic: <span className={`font-semibold ${bioAges.metabolicAge <= 30 ? 'text-accent-green' : 'text-accent-yellow'}`}>{bioAges.metabolicAge}</span></span>
+                      )}
+                      {bioAges.cardioAge != null && (
+                        <span>Cardio: <span className="font-semibold text-accent-green">{bioAges.cardioAge}</span></span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         ) : (
           <div className="text-text-muted text-sm">No body composition data available</div>
         )}

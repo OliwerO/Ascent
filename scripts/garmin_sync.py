@@ -305,7 +305,7 @@ def sync_body_composition(client: Garmin, sb, d: date) -> bool:
             "source": "garmin",
             "raw_json": safe_json(entry),
         }
-        sb.table("body_composition").upsert(row, on_conflict="date").execute()
+        sb.table("body_composition").upsert(row, on_conflict="date,source").execute()
     log.info("body_composition upserted for %s", ds)
     return True
 
