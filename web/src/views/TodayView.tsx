@@ -147,10 +147,13 @@ function WellnessInput({ todayWellness, onSubmit }: {
     setSubmitting(true)
     try {
       const todayStr = format(new Date(), 'yyyy-MM-dd')
-      await supabase.from('subjective_wellness').upsert({
+      const { error } = await supabase.from('subjective_wellness').upsert({
         date: todayStr,
         ...values,
       }, { onConflict: 'date' })
+      if (error) {
+        console.warn('Wellness save failed (table may not exist yet):', error.message)
+      }
       onSubmit()
       setExpanded(false)
     } finally {
@@ -223,16 +226,20 @@ function RPEPrompt({ activity }: { activity: any }) {
     try {
       // Find the matching training_session and update srpe
       const dateStr = activity.date
-      const { data: sessions } = await supabase
-        .from('training_sessions')
-        .select('id')
-        .eq('date', dateStr)
-        .limit(1)
-      if (sessions && sessions.length > 0) {
-        await supabase
+      try {
+        const { data: sessions } = await supabase
           .from('training_sessions')
-          .update({ srpe: selectedRPE })
-          .eq('id', sessions[0].id)
+          .select('id')
+          .eq('date', dateStr)
+          .limit(1)
+        if (sessions && sessions.length > 0) {
+          await supabase
+            .from('training_sessions')
+            .update({ srpe: selectedRPE })
+            .eq('id', sessions[0].id)
+        }
+      } catch (e) {
+        console.warn('RPE save failed:', e)
       }
       setRated(true)
     } finally {

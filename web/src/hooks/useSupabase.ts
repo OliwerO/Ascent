@@ -144,7 +144,7 @@ export function useSubjectiveWellness(days = 30) {
       .select('date,sleep_quality,energy,muscle_soreness,motivation,stress,composite_score,notes')
       .gte('date', fmt(daysAgo(days)))
       .order('date', { ascending: false })
-    if (error) throw error
+    if (error) return [] // table may not exist yet
     return data
   }, [days])
 }
@@ -156,7 +156,7 @@ export function useReadinessComposite(days = 7) {
       .select('*')
       .gte('date', fmt(daysAgo(days)))
       .order('date', { ascending: false })
-    if (error) throw error
+    if (error) return [] // view may not exist yet
     return data
   }, [days])
 }
