@@ -161,6 +161,18 @@ export function useReadinessComposite(days = 7) {
   }, [days])
 }
 
+export function useGoals() {
+  return useFetch('goals', async () => {
+    const { data, error } = await supabase
+      .from('goals')
+      .select('*')
+      .eq('status', 'active')
+      .order('category')
+    if (error) return []
+    return data
+  }, [])
+}
+
 export function useCoachingLog(days = 7) {
   return useFetch('coaching_log', async () => {
     const { data, error } = await supabase

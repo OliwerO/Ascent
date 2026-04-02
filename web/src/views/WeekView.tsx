@@ -2,7 +2,9 @@ import { useMemo } from 'react'
 import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
 import { useActivities, useSleep, useBodyComposition } from '../hooks/useSupabase'
+import { pairHikeAndFly, formatAirtime, formatDistance } from '../lib/flying'
 import { startOfWeek, endOfWeek, format, isWithinInterval } from 'date-fns'
+import { Wind } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts'
 
 function formatDuration(seconds: number | null | undefined): string {
@@ -58,7 +60,9 @@ export default function WeekView() {
 
   // Quick stats
   const totalElevation = useMemo(
-    () => weekActivities.reduce((sum: number, a: any) => sum + (a.elevation_gain || 0), 0),
+    () => weekActivities
+      .filter((a: any) => a.activity_type !== 'hang_gliding') // exclude paragliding from fitness elevation
+      .reduce((sum: number, a: any) => sum + (a.elevation_gain || 0), 0),
     [weekActivities]
   )
   const gymSessions = useMemo(
@@ -87,7 +91,9 @@ export default function WeekView() {
 
   // Previous week stats for comparison
   const prevElevation = useMemo(
-    () => prevWeekActivities.reduce((sum: number, a: any) => sum + (a.elevation_gain || 0), 0),
+    () => prevWeekActivities
+      .filter((a: any) => a.activity_type !== 'hang_gliding')
+      .reduce((sum: number, a: any) => sum + (a.elevation_gain || 0), 0),
     [prevWeekActivities]
   )
   const prevGymSessions = useMemo(
@@ -318,6 +324,88 @@ export default function WeekView() {
           </div>
         )}
       </Card>
+
+      {/* Flying this week — only shows when flights happened */}
+      <WeekFlights activities={weekActivities} />
     </div>
+  )
+}
+
+function WeekFlights({ activities }: { activities: any[] }) {
+  const flights = useMemo(() => {
+    const flyActivities = activities.filter((a: any) => a.activity_type === 'hang_gliding')
+    if (!flyActivities.length) return []
+    return pairHikeAndFly(flyActivities, activities)
+  }, [activities])
+
+  if (!flights.length) return null
+
+  const totalAirtime = flights.reduce((s, f) => s + f.airtime, 0)
+  const totalDistance = flights.reduce((s, f) => s + f.distance, 0)
+  const xcFlights = flights.filter(f => f.flightType === 'xc').length
+
+  const typeLabel = (type: string) => {
+    switch (type) {
+      case 'xc': return 'XC'
+      case 'soaring': return 'Soaring'
+      case 'glide_down': return 'Glide'
+      case 'hike_and_fly': return 'H&F'
+      default: return type
+    }
+  }
+
+  const typeColor = (type: string) => {
+    switch (type) {
+      case 'xc': return 'text-accent-orange'
+      case 'soaring': return 'text-accent-yellow'
+      case 'hike_and_fly': return 'text-accent-green'
+      default: return 'text-text-muted'
+    }
+  }
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 mb-3">
+        <Wind size={14} className="text-accent-orange" />
+        <span className="text-xs uppercase tracking-wider text-text-muted font-medium">Flying this week</span>
+      </div>
+      <div className="flex gap-4 text-sm mb-3">
+        <div>
+          <span className="text-text-primary font-semibold">{flights.length}</span>
+          <span className="text-text-muted text-xs ml-1">flight{flights.length !== 1 ? 's' : ''}</span>
+        </div>
+        <div>
+          <span className="text-text-primary font-semibold">{formatAirtime(totalAirtime)}</span>
+          <span className="text-text-muted text-xs ml-1">airtime</span>
+        </div>
+        {totalDistance > 0 && (
+          <div>
+            <span className="text-text-primary font-semibold">{formatDistance(totalDistance)}</span>
+            <span className="text-text-muted text-xs ml-1">distance</span>
+          </div>
+        )}
+        {xcFlights > 0 && (
+          <div>
+            <span className="text-accent-orange font-semibold">{xcFlights}</span>
+            <span className="text-text-muted text-xs ml-1">XC</span>
+          </div>
+        )}
+      </div>
+      <div className="space-y-1.5">
+        {flights.map((f, i) => (
+          <div key={i} className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              <span className={`font-medium ${typeColor(f.flightType)}`}>{typeLabel(f.flightType)}</span>
+              <span className="text-text-secondary">{format(new Date(f.date), 'EEE')}</span>
+            </div>
+            <div className="flex gap-3 text-text-muted">
+              <span>{formatAirtime(f.airtime)}</span>
+              {f.distance > 100 && <span>{formatDistance(f.distance)}</span>}
+              {f.maxAltitude != null && f.maxAltitude > 0 && <span>{Math.round(f.maxAltitude)}m</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
   )
 }

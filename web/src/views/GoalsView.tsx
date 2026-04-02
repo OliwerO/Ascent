@@ -1,10 +1,10 @@
 import { useMemo } from 'react'
 import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
-import { useBodyComposition, useDailyMetrics, useActivities } from '../hooks/useSupabase'
+import { useBodyComposition, useDailyMetrics, useActivities, useGoals } from '../hooks/useSupabase'
 import { getProgramWeek } from '../lib/program'
-import { startOfWeek, endOfWeek, isWithinInterval } from 'date-fns'
-import { Target, Mountain, Dumbbell, Calendar } from 'lucide-react'
+import { startOfWeek, endOfWeek, isWithinInterval, differenceInDays } from 'date-fns'
+import { Target, Mountain, Dumbbell, Calendar, TrendingDown, TrendingUp, Minus } from 'lucide-react'
 
 function ProgressBar({ value, max, color }: { value: number; max: number; color: string }) {
   const pct = Math.min(100, Math.max(0, (value / max) * 100))
@@ -22,9 +22,10 @@ export default function GoalsView() {
   const bodyComp = useBodyComposition(90)
   const metrics = useDailyMetrics(14)
   const activitiesHook = useActivities(14)
+  const goalsHook = useGoals()
 
-  const loading = bodyComp.loading || metrics.loading || activitiesHook.loading
-  const error = bodyComp.error || metrics.error || activitiesHook.error
+  const loading = bodyComp.loading || metrics.loading || activitiesHook.loading || goalsHook.loading
+  const error = bodyComp.error || metrics.error || activitiesHook.error || goalsHook.error
 
   const now = new Date()
   const weekStart = startOfWeek(now, { weekStartsOn: 1 })
@@ -51,7 +52,7 @@ export default function GoalsView() {
     () => Math.round((activitiesHook.data ?? [])
       .filter((a: any) => {
         const d = new Date(a.date)
-        return isWithinInterval(d, { start: weekStart, end: weekEnd })
+        return isWithinInterval(d, { start: weekStart, end: weekEnd }) && a.activity_type !== 'hang_gliding'
       })
       .reduce((sum: number, a: any) => sum + (a.elevation_gain || 0), 0)),
     [activitiesHook.data, weekStart.getTime(), weekEnd.getTime()]
@@ -63,6 +64,7 @@ export default function GoalsView() {
   const latestWeight = bodyComp.data?.find((d: any) => d.weight_kg != null)
   const latestBodyFat = bodyComp.data?.find((d: any) => d.body_fat_pct != null)
   const latestVO2 = metrics.data?.find((d: any) => d.vo2max != null)
+  const bodyCompGoals = (goalsHook.data ?? []).filter((g: any) => g.category === 'body_composition')
 
   const { week } = getProgramWeek(new Date())
 
@@ -72,7 +74,7 @@ export default function GoalsView() {
       <div>
         <h2 className="text-sm text-text-secondary font-medium mb-2">Current Goals</h2>
         <div className="space-y-3">
-          {/* Body Recomp */}
+          {/* Body Recomp — with goals */}
           <Card>
             <div className="flex items-start gap-3">
               <div className="p-2 rounded-lg bg-accent-purple/20 text-accent-purple">
@@ -80,33 +82,81 @@ export default function GoalsView() {
               </div>
               <div className="flex-1 min-w-0">
                 <h3 className="text-sm font-semibold text-text-primary">Body Recomposition</h3>
-                <div className="mt-2 space-y-2">
-                  {latestWeight?.weight_kg || latestBodyFat?.body_fat_pct ? (
-                    <>
-                      {latestWeight?.weight_kg && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-text-secondary">Weight</span>
-                          <span className="text-text-primary font-medium">
-                            {latestWeight.weight_kg.toFixed(1)} kg
-                          </span>
+                {bodyCompGoals.length > 0 ? (
+                  <div className="mt-3 space-y-4">
+                    {bodyCompGoals.map((goal: any) => {
+                      const current = goal.metric === 'weight_kg' ? latestWeight?.weight_kg
+                        : goal.metric === 'body_fat_pct' ? latestBodyFat?.body_fat_pct
+                        : goal.metric === 'muscle_mass_kg' && latestWeight?.muscle_mass_grams
+                          ? latestWeight.muscle_mass_grams / 1000 : null
+                      const target = goal.target_value
+                      const start = goal.current_value
+                      const isLowerBetter = goal.metric === 'weight_kg' || goal.metric === 'body_fat_pct'
+                      const totalChange = Math.abs(target - start)
+                      const currentChange = current != null ? Math.abs(current - start) : 0
+                      const progressPct = totalChange > 0 ? Math.min(100, (currentChange / totalChange) * 100) : 0
+                      const movingRight = current != null && (isLowerBetter ? current < start : current > start)
+                      const daysLeft = goal.target_date ? differenceInDays(new Date(goal.target_date), new Date()) : null
+                      const label = goal.metric === 'weight_kg' ? 'Weight'
+                        : goal.metric === 'body_fat_pct' ? 'Body Fat'
+                        : 'Muscle Mass'
+                      const unit = goal.metric === 'body_fat_pct' ? '%' : 'kg'
+                      const color = movingRight ? '#34d399' : current === start ? '#f59e0b' : '#f87171'
+
+                      return (
+                        <div key={goal.id}>
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-text-secondary">{label}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-text-primary font-medium">
+                                {current != null ? (goal.metric === 'body_fat_pct' ? `~${current.toFixed(0)}` : current.toFixed(1)) : '--'}{unit}
+                              </span>
+                              {current != null && (
+                                movingRight
+                                  ? <TrendingDown size={12} className="text-accent-green" />
+                                  : current === start
+                                    ? <Minus size={12} className="text-accent-yellow" />
+                                    : <TrendingUp size={12} className="text-accent-red" />
+                              )}
+                              <span className="text-text-muted text-xs">→ {target}{unit}</span>
+                            </div>
+                          </div>
+                          <ProgressBar value={movingRight ? progressPct : 0} max={100} color={color} />
+                          {daysLeft != null && daysLeft > 0 && (
+                            <div className="text-[10px] text-text-muted mt-1">
+                              {daysLeft} days remaining · started at {start}{unit}
+                            </div>
+                          )}
                         </div>
-                      )}
-                      {latestBodyFat?.body_fat_pct && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-text-secondary">Body Fat</span>
-                          <span className="text-text-primary font-medium">
-                            {latestBodyFat.body_fat_pct.toFixed(1)}%
-                            <span className="text-text-muted ml-1 text-xs">(scale est.)</span>
-                          </span>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="rounded-lg bg-bg-card-hover border border-border px-3 py-2 text-xs text-text-muted">
-                      Baseline needed — schedule a gym scan
-                    </div>
-                  )}
-                </div>
+                      )
+                    })}
+                    {bodyCompGoals[0]?.notes && (
+                      <div className="text-[10px] text-text-muted/60 mt-1">
+                        {bodyCompGoals[0].metric === 'body_fat_pct' ? 'BIA has ±5% error — track direction, not absolute value' : ''}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="mt-2 space-y-2">
+                    {latestWeight?.weight_kg && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-text-secondary">Weight</span>
+                        <span className="text-text-primary font-medium">{latestWeight.weight_kg.toFixed(1)} kg</span>
+                      </div>
+                    )}
+                    {latestBodyFat?.body_fat_pct && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-text-secondary">Body Fat</span>
+                        <span className="text-text-primary font-medium">{latestBodyFat.body_fat_pct.toFixed(1)}% <span className="text-text-muted text-xs">(±5%)</span></span>
+                      </div>
+                    )}
+                    {!latestWeight?.weight_kg && !latestBodyFat?.body_fat_pct && (
+                      <div className="rounded-lg bg-bg-card-hover border border-border px-3 py-2 text-xs text-text-muted">
+                        Baseline needed — schedule a gym scan
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </Card>
