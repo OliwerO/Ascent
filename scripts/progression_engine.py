@@ -48,6 +48,8 @@ NAME_ALIASES = {
     "Dumbbell Incline Press": "Incline Dumbbell Press",
     "Single-Arm DB Row": "Single-Arm DB Row",
     "Cable Row": "Seated Cable Row",
+    "Chin-ups": "Chin-Up",
+    "Lateral Raises": "Lateral Raise",
 }
 
 
