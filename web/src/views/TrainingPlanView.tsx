@@ -59,13 +59,42 @@ function fmtDate(d: Date): string {
 }
 
 /** Normalize exercise names for matching: lowercase, strip underscores/spaces, collapse */
+/** Canonical name map: DB exercise names → planned workout names */
+const EXERCISE_ALIASES: Record<string, string> = {
+  'kettlebell swing': 'kb swings',
+  'kettlebell halo': 'kb halo',
+  'turkish get up': 'kb turkish get up',
+  'chin up': 'chin ups',
+  'lateral raise': 'lateral raises',
+  'incline dumbbell press': 'dumbbell incline press',
+  'seated cable row': 'cable row',
+  'one arm dumbbell row': 'single arm db row',
+  'dumbbell bulgarian split squat': 'bulgarian split squat',
+  'dumbbell lateral raise': 'lateral raises',
+  'clean and press': 'kb clean & press',
+  'dead bug': 'dead bugs',
+  'side plank': 'copenhagen plank',
+  'cable core press': 'pallof walkouts',
+  'barbell back squat': 'barbell back squat',
+  'dumbbell bench press': 'dumbbell bench press',
+  'barbell row': 'barbell row',
+  'overhead barbell press': 'overhead press',
+  'trap bar deadlift': 'trap bar deadlift',
+  'farmers walk': 'kb farmer carry',
+}
+
 function normalizeExName(name: string): string {
-  return name.toLowerCase().replace(/[_\s-]+/g, ' ').trim()
+  return name.toLowerCase().replace(/[_\s-]+/g, ' ').replace(/&/g, 'and').trim()
+}
+
+function canonicalName(name: string): string {
+  const norm = normalizeExName(name)
+  return EXERCISE_ALIASES[norm] ?? norm
 }
 
 /** Check if two exercise names match (display name vs DB name) */
 function exerciseNameMatch(a: string, b: string): boolean {
-  return normalizeExName(a) === normalizeExName(b)
+  return canonicalName(a) === canonicalName(b)
 }
 
 // ─── Types for Supabase data ──────────────────────────────────────
