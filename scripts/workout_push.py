@@ -16,6 +16,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -683,6 +684,281 @@ def format_weight_summary(session_key: str, block: int, week: int) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Session exception handling
+# ---------------------------------------------------------------------------
+
+
+def check_session_exception(target_date: date) -> dict | None:
+    """Read coaching-context.md and return exception info if one exists for target_date.
+
+    Returns dict with keys: original_session, exception, reason, row_line_text
+    or None if no exception for this date.
+    """
+    try:
+        content = COACHING_CONTEXT_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        log.warning("coaching-context.md not found at %s", COACHING_CONTEXT_PATH)
+        return None
+
+    date_str = target_date.isoformat()  # "2026-04-04"
+
+    # Find lines in the Session Exceptions table matching this date
+    for line in content.splitlines():
+        # Match table rows: | date | original | exception | reason | status |
+        if not line.strip().startswith("|"):
+            continue
+        cells = [c.strip() for c in line.split("|")]
+        # split on | gives empty strings at start/end: ['', 'date', 'orig', 'exc', 'reason', 'status', '']
+        cells = [c for c in cells if c]  # drop empties
+        if len(cells) < 5:
+            continue
+        if cells[0] == date_str:
+            return {
+                "original_session": cells[1],
+                "exception": cells[2],
+                "reason": cells[3],
+                "pushed_status": cells[4],
+                "row_line_text": line,
+            }
+
+    return None
+
+
+def parse_exception_exercises(exception_text: str) -> list[dict]:
+    """Parse exception exercise text into structured exercise dicts.
+
+    Example input:
+        "Upper Body + Core (incline DB press 3×10, chest-supported row 3×10,
+         landmine press 3×8/side, chin-ups 3×6-8, core circuit: ab wheel +
+         bird dogs + suitcase carry)"
+
+    Returns list of dicts with keys: name, sets, reps, mapped (bool).
+    """
+    exercises = []
+
+    # Extract the parenthesised exercise list if present
+    paren_match = re.search(r"\((.+)\)", exception_text, re.DOTALL)
+    if paren_match:
+        exercise_str = paren_match.group(1)
+    else:
+        # No parens — treat entire string after the label as exercise list
+        # Strip leading label like "Upper Body + Core"
+        exercise_str = exception_text
+
+    # Split on commas, then on " + " for circuit-style lists
+    parts = []
+    for chunk in re.split(r",\s*", exercise_str):
+        # Handle "core circuit: ab wheel + bird dogs + suitcase carry"
+        if ":" in chunk:
+            # "core circuit: ab wheel + bird dogs + ..."
+            _, _, after_colon = chunk.partition(":")
+            for sub in re.split(r"\s*\+\s*", after_colon.strip()):
+                if sub.strip():
+                    parts.append(sub.strip())
+        elif " + " in chunk and not re.search(r"\d+[×x]\d+", chunk):
+            # Only split on + if it's not part of an exercise with sets/reps
+            for sub in re.split(r"\s*\+\s*", chunk):
+                if sub.strip():
+                    parts.append(sub.strip())
+        else:
+            parts.append(chunk.strip())
+
+    for part in parts:
+        if not part:
+            continue
+
+        # Try to parse "exercise_name SETSxREPS" or "exercise_name SETS×REPS"
+        # Handles: "incline DB press 3×10", "chin-ups 3×6-8", "landmine press 3×8/side"
+        match = re.match(
+            r"^(.+?)\s+(\d+)\s*[×x]\s*(\d+)(?:\s*[-–]\s*\d+)?(?:/side)?$",
+            part,
+            re.IGNORECASE,
+        )
+        if match:
+            name = match.group(1).strip()
+            sets = int(match.group(2))
+            reps = int(match.group(3))
+        else:
+            # No sets/reps found — default to 3x10 for strength, 3x1 for carries/holds
+            name = part.strip()
+            sets = 3
+            reps = 10
+
+        # Check if we have a Garmin mapping for this exercise (fuzzy match)
+        mapped = _fuzzy_garmin_match(name) is not None
+
+        exercises.append({
+            "name": name,
+            "sets": sets,
+            "reps": reps,
+            "mapped": mapped,
+        })
+
+    return exercises
+
+
+def _fuzzy_garmin_match(exercise_name: str) -> tuple[str, str] | None:
+    """Try to find a Garmin exercise mapping by fuzzy matching.
+
+    Returns (category, garmin_exercise_name) or None.
+    """
+    name_lower = exercise_name.lower()
+
+    # Direct match first
+    if exercise_name in GARMIN_EXERCISE_MAP:
+        return GARMIN_EXERCISE_MAP[exercise_name]
+
+    # Keyword-based fallback mapping for common exception exercises
+    FUZZY_MAP = {
+        "incline db press":       ("BENCH_PRESS",     "INCLINE_DUMBBELL_BENCH_PRESS"),
+        "incline dumbbell press": ("BENCH_PRESS",     "INCLINE_DUMBBELL_BENCH_PRESS"),
+        "chest-supported row":    ("ROW",             "CHEST_SUPPORTED_DUMBBELL_ROW"),  # May not exist; fallback
+        "chest supported row":    ("ROW",             "CHEST_SUPPORTED_DUMBBELL_ROW"),
+        "landmine press":         ("SHOULDER_PRESS",  "SINGLE_ARM_LANDMINE_PRESS"),
+        "chin-ups":               ("PULL_UP",         "CHIN_UP"),
+        "chin ups":               ("PULL_UP",         "CHIN_UP"),
+        "ab wheel":               ("CORE",            "AB_WHEEL_ROLLOUT"),
+        "ab rollout":             ("CORE",            "AB_WHEEL_ROLLOUT"),
+        "bird dogs":              ("HIP_STABILITY",   "BIRD_DOG"),
+        "bird dog":               ("HIP_STABILITY",   "BIRD_DOG"),
+        "suitcase carry":         ("CARRY",           "FARMERS_WALK"),  # Closest match
+        "farmer carry":           ("CARRY",           "FARMERS_WALK"),
+        "overhead press":         ("SHOULDER_PRESS",  "OVERHEAD_BARBELL_PRESS"),
+        "db bench press":         ("BENCH_PRESS",     "DUMBBELL_BENCH_PRESS"),
+        "dumbbell bench press":   ("BENCH_PRESS",     "DUMBBELL_BENCH_PRESS"),
+        "barbell row":            ("ROW",             "BARBELL_ROW"),
+        "cable row":              ("ROW",             "SEATED_CABLE_ROW"),
+        "lateral raise":          ("LATERAL_RAISE",   "DUMBBELL_LATERAL_RAISE"),
+        "lateral raises":         ("LATERAL_RAISE",   "DUMBBELL_LATERAL_RAISE"),
+        "deadlift":               ("DEADLIFT",        "TRAP_BAR_DEADLIFT"),
+        "squat":                  ("SQUAT",           "BARBELL_BACK_SQUAT"),
+        "pull-ups":               ("PULL_UP",         "PULL_UP"),
+        "pull ups":               ("PULL_UP",         "PULL_UP"),
+    }
+
+    for keyword, mapping in FUZZY_MAP.items():
+        if keyword in name_lower:
+            return mapping
+
+    return None
+
+
+def build_exception_workout(
+    exception_info: dict,
+    parsed_exercises: list[dict],
+    block: int,
+    week: int,
+    target_date: date,
+) -> dict:
+    """Build a Garmin workout JSON from parsed exception exercises.
+
+    Uses the same Garmin JSON structure as build_garmin_workout() but without
+    progressive overload (exception workouts use whatever the coach prescribed).
+    """
+    global STEP_ORDER_COUNTER
+    STEP_ORDER_COUNTER = 0
+
+    workout_steps = []
+    default_rest_s = 60
+
+    for ex in parsed_exercises:
+        garmin_mapping = _fuzzy_garmin_match(ex["name"]) or ("OTHER", "OTHER")
+        category = garmin_mapping[0]
+        garmin_exercise_name = garmin_mapping[1]
+
+        for set_num in range(ex["sets"]):
+            step_order = make_step_order()
+
+            # Build description
+            desc = ex["name"] if garmin_exercise_name == "OTHER" else None
+
+            step = {
+                "type": "ExecutableStepDTO",
+                "stepOrder": step_order,
+                "stepType": {
+                    "stepTypeId": 3,
+                    "stepTypeKey": "interval",
+                    "displayOrder": 3,
+                },
+                "category": category,
+                "exerciseName": garmin_exercise_name,
+                "description": desc,
+                "endCondition": {
+                    "conditionTypeId": 10,
+                    "conditionTypeKey": "reps",
+                    "displayOrder": 10,
+                    "displayable": True,
+                },
+                "endConditionValue": float(ex["reps"]),
+            }
+            workout_steps.append(step)
+
+            # Rest between sets (skip after last set of last exercise)
+            is_last_set = set_num == ex["sets"] - 1
+            is_last_exercise = ex is parsed_exercises[-1]
+            if not (is_last_set and is_last_exercise):
+                rest_order = make_step_order()
+                rest = build_rest_step(default_rest_s, rest_order)
+                workout_steps.append(rest)
+
+    # Extract label from exception text (before the parentheses)
+    label_match = re.match(r"^([^(]+)", exception_info["exception"])
+    label = label_match.group(1).strip() if label_match else "Exception Workout"
+
+    deload_tag = " (Deload)" if is_deload_week(week) else ""
+    workout_name = f"Block {block} Wk{week} — {label} (Exception){deload_tag}"
+
+    workout = {
+        "workoutName": workout_name,
+        "description": (
+            f"Session exception: {exception_info['reason'][:200]}. "
+            f"Original: {exception_info['original_session']}."
+        ),
+        "sportType": SPORT_TYPE,
+        "estimatedDurationInSecs": len(parsed_exercises) * 3 * 90,  # rough estimate
+        "workoutSegments": [
+            {
+                "segmentOrder": 1,
+                "sportType": SPORT_TYPE,
+                "workoutSteps": workout_steps,
+            }
+        ],
+    }
+
+    return workout
+
+
+def update_exception_status(target_date: date) -> None:
+    """Update the 'Pushed to Garmin' column from 'Pending' to 'Yes' in coaching-context.md."""
+    try:
+        content = COACHING_CONTEXT_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        log.warning("Cannot update exception status: coaching-context.md not found")
+        return
+
+    date_str = target_date.isoformat()
+    lines = content.splitlines()
+    updated = False
+
+    for i, line in enumerate(lines):
+        if not line.strip().startswith("|"):
+            continue
+        if date_str not in line:
+            continue
+        # Replace "Pending" with "Yes" in this row
+        if "Pending" in line:
+            lines[i] = line.replace("Pending", "Yes", 1)
+            updated = True
+            break
+
+    if updated:
+        COACHING_CONTEXT_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        log.info("Updated exception status to 'Yes' for %s in coaching-context.md", date_str)
+    else:
+        log.warning("Could not find Pending exception for %s to update", date_str)
+
+
+# ---------------------------------------------------------------------------
 # Garmin client (imported pattern from garmin_sync.py)
 # ---------------------------------------------------------------------------
 
@@ -832,24 +1108,52 @@ def main():
         " (DELOAD)" if is_deload_week(week) else "",
     )
 
-    # Connect to Supabase for previous weight data
-    sb = None
-    try:
-        sb = create_client(SUPABASE_URL, SUPABASE_KEY)
-        log.info("Connected to Supabase for progression data")
-    except Exception as exc:
-        log.warning("Could not connect to Supabase (progression will use defaults): %s", exc)
+    # Check for session exception before building workout
+    exception_info = check_session_exception(target_date)
+    is_exception = False
 
-    # Build the workout
-    workout = build_garmin_workout(
-        session_key, block, week, target_date, sb,
-        volume_reduction=args.volume_reduction,
-        rpe_cap=args.rpe_cap,
-    )
+    if exception_info and exception_info["pushed_status"] != "Yes":
+        log.info(
+            "Session exception found for %s: %s → %s (reason: %s)",
+            target_date,
+            exception_info["original_session"],
+            exception_info["exception"][:80],
+            exception_info["reason"][:60],
+        )
+        parsed_exercises = parse_exception_exercises(exception_info["exception"])
+        if parsed_exercises:
+            is_exception = True
+            workout = build_exception_workout(
+                exception_info, parsed_exercises, block, week, target_date,
+            )
+            # Log parsed exercises
+            log.info("Exception exercises:")
+            for ex in parsed_exercises:
+                mapped_str = "" if ex["mapped"] else " [unmapped → OTHER]"
+                log.info("  %s: %dx%d%s", ex["name"], ex["sets"], ex["reps"], mapped_str)
+        else:
+            log.warning("Could not parse exception exercises, falling back to template")
 
-    # Log weight summary
-    summary = format_weight_summary(session_key, block, week)
-    log.info(summary)
+    if not is_exception:
+        # Normal template path
+        # Connect to Supabase for previous weight data
+        sb = None
+        try:
+            sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+            log.info("Connected to Supabase for progression data")
+        except Exception as exc:
+            log.warning("Could not connect to Supabase (progression will use defaults): %s", exc)
+
+        # Build the workout
+        workout = build_garmin_workout(
+            session_key, block, week, target_date, sb,
+            volume_reduction=args.volume_reduction,
+            rpe_cap=args.rpe_cap,
+        )
+
+        # Log weight summary
+        summary = format_weight_summary(session_key, block, week)
+        log.info(summary)
 
     if args.dry_run:
         print("\n--- Garmin Workout JSON (dry run) ---")
@@ -870,6 +1174,9 @@ def main():
     # Schedule on target date
     if schedule_workout(client, workout_id, target_date):
         log.info("Done. Workout '%s' uploaded and scheduled for %s.", workout["workoutName"], target_date)
+        # Update exception status if this was an exception workout
+        if is_exception:
+            update_exception_status(target_date)
     else:
         log.warning(
             "Workout uploaded (ID: %s) but scheduling failed. "
