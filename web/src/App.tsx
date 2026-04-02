@@ -1,6 +1,28 @@
-import { useState, lazy, Suspense, useCallback } from 'react'
+import { useState, lazy, Suspense, useCallback, Component } from 'react'
+import type { ReactNode, ErrorInfo } from 'react'
 import { Mountain, Calendar, Dumbbell, Heart, TrendingUp, Target, RefreshCw } from 'lucide-react'
 import { LoadingState } from './components/LoadingState'
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null }
+  static getDerivedStateFromError(error: Error) { return { error } }
+  componentDidCatch(error: Error, info: ErrorInfo) { console.error('App crash:', error, info) }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-6 text-center">
+          <div className="text-accent-red text-lg font-semibold mb-2">Something went wrong</div>
+          <div className="text-text-muted text-sm mb-4 font-mono bg-bg-card rounded-lg p-3 text-left overflow-auto max-h-40">
+            {this.state.error.message}
+          </div>
+          <button onClick={() => { this.setState({ error: null }); window.location.reload() }}
+            className="text-accent-green text-sm underline">Reload</button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 const TodayView = lazy(() => import('./views/TodayView'))
 const WeekView = lazy(() => import('./views/WeekView'))
@@ -53,14 +75,16 @@ function App() {
 
       {/* Content */}
       <main className="max-w-2xl mx-auto px-4 py-5 pb-28 space-y-4">
-        <Suspense fallback={<LoadingState />}>
-          {activeTab === 'today' && <TodayView key={refreshKey} />}
-          {activeTab === 'week' && <WeekView key={refreshKey} />}
-          {activeTab === 'plan' && <TrainingPlanView key={refreshKey} />}
-          {activeTab === 'recovery' && <RecoveryView key={refreshKey} />}
-          {activeTab === 'trends' && <TrendsView key={refreshKey} />}
-          {activeTab === 'goals' && <GoalsView key={refreshKey} />}
-        </Suspense>
+        <ErrorBoundary>
+          <Suspense fallback={<LoadingState />}>
+            {activeTab === 'today' && <TodayView key={refreshKey} />}
+            {activeTab === 'week' && <WeekView key={refreshKey} />}
+            {activeTab === 'plan' && <TrainingPlanView key={refreshKey} />}
+            {activeTab === 'recovery' && <RecoveryView key={refreshKey} />}
+            {activeTab === 'trends' && <TrendsView key={refreshKey} />}
+            {activeTab === 'goals' && <GoalsView key={refreshKey} />}
+          </Suspense>
+        </ErrorBoundary>
       </main>
 
       {/* Bottom Navigation */}
