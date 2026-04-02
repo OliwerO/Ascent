@@ -37,8 +37,6 @@ function formatActivityType(type: string | null | undefined): string {
   return type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
-// Session exercises now come from planned_workouts table (no more hardcoded constants)
-
 // ─── Wellness Input Component ────────────────────────────────────
 
 const WELLNESS_ITEMS = [
@@ -63,18 +61,18 @@ function WellnessInput({ todayWellness, onSubmit }: {
     return (
       <button
         onClick={() => setExpanded(true)}
-        className="w-full bg-bg-card rounded-2xl border border-border-subtle p-3 text-left"
+        className="w-full bg-bg-card rounded-2xl border border-border-subtle p-4 text-left"
       >
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-text-muted uppercase tracking-wider">Wellness</span>
-            <span className={`text-sm font-semibold font-data ${
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold">Wellness</span>
+            <span className={`text-base font-bold font-data ${
               composite >= 3.5 ? 'text-accent-green' : composite >= 2.5 ? 'text-accent-yellow' : 'text-accent-red'
             }`}>
               {composite != null ? composite.toFixed(1) : '?'}/5
             </span>
           </div>
-          <span className="text-[10px] text-text-muted">Tap to view</span>
+          <span className="text-[11px] text-text-dim">Tap to view</span>
         </div>
       </button>
     )
@@ -84,14 +82,14 @@ function WellnessInput({ todayWellness, onSubmit }: {
     return (
       <button
         onClick={() => setExpanded(true)}
-        className="w-full bg-bg-card rounded-2xl border border-accent-green/20 p-3 text-left animate-pulse-subtle"
+        className="w-full bg-bg-card rounded-2xl border border-accent-green/20 p-4 text-left animate-pulse-subtle"
       >
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-sm font-medium text-text-primary">How are you feeling?</div>
-            <div className="text-[10px] text-text-muted">30-second daily check-in</div>
+            <div className="text-sm font-semibold text-text-primary">How are you feeling?</div>
+            <div className="text-[12px] text-text-muted mt-0.5">30-second daily check-in</div>
           </div>
-          <ChevronDown size={14} className="text-text-muted" />
+          <ChevronDown size={16} className="text-text-muted" />
         </div>
       </button>
     )
@@ -119,28 +117,28 @@ function WellnessInput({ todayWellness, onSubmit }: {
 
   return (
     <div className="bg-bg-card rounded-2xl border border-border-subtle p-4">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-medium text-text-primary">How are you feeling?</span>
-        <button onClick={() => setExpanded(false)} className="text-[10px] text-text-muted">Close</button>
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-sm font-semibold text-text-primary">How are you feeling?</span>
+        <button onClick={() => setExpanded(false)} className="text-[11px] text-text-muted hover:text-text-secondary">Close</button>
       </div>
-      <div className="space-y-3">
+      <div className="space-y-4">
         {WELLNESS_ITEMS.map(item => (
           <div key={item.key}>
-            <div className="flex justify-between text-[11px] mb-1">
-              <span className="text-text-secondary">{item.label}</span>
-              <span className="text-text-muted">{item.low} → {item.high}</span>
+            <div className="flex justify-between text-[12px] mb-1.5">
+              <span className="text-text-secondary font-medium">{item.label}</span>
+              <span className="text-text-dim">{item.low} → {item.high}</span>
             </div>
-            <div className="flex gap-1.5">
+            <div className="flex gap-2">
               {[1, 2, 3, 4, 5].map(v => (
                 <button
                   key={v}
                   onClick={() => setValues(prev => ({ ...prev, [item.key]: v }))}
-                  className={`flex-1 h-8 rounded-lg text-xs font-semibold transition-all ${
+                  className={`flex-1 h-10 rounded-xl text-sm font-semibold transition-all ${
                     values[item.key] === v
                       ? v >= 4 ? 'bg-accent-green/20 text-accent-green border border-accent-green/40'
                         : v === 3 ? 'bg-accent-yellow/20 text-accent-yellow border border-accent-yellow/40'
                         : 'bg-accent-red/20 text-accent-red border border-accent-red/40'
-                      : 'bg-bg-primary/50 text-text-muted border border-transparent hover:border-border-subtle'
+                      : 'bg-bg-primary/50 text-text-muted border border-transparent hover:border-border'
                   }`}
                 >
                   {v}
@@ -153,8 +151,8 @@ function WellnessInput({ todayWellness, onSubmit }: {
       <button
         onClick={handleSubmit}
         disabled={submitting || !WELLNESS_ITEMS.every(item => values[item.key] != null)}
-        className="mt-3 w-full py-2 rounded-lg bg-accent-green/20 text-accent-green text-sm font-medium
-                   disabled:opacity-30 disabled:cursor-not-allowed transition-all hover:bg-accent-green/30"
+        className="mt-4 w-full py-2.5 rounded-xl bg-accent-green/15 text-accent-green text-sm font-semibold
+                   disabled:opacity-30 disabled:cursor-not-allowed transition-all hover:bg-accent-green/25"
       >
         {submitting ? 'Saving...' : 'Submit'}
       </button>
@@ -180,7 +178,6 @@ function RPEPrompt({ activity }: { activity: any }) {
     if (selectedRPE == null) return
     setSaving(true)
     try {
-      // Find the matching training_session and update srpe
       const dateStr = activity.date
       try {
         const { data: sessions } = await supabase
@@ -205,8 +202,8 @@ function RPEPrompt({ activity }: { activity: any }) {
 
   return (
     <div className="bg-bg-card rounded-2xl border border-accent-purple/20 p-4">
-      <div className="text-[10px] text-text-muted uppercase tracking-wider mb-2">Session RPE</div>
-      <div className="text-xs text-text-secondary mb-3">
+      <div className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold mb-2">Session RPE</div>
+      <div className="text-[13px] text-text-secondary mb-3">
         How hard was {activity.activity_name || 'your session'}? (0-10)
       </div>
       <div className="flex gap-1">
@@ -214,7 +211,7 @@ function RPEPrompt({ activity }: { activity: any }) {
           <button
             key={v}
             onClick={() => setSelectedRPE(v)}
-            className={`flex-1 h-8 rounded text-[10px] font-semibold transition-all ${
+            className={`flex-1 h-9 rounded-lg text-[11px] font-semibold transition-all ${
               selectedRPE === v
                 ? v >= 8 ? 'bg-accent-red/20 text-accent-red border border-accent-red/40'
                   : v >= 5 ? 'bg-accent-yellow/20 text-accent-yellow border border-accent-yellow/40'
@@ -227,12 +224,12 @@ function RPEPrompt({ activity }: { activity: any }) {
         ))}
       </div>
       {selectedRPE != null && RPE_LABELS[selectedRPE] && (
-        <div className="text-[10px] text-text-muted mt-1 text-center">{RPE_LABELS[selectedRPE]}</div>
+        <div className="text-[11px] text-text-dim mt-1.5 text-center">{RPE_LABELS[selectedRPE]}</div>
       )}
       <button
         onClick={handleSubmit}
         disabled={saving || selectedRPE == null}
-        className="mt-2 w-full py-1.5 rounded-lg bg-accent-purple/20 text-accent-purple text-xs font-medium
+        className="mt-3 w-full py-2 rounded-xl bg-accent-purple/15 text-accent-purple text-[13px] font-semibold
                    disabled:opacity-30 disabled:cursor-not-allowed transition-all"
       >
         {saving ? 'Saving...' : 'Log RPE'}
@@ -253,7 +250,6 @@ export default function TodayView() {
   const [showExercises, setShowExercises] = useState(false)
   const [, setWellnessRefresh] = useState(0)
 
-  // All hooks must be called before any early return (React 19 enforces this)
   const recentActivities = activities.data ?? []
 
   const sleep7dAvg = useMemo(() => {
@@ -339,8 +335,6 @@ export default function TodayView() {
   const loadChangePct = lastWeekDuration > 0 ? Math.round(((thisWeekDuration - lastWeekDuration) / lastWeekDuration) * 100) : null
 
   // ─── Coaching card decision tree (evidence-based) ───
-  // Uses only validated signals: HRV, sleep, resting HR, subjective wellness
-  // Body Battery and Readiness are EXCLUDED from this logic
   const hrvDegraded = todayHRV?.status?.toUpperCase() === 'LOW'
   const hrvLow = hrvVal != null && hrvWeeklyAvg != null && hrvVal < hrvWeeklyAvg * 0.85
   const sleepPoor = sleep7dAvg != null && sleep7dAvg < 6.5
@@ -373,7 +367,6 @@ export default function TodayView() {
     coachingPoints.push({ icon: '🟡', text: 'One or more signals flagged — train if warmup feels good, otherwise swap to mobility', color: 'text-accent-yellow' })
   }
 
-  // ─── Last session context ───
   const lastGymSession = recentActivities.find((a: any) => a.activity_type === 'strength_training')
   const daysSinceGym = lastGymSession
     ? Math.floor((Date.now() - new Date(lastGymSession.date).getTime()) / 86400000)
@@ -407,64 +400,64 @@ export default function TodayView() {
 
       {/* ═══ 1. COACHING CARD ═══ */}
       <div className={`rounded-2xl border p-5 ${verdictBg}`}>
-        <div className="flex items-start justify-between mb-2">
+        <div className="flex items-start justify-between mb-3">
           <div>
-            <div className={`text-lg font-semibold ${verdictColor}`}>{verdictLabel}</div>
+            <div className={`text-xl font-bold ${verdictColor}`}>{verdictLabel}</div>
             {isGymDay && todaySessionName && (
-              <div className="text-sm text-text-primary">
+              <div className="text-[15px] text-text-primary mt-1">
                 {todaySessionName}
-                {isAdjusted && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-accent-yellow/20 text-accent-yellow">Adjusted</span>}
+                {isAdjusted && <span className="ml-2 text-[11px] px-2 py-0.5 rounded-full bg-accent-yellow/20 text-accent-yellow font-semibold">Adjusted</span>}
               </div>
             )}
           </div>
-          <div className="text-[10px] text-text-muted text-right">
+          <div className="text-[12px] text-text-muted text-right leading-relaxed">
             Week {week} · Block {block}
             <br />RPE {rpeRange}{deload && ' · Deload'}
           </div>
         </div>
 
         {/* Coaching points */}
-        <div className="space-y-1.5 mt-3">
+        <div className="space-y-2 mt-3">
           {coachingPoints.map((p, i) => (
-            <div key={i} className={`text-[13px] leading-snug ${p.color ?? 'text-text-secondary'}`}>
+            <div key={i} className={`text-[14px] leading-snug ${p.color ?? 'text-text-secondary'}`}>
               <span className="mr-1.5">{p.icon}</span>{p.text}
             </div>
           ))}
         </div>
 
-        {/* Garmin proprietary signals as info note (never override card color) */}
+        {/* Garmin proprietary signals as info note */}
         {(bbHigh != null || readiness != null) && cardState === 'green' && (
-          <div className="mt-2 text-[11px] text-text-muted/60 flex items-center gap-1">
-            <Info size={10} />
+          <div className="mt-3 text-[12px] text-text-dim flex items-center gap-1.5">
+            <Info size={12} />
             Garmin: BB {bbHigh ?? '—'} · Readiness {readiness ?? '—'}
-            <span className="text-[9px]">(estimates)</span>
+            <span className="text-[10px]">(estimates)</span>
           </div>
         )}
 
-        {/* Expandable workout — from planned_workouts */}
+        {/* Expandable workout */}
         {isGymDay && todayPlanned?.workout_definition && (
-          <div className="mt-3 pt-3 border-t border-white/5">
+          <div className="mt-4 pt-3 border-t border-text-primary/5">
             {isAdjusted && todayPlanned.adjustment_reason && (
-              <div className="text-[11px] text-accent-yellow mb-2">
+              <div className="text-[12px] text-accent-yellow mb-2">
                 Coach: {todayPlanned.adjustment_reason}
               </div>
             )}
             <button
               onClick={() => setShowExercises(!showExercises)}
-              className="flex items-center gap-1.5 text-[12px] text-white/60 hover:text-white/80 transition-colors"
+              className="flex items-center gap-1.5 text-[13px] text-text-muted hover:text-text-secondary transition-colors"
             >
-              <ChevronDown size={12} className={`transition-transform ${showExercises ? 'rotate-180' : ''}`} />
+              <ChevronDown size={14} className={`transition-transform ${showExercises ? 'rotate-180' : ''}`} />
               {showExercises ? 'Hide workout' : 'Show workout'}
             </button>
             {showExercises && (
               <div className="mt-3">
                 {todayPlanned.workout_definition.warmup?.length > 0 && (
-                  <div className="mb-3 pb-2 border-b border-white/10">
-                    <div className="text-[10px] text-white/40 uppercase tracking-wider mb-1.5">Warm-up</div>
+                  <div className="mb-3 pb-2 border-b border-text-primary/5">
+                    <div className="text-[11px] text-text-dim uppercase tracking-[0.06em] font-semibold mb-2">Warm-up</div>
                     {todayPlanned.workout_definition.warmup.map((wu: any, i: number) => (
-                      <div key={i} className="flex items-center justify-between text-[11px] py-0.5">
-                        <span className="text-white/50 italic">{wu.name}</span>
-                        <span className="text-white/40 font-mono text-[10px]">{wu.duration_s ? `${wu.duration_s}s` : `${wu.reps} reps`}</span>
+                      <div key={i} className="flex items-center justify-between text-[12px] py-0.5">
+                        <span className="text-text-muted italic">{wu.name}</span>
+                        <span className="text-text-dim font-mono text-[11px]">{wu.duration_s ? `${wu.duration_s}s` : `${wu.reps} reps`}</span>
                       </div>
                     ))}
                   </div>
@@ -472,19 +465,19 @@ export default function TodayView() {
                 <table className="w-full text-[14px]">
                   <tbody>
                     {todayPlanned.workout_definition.exercises.map((ex: any, i: number) => (
-                      <tr key={i} className="border-b border-white/5 last:border-0">
-                        <td className="py-1.5 text-white/90">{ex.name}</td>
-                        <td className="py-1.5 text-right text-white/60 font-mono text-[13px] whitespace-nowrap">
+                      <tr key={i} className="border-b border-text-primary/5 last:border-0">
+                        <td className="py-2 text-text-primary">{ex.name}</td>
+                        <td className="py-2 text-right text-text-secondary font-mono text-[13px] whitespace-nowrap">
                           {ex.sets}×{ex.reps}
                         </td>
-                        <td className="py-1.5 text-right text-white/80 font-mono text-[13px] w-20">
+                        <td className="py-2 text-right text-text-primary font-mono text-[13px] w-20 font-semibold">
                           {ex.weight_kg != null ? `${ex.weight_kg}kg` : '—'}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                <div className="text-[12px] text-white/40 mt-2">
+                <div className="text-[12px] text-text-muted mt-2">
                   ~{todayPlanned.workout_definition.estimated_duration_minutes ?? (deload ? 30 : 50)} min
                   {' · '}RPE {todayPlanned.workout_definition.rpe_range?.join('-') ?? '6-7'}
                 </div>
@@ -501,87 +494,86 @@ export default function TodayView() {
       />
 
       {/* ═══ 3. RECOVERY SIGNALS — Tiered layout ═══ */}
-      {/* Primary signals (evidence-backed) */}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-3">
         {/* HRV */}
-        <div className="bg-bg-card rounded-2xl border border-border-subtle p-3">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] text-text-muted uppercase tracking-wider">HRV</span>
-            <span className={`text-[10px] font-medium ${hrvInfo.color}`}>{hrvInfo.label}</span>
+        <div className="bg-bg-card rounded-2xl border border-border-subtle p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold">HRV</span>
+            <span className={`text-[11px] font-semibold ${hrvInfo.color}`}>{hrvInfo.label}</span>
           </div>
-          <div className={`text-2xl font-semibold font-data ${hrvInfo.color}`}>
-            {hrvVal ?? '—'}<span className="text-xs font-normal text-text-muted ml-1">ms</span>
+          <div className={`data-value-md font-data ${hrvInfo.color}`}>
+            {hrvVal ?? '—'}<span className="text-[13px] font-normal text-text-muted ml-1">ms</span>
           </div>
           {hrvWeeklyAvg != null && hrvVal != null && (
-            <div className="text-[10px] text-text-muted mt-1">
+            <div className="text-[12px] text-text-muted mt-1.5">
               {hrvVal >= hrvWeeklyAvg ? '↑ above' : '↓ below'} {hrvWeeklyAvg}ms avg
             </div>
           )}
         </div>
 
         {/* Sleep */}
-        <div className="bg-bg-card rounded-2xl border border-border-subtle p-3">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] text-text-muted uppercase tracking-wider">Sleep</span>
+        <div className="bg-bg-card rounded-2xl border border-border-subtle p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold">Sleep</span>
             {sleepBelowCount > 0 && (
-              <span className="text-[10px] text-accent-red">{sleepBelowCount}×&lt;6h</span>
+              <span className="text-[11px] text-accent-red font-semibold">{sleepBelowCount}×&lt;6h</span>
             )}
           </div>
-          <div className={`text-2xl font-semibold font-data ${metricColor(sleepHours, 7, 6)}`}>
-            {sleepHours ?? '—'}<span className="text-xs font-normal text-text-muted ml-1">h</span>
+          <div className={`data-value-md font-data ${metricColor(sleepHours, 7, 6)}`}>
+            {sleepHours ?? '—'}<span className="text-[13px] font-normal text-text-muted ml-1">h</span>
           </div>
-          <div className="text-[10px] text-text-muted mt-1">Target 7-8h</div>
+          <div className="text-[12px] text-text-muted mt-1.5">Target 7-8h</div>
         </div>
       </div>
 
       {/* Secondary signals (Garmin estimates — visually demoted) */}
-      <div className="grid grid-cols-2 gap-2">
-        <div className="bg-bg-card rounded-2xl border border-border-subtle p-2.5 opacity-70">
-          <div className="flex items-center gap-1 mb-0.5">
-            <span className="text-[9px] text-text-muted uppercase tracking-wider">Body Battery</span>
-            <span className="text-[8px] text-text-muted/50">(est.)</span>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-bg-card rounded-2xl border border-border-subtle p-3 opacity-60">
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className="text-[10px] text-text-muted uppercase tracking-[0.06em] font-semibold">Body Battery</span>
+            <span className="text-[9px] text-text-dim">(est.)</span>
           </div>
-          <div className={`text-lg font-semibold font-data ${metricColor(bbHigh, 60, 30)}`}>
+          <div className={`text-lg font-bold font-data ${metricColor(bbHigh, 60, 30)}`}>
             {bbHigh ?? '—'}
           </div>
-          <div className="text-[9px] text-text-muted">
+          <div className="text-[11px] text-text-dim">
             {todayMetrics?.body_battery_lowest != null
               ? `Low ${todayMetrics.body_battery_lowest} · Range ${(bbHigh ?? 0) - todayMetrics.body_battery_lowest}`
               : ''}
           </div>
         </div>
 
-        <div className="bg-bg-card rounded-2xl border border-border-subtle p-2.5 opacity-70">
-          <div className="flex items-center gap-1 mb-0.5">
-            <span className="text-[9px] text-text-muted uppercase tracking-wider">Readiness</span>
-            <span className="text-[8px] text-text-muted/50">(est.)</span>
+        <div className="bg-bg-card rounded-2xl border border-border-subtle p-3 opacity-60">
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className="text-[10px] text-text-muted uppercase tracking-[0.06em] font-semibold">Readiness</span>
+            <span className="text-[9px] text-text-dim">(est.)</span>
           </div>
-          <div className={`text-lg font-semibold font-data ${metricColor(readiness, 60, 40)}`}>
+          <div className={`text-lg font-bold font-data ${metricColor(readiness, 60, 40)}`}>
             {readiness ?? '—'}
           </div>
-          <div className="text-[9px] text-text-muted">
+          <div className="text-[11px] text-text-dim">
             {readiness != null && readiness >= 60 ? 'Ready' : readiness != null && readiness >= 40 ? 'Borderline' : readiness != null ? 'Low' : ''}
           </div>
         </div>
       </div>
 
-      {/* ═══ 4. WEEKLY LOAD (replaces Training Status / ACWR) ═══ */}
+      {/* ═══ 4. WEEKLY LOAD ═══ */}
       <div className="bg-bg-card rounded-2xl border border-border-subtle p-4">
-        <div className="flex items-center gap-2 mb-2">
-          <Activity size={14} className="text-accent-purple" />
-          <span className="text-[10px] text-text-muted uppercase tracking-wider">Weekly Load</span>
+        <div className="flex items-center gap-2 mb-3">
+          <Activity size={15} className="text-accent-purple" />
+          <span className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold">Weekly Load</span>
         </div>
-        <div className="flex gap-4 text-sm">
+        <div className="flex gap-5 text-[14px]">
           <div>
-            <span className="text-text-secondary">{formatDuration(thisWeekDuration)}</span>
-            <span className="text-text-muted text-xs ml-1">gym</span>
+            <span className="text-text-primary font-semibold">{formatDuration(thisWeekDuration)}</span>
+            <span className="text-text-muted text-[12px] ml-1">gym</span>
           </div>
           <div>
-            <span className="text-text-secondary">{Math.round(thisWeekElev).toLocaleString()}m</span>
-            <span className="text-text-muted text-xs ml-1">elev</span>
+            <span className="text-text-primary font-semibold">{Math.round(thisWeekElev).toLocaleString()}m</span>
+            <span className="text-text-muted text-[12px] ml-1">elev</span>
           </div>
           {loadChangePct != null && (
-            <span className={`text-xs font-medium ${
+            <span className={`text-[12px] font-semibold ${
               Math.abs(loadChangePct) < 15 ? 'text-accent-green' : Math.abs(loadChangePct) < 25 ? 'text-accent-yellow' : 'text-accent-red'
             }`}>
               {loadChangePct >= 0 ? '+' : ''}{loadChangePct}% vs last wk
@@ -589,29 +581,29 @@ export default function TodayView() {
           )}
         </div>
         {lastWeekDuration > 0 && (
-          <div className="text-[10px] text-text-muted mt-1">
+          <div className="text-[12px] text-text-muted mt-1.5">
             Last week: {formatDuration(lastWeekDuration)} · {Math.round(lastWeekElev).toLocaleString()}m
           </div>
         )}
       </div>
 
-      {/* ═══ 5. RESTING HR (compact with trend) ═══ */}
+      {/* ═══ 5. RESTING HR ═══ */}
       <div className="bg-bg-card rounded-2xl border border-border-subtle px-4 py-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Heart size={14} className="text-accent-red" />
-            <span className="text-[10px] text-text-muted uppercase tracking-wider">Resting HR</span>
-            <span className="text-sm font-semibold font-data text-text-primary">
+          <div className="flex items-center gap-2.5">
+            <Heart size={15} className="text-heart" />
+            <span className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold">Resting HR</span>
+            <span className="text-[15px] font-bold font-data text-text-primary">
               {todayMetrics?.resting_hr ?? '--'} bpm
             </span>
             {rhrTrend && (
-              <span className={`text-[10px] ${rhrElevated ? 'text-accent-yellow' : 'text-text-muted'}`}>
+              <span className={`text-[11px] font-medium ${rhrElevated ? 'text-accent-yellow' : 'text-text-muted'}`}>
                 {rhrTrend}
               </span>
             )}
           </div>
           {rhr7dAvg != null && (
-            <span className="text-[10px] text-text-muted">
+            <span className="text-[11px] text-text-muted">
               7d avg: {Math.round(rhr7dAvg)}bpm
             </span>
           )}
@@ -623,26 +615,26 @@ export default function TodayView() {
         <div className="bg-bg-card rounded-2xl border border-border-subtle p-4">
           <div className="flex items-center gap-2 mb-2">
             {lastActivity.elevation_gain > 0
-              ? <TrendingUp size={14} className="text-mountain" />
-              : <Activity size={14} className="text-gym" />
+              ? <TrendingUp size={15} className="text-mountain" />
+              : <Activity size={15} className="text-gym" />
             }
-            <span className="text-[10px] text-text-muted uppercase tracking-wider">Latest Activity</span>
+            <span className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold">Latest Activity</span>
           </div>
-          <div className="text-base font-semibold text-text-primary leading-tight">
+          <div className="text-[16px] font-bold text-text-primary leading-tight">
             {lastActivity.activity_name || formatActivityType(lastActivity.activity_type)}
           </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[12px] text-text-secondary">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[13px] text-text-secondary">
             {lastActivity.duration_seconds && (
-              <span className="flex items-center gap-1"><Clock size={11} className="text-text-muted" />{formatDuration(lastActivity.duration_seconds)}</span>
+              <span className="flex items-center gap-1.5"><Clock size={12} className="text-text-muted" />{formatDuration(lastActivity.duration_seconds)}</span>
             )}
             {lastActivity.elevation_gain > 0 && (
-              <span className="flex items-center gap-1"><ArrowUpRight size={11} className="text-mountain" />{Math.round(lastActivity.elevation_gain)}m</span>
+              <span className="flex items-center gap-1.5"><ArrowUpRight size={12} className="text-mountain" />{Math.round(lastActivity.elevation_gain)}m</span>
             )}
             {lastActivity.calories != null && (
-              <span className="flex items-center gap-1"><Flame size={11} className="text-accent-orange" />{lastActivity.calories} kcal</span>
+              <span className="flex items-center gap-1.5"><Flame size={12} className="text-accent-orange" />{lastActivity.calories} kcal</span>
             )}
             {lastActivity.avg_hr != null && (
-              <span className="flex items-center gap-1"><Heart size={11} className="text-accent-red" />{lastActivity.avg_hr} bpm</span>
+              <span className="flex items-center gap-1.5"><Heart size={12} className="text-heart" />{lastActivity.avg_hr} bpm</span>
             )}
           </div>
         </div>
@@ -653,13 +645,13 @@ export default function TodayView() {
         <RPEPrompt activity={lastActivity} />
       )}
 
-      {/* ═══ 8. PROGRAM PROGRESS (compact) ═══ */}
+      {/* ═══ 8. PROGRAM PROGRESS ═══ */}
       <div className="bg-bg-card rounded-2xl border border-border-subtle p-4">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] text-text-muted uppercase tracking-wider">
+          <span className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold">
             {block === 1 ? 'Base Rebuild' : 'Progression'} · Block {block}
           </span>
-          <span className="text-sm font-semibold font-data text-accent-green">
+          <span className="text-[15px] font-bold font-data text-accent-green">
             {week}<span className="text-text-muted font-normal">/8</span>
           </span>
         </div>

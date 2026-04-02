@@ -9,10 +9,11 @@ import {
 import { AlertTriangle, CheckCircle } from 'lucide-react'
 
 const darkTooltipStyle = {
-  backgroundColor: '#1a1a2e',
-  border: '1px solid #2a2a4a',
-  borderRadius: '8px',
-  color: '#e4e4ef',
+  backgroundColor: '#16161e',
+  border: '1px solid #262636',
+  borderRadius: '12px',
+  color: '#f0f0f5',
+  fontSize: '12px',
 }
 
 export default function RecoveryView() {
@@ -65,7 +66,7 @@ export default function RecoveryView() {
       value: d.resting_hr,
     }))
 
-  // Detect rising resting HR trend: compare last 3 days avg vs previous 7 days avg
+  // Detect rising resting HR trend
   const recentHR3 = restingHRData.slice(-3)
   const previousHR7 = restingHRData.slice(Math.max(0, restingHRData.length - 10), Math.max(0, restingHRData.length - 3))
   const recentHRAvg = recentHR3.length > 0
@@ -137,7 +138,7 @@ export default function RecoveryView() {
   const flagBBLow = bodyBattery != null && bodyBattery < 30
   const flagTRLow = trainingReadiness != null && trainingReadiness < 40
 
-  // --- Primary recovery signals (evidence-backed) ---
+  // --- Primary recovery signals ---
   const primaryFlags = [
     {
       label: flagHRVSuppressed
@@ -160,16 +161,10 @@ export default function RecoveryView() {
   ]
   const primaryFlagCount = primaryFlags.filter((f) => f.active).length
 
-  // --- Garmin indicators (proprietary estimates — secondary) ---
+  // --- Garmin indicators ---
   const garminIndicators = [
-    {
-      label: `Body Battery: ${bodyBattery ?? '—'}`,
-      active: flagBBLow,
-    },
-    {
-      label: `Training Readiness: ${trainingReadiness ?? '—'}`,
-      active: flagTRLow,
-    },
+    { label: `Body Battery: ${bodyBattery ?? '—'}`, active: flagBBLow },
+    { label: `Training Readiness: ${trainingReadiness ?? '—'}`, active: flagTRLow },
   ]
 
   // --- HRV 14d trend direction ---
@@ -211,13 +206,16 @@ export default function RecoveryView() {
       : `→ Stable around ${hrLater7Avg != null ? Math.round(hrLater7Avg) : '--'}bpm`
     : null
 
+  const axisTickStyle = { fill: '#646478', fontSize: 11 }
+  const axisLineStyle = { stroke: '#262636' }
+
   return (
-    <div className="space-y-4 pb-8">
-      {/* Recovery Signals (primary — evidence-backed) */}
+    <div className="space-y-3 pb-8">
+      {/* Recovery Signals */}
       <Card title="Recovery Signals">
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           {primaryFlags.map((flag) => (
-            <div key={flag.label} className="flex items-start gap-2 text-sm">
+            <div key={flag.label} className="flex items-start gap-2.5 text-[14px]">
               {flag.active ? (
                 <AlertTriangle size={16} className="text-accent-red mt-0.5 shrink-0" />
               ) : (
@@ -230,28 +228,28 @@ export default function RecoveryView() {
           ))}
         </div>
         <div
-          className={`mt-3 rounded-lg px-3 py-2 text-sm font-medium ${
+          className={`mt-4 rounded-xl px-4 py-2.5 text-[14px] font-semibold ${
             primaryFlagCount >= 2
               ? 'bg-accent-red/10 text-accent-red'
-              : 'bg-bg-card-hover text-text-secondary'
+              : 'bg-bg-elevated text-text-secondary'
           }`}
         >
           {primaryFlagCount} / {primaryFlags.length} signals flagged
           {primaryFlagCount >= 2 && ' — consider rest or light session'}
         </div>
 
-        {/* Garmin Indicators (secondary — collapsed by default) */}
-        <details className="mt-3 pt-2 border-t border-border">
-          <summary className="text-[11px] text-text-muted cursor-pointer hover:text-text-secondary">
+        {/* Garmin Indicators */}
+        <details className="mt-3 pt-3 border-t border-border">
+          <summary className="text-[12px] text-text-dim cursor-pointer hover:text-text-muted">
             Show Garmin indicators (estimates)
           </summary>
-          <div className="mt-2 space-y-1.5 opacity-70">
+          <div className="mt-2.5 space-y-2 opacity-60">
             {garminIndicators.map((ind) => (
-              <div key={ind.label} className="flex items-start gap-2 text-xs">
+              <div key={ind.label} className="flex items-start gap-2 text-[13px]">
                 {ind.active ? (
-                  <AlertTriangle size={12} className="text-accent-yellow mt-0.5 shrink-0" />
+                  <AlertTriangle size={13} className="text-accent-yellow mt-0.5 shrink-0" />
                 ) : (
-                  <CheckCircle size={12} className="text-accent-green/60 mt-0.5 shrink-0" />
+                  <CheckCircle size={13} className="text-accent-green/60 mt-0.5 shrink-0" />
                 )}
                 <span className="text-text-muted">{ind.label}</span>
               </div>
@@ -263,19 +261,19 @@ export default function RecoveryView() {
       {/* HRV Trend (14d) */}
       <Card title="HRV Trend (14d)">
         {hrvTrendLabel && (
-          <div className="text-xs font-medium text-text-secondary mb-1">{hrvTrendLabel}</div>
+          <div className="text-[13px] font-semibold text-text-secondary mb-1">{hrvTrendLabel}</div>
         )}
         {currentHRVStatus && (
-          <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3 text-xs text-text-secondary">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3 text-[13px] text-text-secondary">
             <span>
-              Status: <span className={hrvDegraded ? 'text-accent-yellow' : 'text-accent-green'}>
+              Status: <span className={hrvDegraded ? 'text-accent-yellow font-semibold' : 'text-accent-green font-semibold'}>
                 {currentHRVStatus.toLowerCase()}
               </span>
               {hrvConsecutiveDays > 1 && <> ({hrvConsecutiveDays} days)</>}
             </span>
             {hrvPctChange != null && (
               <span>
-                vs 14d avg: <span className={hrvPctChange < -10 ? 'text-accent-red' : hrvPctChange < 0 ? 'text-accent-yellow' : 'text-accent-green'}>
+                vs 14d avg: <span className={`font-semibold ${hrvPctChange < -10 ? 'text-accent-red' : hrvPctChange < 0 ? 'text-accent-yellow' : 'text-accent-green'}`}>
                   {hrvPctChange > 0 ? '+' : ''}{hrvPctChange}%
                 </span>
               </span>
@@ -291,169 +289,111 @@ export default function RecoveryView() {
             <AreaChart data={hrvChartData}>
               <defs>
                 <linearGradient id="hrvGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#60a5fa" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#60a5fa" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="baselineGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#22c55e" stopOpacity={0.1} />
-                  <stop offset="95%" stopColor="#22c55e" stopOpacity={0.05} />
+                  <stop offset="5%" stopColor="#34d399" stopOpacity={0.1} />
+                  <stop offset="95%" stopColor="#34d399" stopOpacity={0.03} />
                 </linearGradient>
               </defs>
-              <XAxis
-                dataKey="date"
-                tick={{ fill: '#555570', fontSize: 11 }}
-                axisLine={{ stroke: '#2a2a4a' }}
-                tickLine={false}
-              />
-              <YAxis
-                tick={{ fill: '#555570', fontSize: 11 }}
-                axisLine={false}
-                tickLine={false}
-                width={35}
-              />
+              <XAxis dataKey="date" tick={axisTickStyle} axisLine={axisLineStyle} tickLine={false} />
+              <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={35} />
               <Tooltip contentStyle={darkTooltipStyle} />
-              <Area
-                type="monotone"
-                dataKey="baselineHigh"
-                stroke="none"
-                fill="url(#baselineGrad)"
-                fillOpacity={1}
-                stackId="baseline"
-                connectNulls
-              />
-              <Area
-                type="monotone"
-                dataKey="baselineLow"
-                stroke="none"
-                fill="#0a0a0f"
-                fillOpacity={1}
-                stackId="baseline"
-                connectNulls
-              />
-              <Area
-                type="monotone"
-                dataKey="value"
-                stroke="#3b82f6"
-                fill="url(#hrvGrad)"
-                strokeWidth={2}
-                dot={{ fill: '#3b82f6', r: 3 }}
-                connectNulls
-              />
+              <Area type="monotone" dataKey="baselineHigh" stroke="none" fill="url(#baselineGrad)" fillOpacity={1} stackId="baseline" connectNulls />
+              <Area type="monotone" dataKey="baselineLow" stroke="none" fill="#0a0a0f" fillOpacity={1} stackId="baseline" connectNulls />
+              <Area type="monotone" dataKey="value" stroke="#60a5fa" fill="url(#hrvGrad)" strokeWidth={2} dot={{ fill: '#60a5fa', r: 3, strokeWidth: 0 }} connectNulls />
             </AreaChart>
           </ResponsiveContainer>
-          <div className="text-[10px] text-text-muted mt-1">Green band = balanced baseline range</div>
+          <div className="text-[11px] text-text-dim mt-1.5">Green band = balanced baseline range</div>
           </>
         ) : (
-          <div className="text-text-muted text-sm">No HRV data available</div>
+          <div className="text-text-muted text-[14px]">No HRV data available</div>
         )}
       </Card>
 
       {/* Sleep Trend (14d) */}
       <Card title="Sleep Trend (14d)" subtitle="Stage breakdown is approximate (±45 min per stage). Total duration is the reliable number.">
         {sleepTrendLabel && (
-          <div className="text-xs font-medium text-text-secondary mb-1">{sleepTrendLabel}</div>
+          <div className="text-[13px] font-semibold text-text-secondary mb-1">{sleepTrendLabel}</div>
         )}
         {sleepWeeklyAvg != null && (
-          <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3 text-xs text-text-secondary">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3 text-[13px] text-text-secondary">
             <span>
-              7d avg: <span className={sleepWeeklyAvg >= 7 ? 'text-accent-green' : sleepWeeklyAvg >= 6 ? 'text-accent-yellow' : 'text-accent-red'}>
+              7d avg: <span className={`font-semibold ${sleepWeeklyAvg >= 7 ? 'text-accent-green' : sleepWeeklyAvg >= 6 ? 'text-accent-yellow' : 'text-accent-red'}`}>
                 {sleepWeeklyAvg.toFixed(1)}h
               </span>
-              <span className="text-text-muted"> / 7-8h target</span>
+              <span className="text-text-dim"> / 7-8h target</span>
             </span>
             {nightsBelow6h > 0 && (
-              <span className="text-accent-red">
+              <span className="text-accent-red font-semibold">
                 {nightsBelow6h} night{nightsBelow6h > 1 ? 's' : ''} &lt;6h this week
               </span>
             )}
             {nightsBelow6h === 0 && (
-              <span className="text-accent-green">No short nights this week</span>
+              <span className="text-accent-green font-medium">No short nights this week</span>
             )}
           </div>
         )}
         {sleepChartData.length > 0 ? (
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={sleepChartData}>
-              <XAxis
-                dataKey="date"
-                tick={{ fill: '#555570', fontSize: 11 }}
-                axisLine={{ stroke: '#2a2a4a' }}
-                tickLine={false}
-              />
-              <YAxis
-                tick={{ fill: '#555570', fontSize: 11 }}
-                axisLine={false}
-                tickLine={false}
-                width={30}
-                unit="h"
-              />
+              <XAxis dataKey="date" tick={axisTickStyle} axisLine={axisLineStyle} tickLine={false} />
+              <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={30} unit="h" />
               <Tooltip contentStyle={darkTooltipStyle} />
               <Bar dataKey="deep" stackId="sleep" fill="#1e3a5f" radius={[0, 0, 0, 0]} name="Deep" />
               <Bar dataKey="rem" stackId="sleep" fill="#7c3aed" radius={[0, 0, 0, 0]} name="REM" />
-              <Bar dataKey="light" stackId="sleep" fill="#555570" radius={[2, 2, 0, 0]} name="Light" />
+              <Bar dataKey="light" stackId="sleep" fill="#4a4a5c" radius={[2, 2, 0, 0]} name="Light" />
             </BarChart>
           </ResponsiveContainer>
         ) : (
-          <div className="text-text-muted text-sm">No sleep data available</div>
+          <div className="text-text-muted text-[14px]">No sleep data available</div>
         )}
       </Card>
 
       {/* Resting HR Trend (14d) */}
       <Card title="Resting HR Trend (14d)">
         {hrTrendLabel && (
-          <div className="text-xs font-medium text-text-secondary mb-1">{hrTrendLabel}</div>
+          <div className="text-[13px] font-semibold text-text-secondary mb-1">{hrTrendLabel}</div>
         )}
         {restingHRData.length > 0 ? (
           <>
             {risingHR && hrRiseDelta != null && (
-              <div className="mb-2 space-y-1">
-                <div className="flex items-center gap-2 text-accent-yellow text-xs">
-                  <AlertTriangle size={14} />
+              <div className="mb-3 space-y-1">
+                <div className="flex items-center gap-2 text-accent-yellow text-[13px] font-semibold">
+                  <AlertTriangle size={15} />
                   <span>Rising trend: +{hrRiseDelta.toFixed(1)}bpm (3d avg vs prior 7d avg)</span>
                 </div>
-                <div className="text-xs text-accent-yellow/80 ml-6">
+                <div className="text-[13px] text-accent-yellow/80 ml-[23px]">
                   → Prioritize sleep and consider reducing volume
                 </div>
               </div>
             )}
             {!risingHR && recentHRAvg != null && previousHRAvg != null && (
-              <div className="text-xs text-text-muted mb-2">
+              <div className="text-[13px] text-text-muted mb-2">
                 3d avg {Math.round(recentHRAvg)}bpm &middot; 7d avg {Math.round(previousHRAvg)}bpm
               </div>
             )}
             <ResponsiveContainer width="100%" height={160}>
               <LineChart data={restingHRData}>
-                <XAxis
-                  dataKey="date"
-                  tick={{ fill: '#555570', fontSize: 11 }}
-                  axisLine={{ stroke: '#2a2a4a' }}
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fill: '#555570', fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={30}
-                  domain={['dataMin - 3', 'dataMax + 3']}
-                  unit=" bpm"
-                />
+                <XAxis dataKey="date" tick={axisTickStyle} axisLine={axisLineStyle} tickLine={false} />
+                <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={30} domain={['dataMin - 3', 'dataMax + 3']} unit=" bpm" />
                 <Tooltip contentStyle={darkTooltipStyle} />
                 <Line
                   type="monotone"
                   dataKey="value"
-                  stroke={risingHR ? '#eab308' : '#f472b6'}
+                  stroke={risingHR ? '#fbbf24' : '#fb7185'}
                   strokeWidth={2}
-                  dot={{ fill: risingHR ? '#eab308' : '#f472b6', r: 3 }}
+                  dot={{ fill: risingHR ? '#fbbf24' : '#fb7185', r: 3, strokeWidth: 0 }}
                   connectNulls
                 />
               </LineChart>
             </ResponsiveContainer>
           </>
         ) : (
-          <div className="text-text-muted text-sm">No resting HR data available</div>
+          <div className="text-text-muted text-[14px]">No resting HR data available</div>
         )}
       </Card>
-
     </div>
   )
 }

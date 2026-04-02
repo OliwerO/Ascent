@@ -12,7 +12,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
       return (
         <div className="p-6 text-center">
           <div className="text-accent-red text-lg font-semibold mb-2">Something went wrong</div>
-          <div className="text-text-muted text-sm mb-4 font-mono bg-bg-card rounded-lg p-3 text-left overflow-auto max-h-40">
+          <div className="text-text-muted text-sm mb-4 font-mono bg-bg-card rounded-2xl p-3 text-left overflow-auto max-h-40">
             {this.state.error.message}
           </div>
           <button onClick={() => { this.setState({ error: null }); window.location.reload() }}
@@ -68,37 +68,37 @@ function App() {
 
   return (
     <div className="min-h-screen bg-bg-primary">
-      {/* Header — pt-[env(safe-area-inset-top)] for notch/status bar */}
+      {/* Header */}
       <header className="sticky top-0 z-50 bg-bg-primary/90 backdrop-blur-xl border-b border-border-subtle pt-[env(safe-area-inset-top)]">
         <div className="max-w-2xl mx-auto px-5 py-3 flex items-center justify-between">
-          <h1 className="text-base font-semibold tracking-tight flex items-center gap-2">
+          <h1 className="text-[15px] font-semibold tracking-tight flex items-center gap-2">
             <span className="text-accent-green text-lg">&#9650;</span>
-            <span>Ascent</span>
+            <span className="text-text-primary">Ascent</span>
           </h1>
-          <div className="flex items-center gap-3">
-            <span className="text-[11px] text-text-muted font-medium">
+          <div className="flex items-center gap-4">
+            <span className="text-[12px] text-text-muted font-medium">
               {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
             </span>
             <button
               onClick={handleSync}
               disabled={syncing}
-              className="text-text-muted hover:text-accent-green disabled:opacity-50 transition-all"
+              className="text-text-muted hover:text-accent-green disabled:opacity-50 transition-all p-1"
               title="Sync Garmin data now"
             >
-              <Watch size={14} className={syncing ? 'animate-pulse' : ''} />
+              <Watch size={15} className={syncing ? 'animate-pulse' : ''} />
             </button>
             <button
               onClick={handleRefresh}
-              className="text-text-muted hover:text-text-secondary active:rotate-180 transition-all duration-300"
+              className="text-text-muted hover:text-text-secondary active:rotate-180 transition-all duration-300 p-1"
               title="Refresh data"
             >
-              <RefreshCw size={14} />
+              <RefreshCw size={15} />
             </button>
           </div>
         </div>
         {syncMsg && (
           <div className="max-w-2xl mx-auto px-5 pb-2">
-            <div className={`text-[11px] px-3 py-1.5 rounded-lg ${
+            <div className={`text-[12px] px-3 py-1.5 rounded-xl ${
               syncMsg.includes('queued') ? 'bg-accent-green/10 text-accent-green' : 'bg-accent-red/10 text-accent-red'
             }`}>
               {syncMsg}
@@ -108,7 +108,7 @@ function App() {
       </header>
 
       {/* Content */}
-      <main className="max-w-2xl mx-auto px-4 py-5 pb-28 space-y-4">
+      <main className="max-w-2xl mx-auto px-4 py-4 pb-28 space-y-3">
         <ErrorBoundary>
           <Suspense fallback={<LoadingState />}>
             {activeTab === 'today' && <TodayView key={refreshKey} />}
@@ -131,19 +131,16 @@ function App() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 flex flex-col items-center pt-3 pb-2 gap-1 transition-all duration-200 ${
+                className={`flex-1 flex flex-col items-center pt-2.5 pb-1.5 gap-0.5 transition-all duration-200 min-h-[48px] ${
                   active
                     ? 'text-accent-green'
                     : 'text-text-muted hover:text-text-secondary active:scale-95'
                 }`}
               >
                 <Icon size={20} strokeWidth={active ? 2 : 1.5} />
-                <span className={`text-[10px] tracking-wide ${active ? 'font-medium' : ''}`}>
+                <span className={`text-[10px] tracking-wide ${active ? 'font-semibold' : 'font-medium'}`}>
                   {tab.label}
                 </span>
-                {active && (
-                  <div className="w-1 h-1 rounded-full bg-accent-green -mt-0.5" />
-                )}
               </button>
             )
           })}

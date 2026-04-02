@@ -38,13 +38,13 @@ export function StatusBadge({ value, thresholds, label, unit, status: explicitSt
 
   return (
     <div className={`rounded-2xl border px-4 py-3 ${s.bg}`}>
-      <div className="flex items-center gap-1.5 mb-1">
+      <div className="flex items-center gap-1.5 mb-1.5">
         <div className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
-        <span className="text-[11px] text-text-muted uppercase tracking-wider">{label}</span>
+        <span className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold">{label}</span>
       </div>
-      <div className={`text-2xl font-semibold font-data ${s.value}`}>
+      <div className={`data-value font-data ${s.value}`}>
         {value ?? '—'}
-        {unit && <span className="text-sm ml-1 font-normal opacity-60">{unit}</span>}
+        {unit && <span className="text-[14px] ml-1 font-normal opacity-60">{unit}</span>}
       </div>
     </div>
   )
