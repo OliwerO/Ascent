@@ -115,7 +115,7 @@ function WellnessInput({ todayWellness, onSubmit }: {
             <span className={`text-sm font-semibold font-data ${
               composite >= 3.5 ? 'text-accent-green' : composite >= 2.5 ? 'text-accent-yellow' : 'text-accent-red'
             }`}>
-              {composite.toFixed(1)}/5
+              {composite != null ? composite.toFixed(1) : '?'}/5
             </span>
           </div>
           <span className="text-[10px] text-text-muted">Tap to view</span>

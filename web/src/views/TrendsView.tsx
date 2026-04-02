@@ -98,25 +98,7 @@ export default function TrendsView() {
     }
   }, [])
 
-  const loading = hrv.loading || bodyComp.loading || activities.loading || metrics.loading
-  const error = hrv.error || bodyComp.error || activities.error || metrics.error
-
-  if (loading) return <LoadingState />
-  if (error) return <div className="text-accent-red p-4">{error}</div>
-
-  // --- HRV 90-day ---
-  const hrvChartData = (hrv.data ?? [])
-    .slice()
-    .reverse()
-    .map((d: any) => ({
-      date: format(new Date(d.date), 'MMM d'),
-      value: d.last_night_avg ? Math.round(d.last_night_avg) : null,
-      baselineLow: d.baseline_balanced_low ? Math.round(d.baseline_balanced_low) : null,
-      baselineHigh: d.baseline_balanced_upper ? Math.round(d.baseline_balanced_upper) : null,
-    }))
-
-  // --- Body Composition ---
-  // Weight + muscle chart (kg scale) with EWMA smoothing
+  // All hooks must be before early returns (React 19)
   const massChartData = useMemo(() => {
     const raw = (bodyComp.data ?? [])
       .slice()
@@ -137,6 +119,23 @@ export default function TrendsView() {
       return { ...d, weightEWMA: ewma }
     })
   }, [bodyComp.data])
+
+  const loading = hrv.loading || bodyComp.loading || activities.loading || metrics.loading
+  const error = hrv.error || bodyComp.error || activities.error || metrics.error
+
+  if (loading) return <LoadingState />
+  if (error) return <div className="text-accent-red p-4">{error}</div>
+
+  // --- HRV 90-day ---
+  const hrvChartData = (hrv.data ?? [])
+    .slice()
+    .reverse()
+    .map((d: any) => ({
+      date: format(new Date(d.date), 'MMM d'),
+      value: d.last_night_avg ? Math.round(d.last_night_avg) : null,
+      baselineLow: d.baseline_balanced_low ? Math.round(d.baseline_balanced_low) : null,
+      baselineHigh: d.baseline_balanced_upper ? Math.round(d.baseline_balanced_upper) : null,
+    }))
 
   // Body fat % chart (separate scale)
   const fatChartData = (bodyComp.data ?? [])
