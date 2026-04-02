@@ -1,4 +1,3 @@
-import { Sparkline } from '../components/Sparkline'
 import { LoadingState } from '../components/LoadingState'
 import { useDailySummary, useHRV, useDailyMetrics, useActivities, useSubjectiveWellness } from '../hooks/useSupabase'
 import {
@@ -6,7 +5,7 @@ import {
   getPlannedWeight,
 } from '../lib/program'
 import { Clock, Flame, ArrowUpRight, Heart, ChevronDown, TrendingUp, Activity, Info } from 'lucide-react'
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { format } from 'date-fns'
 
@@ -37,12 +36,6 @@ function formatDuration(seconds: number | null | undefined): string {
 function formatActivityType(type: string | null | undefined): string {
   if (!type) return ''
   return type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-}
-
-function pctChangeLabel(current: number, avg: number): string {
-  if (avg === 0) return ''
-  const pct = Math.round(((current - avg) / avg) * 100)
-  return pct >= 0 ? `+${pct}%` : `${pct}%`
 }
 
 // ─── Session exercises ────────────────────────────────────────────
@@ -294,7 +287,7 @@ export default function TodayView() {
   const activities = useActivities(14)
   const wellness = useSubjectiveWellness(30)
   const [showExercises, setShowExercises] = useState(false)
-  const [wellnessRefresh, setWellnessRefresh] = useState(0)
+  const [, setWellnessRefresh] = useState(0)
 
   const loading = summary.loading || hrv.loading || metrics.loading || activities.loading
   if (loading) return <LoadingState />
@@ -381,7 +374,6 @@ export default function TodayView() {
   const hrvDegraded = todayHRV?.status?.toUpperCase() === 'LOW'
   const hrvLow = hrvVal != null && hrvWeeklyAvg != null && hrvVal < hrvWeeklyAvg * 0.85
   const sleepPoor = sleep7dAvg != null && sleep7dAvg < 6.5
-  const sleepBad = sleepHours != null && sleepHours < 6
   const wellnessLow = todayWellness?.composite_score != null && todayWellness.composite_score < 2.5
 
   let cardState: 'green' | 'amber' | 'red' = 'green'

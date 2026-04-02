@@ -1,8 +1,7 @@
 import { useMemo } from 'react'
 import { Card } from '../components/Card'
-import { Sparkline } from '../components/Sparkline'
 import { LoadingState } from '../components/LoadingState'
-import { useHRV, useActivities, useSleep, useBodyComposition } from '../hooks/useSupabase'
+import { useActivities, useSleep, useBodyComposition } from '../hooks/useSupabase'
 import { startOfWeek, endOfWeek, format, isWithinInterval } from 'date-fns'
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts'
 
@@ -26,12 +25,11 @@ function sleepBarColor(hours: number): string {
 
 export default function WeekView() {
   const activitiesHook = useActivities(14)
-  const hrvHook = useHRV(14)
   const sleepHook = useSleep(14)
   const bodyCompHook = useBodyComposition(30)
 
-  const loading = activitiesHook.loading || hrvHook.loading || sleepHook.loading || bodyCompHook.loading
-  const error = activitiesHook.error || hrvHook.error || sleepHook.error || bodyCompHook.error
+  const loading = activitiesHook.loading || sleepHook.loading || bodyCompHook.loading
+  const error = activitiesHook.error || sleepHook.error || bodyCompHook.error
 
   const now = new Date()
   const weekStart = startOfWeek(now, { weekStartsOn: 1 })
@@ -123,26 +121,6 @@ export default function WeekView() {
     const label = total >= 4 ? 'Active week' : total >= 2 ? 'Moderate week' : 'Light week'
     return `${label}: ${parts.join(' + ')}`
   }, [weekActivities])
-
-  // HRV sparkline data (14d, chronological)
-  const hrvSparkline = useMemo(() => {
-    if (!hrvHook.data) return []
-    return hrvHook.data
-      .slice()
-      .reverse()
-      .filter((d: any) => d.last_night_avg != null)
-      .map((d: any) => ({ value: d.last_night_avg }))
-  }, [hrvHook.data])
-
-  // HRV baseline for reference band
-  const hrvBaseline = useMemo(() => {
-    if (!hrvHook.data?.[0]) return undefined
-    const latest = hrvHook.data[0]
-    if (latest.baseline_balanced_low != null && latest.baseline_balanced_upper != null) {
-      return { low: latest.baseline_balanced_low, high: latest.baseline_balanced_upper }
-    }
-    return undefined
-  }, [hrvHook.data])
 
   // Sleep bar chart data (14d, chronological)
   const sleepBars = useMemo(() => {
