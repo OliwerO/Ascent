@@ -964,39 +964,14 @@ def update_exception_status(target_date: date) -> None:
 
 
 def get_garmin_client():
-    """Build a Garmin API client backed by garth's long-lived OAuth tokens.
+    """Build a Garmin API client using safe auth (no login()).
 
-    Uses garth for authentication (OAuth1 tokens last ~1 year, auto-refresh
-    OAuth2 access tokens). Injects garth's Client into garminconnect's Garmin
-    class so all API methods work with garth's auth.
+    Delegates to garmin_auth.get_safe_client() which uses:
+      1. Cached cookies  2. Safari cookies  3. garth.resume()
+    NEVER calls login() or hits SSO.
     """
-    import garth
-    from garminconnect import Garmin
-
-    garmin_email = os.environ.get("GARMIN_EMAIL", "")
-    garmin_password = os.environ.get("GARMIN_PASSWORD", "")
-    token_dir = str(GARTH_TOKEN_DIR)
-
-    # Step 1: Try resuming saved OAuth tokens (~1 year lifetime)
-    try:
-        garth.resume(token_dir)
-        garth.client.username
-        log.info("Resumed garth session from saved OAuth tokens")
-    except Exception as e:
-        log.info("Garth token resume failed: %s", e)
-        # Step 2: Fresh login
-        log.info("Attempting garth credential login via SSO")
-        garth.login(garmin_email, garmin_password)
-        garth.save(token_dir)
-        log.info("Garth login successful, tokens saved to %s", GARTH_TOKEN_DIR)
-
-    # Build Garmin wrapper with garth's client injected
-    client = Garmin()
-    client.client = garth.client
-    client.display_name = garth.client.username or garmin_email
-
-    garth.save(token_dir)
-    return client
+    from garmin_auth import get_safe_client
+    return get_safe_client(require_garminconnect=True)
 
 
 # ---------------------------------------------------------------------------

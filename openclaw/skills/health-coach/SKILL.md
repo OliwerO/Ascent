@@ -57,6 +57,9 @@ curl -s "$BASE/activities?date=gte.$WEEK_AGO&order=date.desc&select=date,activit
 
 # 5. Daily metrics — last 7 days (body battery, training readiness, resting HR, stress)
 curl -s "$BASE/daily_metrics?date=gte.$WEEK_AGO&order=date.desc&select=date,body_battery_highest,body_battery_lowest,training_readiness_score,resting_hr,avg_stress_level" -H "$AUTH"
+
+# 6. Subjective wellness — today + last 7 days
+curl -s "$BASE/subjective_wellness?date=gte.$WEEK_AGO&order=date.desc&select=date,sleep_quality,energy,muscle_soreness,motivation,stress,composite_score,notes" -H "$AUTH"
 ```
 
 ### Step 1b: Validate data
@@ -65,6 +68,7 @@ Before proceeding, verify the Supabase responses:
 - If `daily_metrics` for today is empty, use yesterday's `body_battery_highest` and `training_readiness_score` as fallback. The sync may not have run for today yet. **Always label fallback data in the Slack post**, e.g., "TR: 40 (yesterday — today not synced yet)".
 - If ALL queries return empty for today AND the last 3 days, post a **warning** to #ascent-daily: "Data sync may be failing — no recovery data available. Defaulting to conservative rest day. Please check garmin_sync." Do NOT make a "full send" recommendation without data.
 - If only HRV or sleep is missing for one day, proceed with available signals — don't block on a single missing metric.
+- Subjective wellness is optional — if no entry for today, proceed without it. But if it IS present, it's the highest-trust signal (athlete self-report > wearable data per Saw et al. 2016). A low composite (<2.5) should override green wearable signals.
 
 ### Step 2: Read the current program
 
@@ -120,7 +124,8 @@ Use this decision process:
 4. **Check multi-signal override** (KB rule #13):
    - Body battery <30 → rest/mobility override
    - Training readiness <40 → rest/mobility override
-   - 3+ signals degraded simultaneously (HRV + sleep + body battery + subjective) → force rest day
+   - Subjective wellness composite <2.5 → rest/mobility override (athlete self-report overrides wearable data)
+   - 3+ signals degraded simultaneously → force rest day. Signals: HRV LOW/UNBALANCED, sleep <6h, body battery <30, subjective composite <2.5
 
 5. **Apply block-specific RPE and progression:**
    - Block 1 (Weeks 1-3): RPE 6-7, linear progression

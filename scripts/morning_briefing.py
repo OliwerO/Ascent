@@ -109,6 +109,15 @@ def fetch_resting_hr_7d(end_date: date) -> float | None:
     return round(sum(hrs) / len(hrs), 1) if hrs else None
 
 
+def fetch_wellness(target_date: date) -> dict | None:
+    """Fetch today's subjective wellness check-in."""
+    rows = supabase_get("subjective_wellness", {
+        "date": f"eq.{target_date.isoformat()}",
+        "select": "sleep_quality,energy,muscle_soreness,motivation,stress,composite_score",
+    })
+    return rows[0] if rows else None
+
+
 # ---------------------------------------------------------------------------
 # Formatting helpers
 # ---------------------------------------------------------------------------
@@ -162,8 +171,13 @@ def _readiness_label(score: float | None) -> str:
     return f"{int(score)}"
 
 
-def _recommendation(readiness: float | None, hrv_avg: float | None, sleep_score: int | None) -> str:
+def _recommendation(readiness: float | None, hrv_avg: float | None,
+                    sleep_score: int | None, wellness_composite: float | None) -> str:
     """One-line training recommendation based on recovery signals."""
+    # Wellness self-report is the highest-trust signal
+    if wellness_composite is not None and wellness_composite < 2.5:
+        return ":zzz: Rest day recommended. Self-reported wellness is low — listen to your body."
+
     scores = []
     if readiness is not None:
         scores.append(("readiness", readiness))
@@ -171,6 +185,8 @@ def _recommendation(readiness: float | None, hrv_avg: float | None, sleep_score:
         scores.append(("hrv", hrv_avg))
     if sleep_score is not None:
         scores.append(("sleep", sleep_score))
+    if wellness_composite is not None:
+        scores.append(("wellness", wellness_composite))
 
     if not scores:
         return "Insufficient data for recommendation."
@@ -193,6 +209,11 @@ def _recommendation(readiness: float | None, hrv_avg: float | None, sleep_score:
             if val >= 75:
                 green += 1
             elif val < 50:
+                red += 1
+        elif name == "wellness":
+            if val >= 4.0:
+                green += 1
+            elif val < 2.5:
                 red += 1
 
     if red >= 2:
@@ -244,6 +265,7 @@ def build_message(target_date: date) -> dict:
     yesterday_summary = fetch_daily_summary(yesterday)
     yesterday_activities = fetch_activities(yesterday)
     resting_hr_7d = fetch_resting_hr_7d(target_date)
+    wellness = fetch_wellness(target_date)
 
     # Use today's summary for current recovery state; fall back to yesterday
     summary = today_summary or yesterday_summary
@@ -331,8 +353,32 @@ def build_message(target_date: date) -> dict:
 
     blocks.append({"type": "divider"})
 
+    # Wellness check-in (if submitted today)
+    wellness_composite = None
+    if wellness:
+        wellness_composite = wellness.get("composite_score")
+        w_labels = {
+            "sleep_quality": "Sleep", "energy": "Energy",
+            "muscle_soreness": "Soreness", "motivation": "Motivation",
+            "stress": "Stress"
+        }
+        w_parts = [f"{lbl}: {wellness.get(k, '?')}/5"
+                   for k, lbl in w_labels.items() if wellness.get(k) is not None]
+        if w_parts:
+            w_emoji = ":large_green_circle:" if wellness_composite and wellness_composite >= 4 else \
+                      ":red_circle:" if wellness_composite and wellness_composite < 2.5 else \
+                      ":large_yellow_circle:"
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text":
+                    f"{w_emoji} *Wellness Check-in:* {wellness_composite:.1f}/5\n"
+                    + " | ".join(w_parts)}
+            })
+
+    blocks.append({"type": "divider"})
+
     # Recommendation
-    rec = _recommendation(readiness, hrv_avg, sleep_score)
+    rec = _recommendation(readiness, hrv_avg, sleep_score, wellness_composite)
     blocks.append({
         "type": "section",
         "text": {"type": "mrkdwn", "text": rec}

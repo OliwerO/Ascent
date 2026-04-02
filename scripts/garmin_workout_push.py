@@ -26,6 +26,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from garmin_auth import (
+    get_safe_client, save_tokens, alert_slack,
+    AuthExpiredError, RateLimitCooldownError,
+)
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 

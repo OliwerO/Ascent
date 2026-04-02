@@ -31,19 +31,46 @@
 Three tables proposed in the expansion brief were dropped as redundant.
 See `docs/schema-conflict-resolution.md`. New migration: `sql/006_training_expansion.sql`.
 
-### Garmin auth status (2026-03-31)
+### Garmin auth hardening (2026-04-02)
+
+- **Auth rewrite complete.** All login()/SSO fallbacks removed from all scripts.
+- `garmin_auth.py` — shared auth module with exception-based API:
+  - Auth chain: cached cookies → live Safari extraction → garth.resume() → fail+alert
+  - Custom exceptions: `AuthExpiredError`, `RateLimitCooldownError` (callers handle gracefully)
+  - Auto-detects 429 during session verification → sets cooldown automatically
+  - Cookie freshness checking (6h stale warning)
+  - `NK: NT` header for Garmin API compatibility
+  - CLI status check: `python garmin_auth.py` shows all auth method status
+  - Backward-compatible `get_garmin_client()` alias for existing code
+- `garmin_session_keepalive.py` — **replaces** `garmin_session_refresh.sh`:
+  - Actively hits Garmin API to **extend** the session server-side (not just cookie extraction)
+  - Caches cookies with timestamps to `~/.garmin-cookies.json`
+  - Tracks consecutive failures, alerts to Slack after ~8h dead
+  - Auto-sets cooldown on 429 detection
+  - `--status` flag for diagnostics
+  - **Needs launchd plist update** (see Oliwer's Actions below)
+- Rate limit cooldown lock: `~/.garth/.auth_cooldown` (25h window). All scripts check before auth.
+- `garmin_login_once.py` deleted.
+- Slack alerts on auth failure / rate limit → `#ascent-daily`.
+
+### Garmin auth history (2026-03-31)
 
 - `garth` library **deprecated** as of v0.8.0 (2026-03-28). Garmin added Cloudflare protection to SSO endpoints mid-March 2026.
 - Upgraded to `garminconnect 0.2.41` (web-session branch) — uses mobile API + JWT auth.
 - Mobile API works but triggers aggressive account-level rate limiting (429).
-- Launchd plist fixed to use venv Python.
-- MFA support added to sync script.
 - **Resolved (2026-03-31):** Auth working via Safari cookie extraction (`browser_cookie3`).
   Session kept alive by `garmin_session_refresh.sh` (launchd, every 4h).
-  Sync script patched with `Sec-Fetch-*` headers for Cloudflare compatibility.
   3-month backfill complete: 90 days of data (Jan 1 – Mar 31), 47 activities.
-- MFA is permanently enabled (ECG feature, irreversible). Safari session approach is the long-term solution.
+- MFA is permanently enabled (ECG feature, irreversible).
 - Body composition: no Garmin scale. User does gym body comp scans — input via screenshot/Telegram → Claude Vision parsing.
+
+### Terra API — shelved (2026-04-02)
+
+- Terra's cheapest plan is $399/month (Quick Start). No free tier available as of April 2026.
+- Not viable for a single-user personal project (~1.2k credits/month usage).
+- `terra_sync.py` built and in repo as a backup if a free tier appears or Garmin breaks cookies again.
+- `docs/terra-field-mapping.md` documents the full field mapping for future reference.
+- **Decision: Stay with hardened direct Garmin auth** (`garmin_auth.py`). Safari cookies + garth.resume() for all reads/writes. No SSO calls ever.
 
 ### Research integration (2026-04-02)
 
@@ -68,9 +95,11 @@ See `docs/schema-conflict-resolution.md`. New migration: `sql/006_training_expan
 
 ```
 Things that can happen NOW (parallel):
-  ├── Complete Garmin first login (rate limit cooldown, then garmin_login_once.py)
+  ├── Re-establish Safari cookie auth (April 3 ~13:00 Vienna, after cooldown)
+  │     1. Log into Garmin Connect in Safari
+  │     2. Wait for garmin_session_refresh.sh (4h cycle)
+  │     3. Test: python garmin_sync.py --date 2026-04-02
   ├── Grafana Cloud: fix Supabase connection (get pooler details from dashboard)
-  ├── Backfill historical Garmin data (once login works)
   ├── Run migration 009_research_integration.sql
   ├── Implement subjective wellness questionnaire (highest-evidence unbuilt feature)
   ├── Add data validation to garmin_sync.py
@@ -103,12 +132,24 @@ After Grafana connected:
 - [x] **Fix launchd plist** — was using system Python, now uses venv (done 2026-03-31)
 - [x] **Run Phase 8 migration** — `sql/006_training_expansion.sql` (done 2026-03-31)
 
-- [ ] **Complete first Garmin login** (blocked on rate limit cooldown):
-  ```bash
-  cd ~/projects/ascent && source venv/bin/activate
-  python scripts/garmin_login_once.py
-  ```
-  Apple Reminder set for 2026-04-01 09:00.
+- [ ] **Re-establish Safari cookie auth** (April 3 ~13:00 Vienna, after cooldown):
+  1. Log into Garmin Connect in Safari (normal browser login — handles MFA, Cloudflare)
+  2. Run keepalive manually to extract + verify cookies:
+     ```bash
+     cd ~/projects/ascent && source venv/bin/activate
+     python scripts/garmin_session_keepalive.py
+     ```
+  3. Check auth status:
+     ```bash
+     python scripts/garmin_auth.py
+     ```
+  4. Test hardened sync:
+     ```bash
+     python scripts/garmin_sync.py --date 2026-04-02
+     ```
+
+- [x] **Keepalive launchd plist deployed** (done 2026-04-02):
+  `com.ascent.garmin-keepalive` runs every 30 minutes. Old `garmin-session-refresh` unloaded.
 
 - [ ] **Backfill historical data** (once login works):
   ```bash
@@ -180,7 +221,10 @@ After Grafana connected:
 | File | Purpose |
 |------|---------|
 | **Scripts** | |
-| `scripts/garmin_sync.py` | Nightly Garmin → Supabase sync (Phase 2/7a) |
+| `scripts/garmin_auth.py` | Shared auth module — cached cookies → Safari → garth.resume() → fail+Slack alert. No login(). |
+| `scripts/garmin_session_keepalive.py` | Every 4h: extract Safari cookies, hit Garmin API to extend session, cache cookies. Replaces .sh version. |
+| `scripts/garmin_sync.py` | **Primary read pipeline.** Nightly Garmin → Supabase sync (hardened auth, no SSO) |
+| `scripts/terra_sync.py` | Backup: Terra API → Supabase (shelved — $399/mo, no free tier) |
 | `scripts/egym_sync.py` | eGym body scan → Supabase sync (body composition) |
 | `scripts/garmin_workout_push.py` | Push workouts to Garmin watch (Phase 7b, scaffolded) |
 | `scripts/workout_generator.py` | Generate weekly workouts (Phase 8, scaffolded) |

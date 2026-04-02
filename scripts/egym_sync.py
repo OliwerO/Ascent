@@ -219,14 +219,22 @@ def extract_bio_age_summary(bio_age: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _extract_scan_date(metrics: list[dict]) -> str | None:
+    """Extract the actual scan date from eGym metric entries (createdAt field)."""
+    for entry in metrics:
+        created = entry.get("createdAt", "")
+        if created:
+            return created[:10]  # "2026-04-01T17:11:49Z" → "2026-04-01"
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(description="Sync eGym body scans to Supabase")
     parser.add_argument(
-        "--date", type=str, default=date.today().isoformat(),
-        help="Date to assign to the scan (YYYY-MM-DD, default: today)",
+        "--date", type=str, default=None,
+        help="Override scan date (YYYY-MM-DD). Default: use actual scan date from eGym.",
     )
     args = parser.parse_args()
-    scan_date = args.date
 
     # Authenticate
     client = EgymClient(EGYM_BRAND, EGYM_USERNAME, EGYM_PASSWORD)
@@ -236,20 +244,38 @@ def main():
     raw_body = client.get_body_metrics()
     log.info("Got %d body metric entries", len(raw_body))
 
-    # Fetch supplementary data
-    bio_age = client.get_bio_age()
-    strength = client.get_strength()
-    flexibility = client.get_flexibility()
-
     # Extract body composition fields
     body_row, raw_entries = extract_body_comp(raw_body)
-    bio_summary = extract_bio_age_summary(bio_age)
 
     if not body_row:
         log.warning("No body composition data found")
         if raw_body:
             log.info("Raw types: %s", [e.get("type") for e in raw_body[:10]])
         sys.exit(1)
+
+    # Use actual scan date from eGym, not today
+    scan_date = args.date or _extract_scan_date(raw_body) or date.today().isoformat()
+    log.info("Scan date: %s", scan_date)
+
+    # Check if this scan is already in Supabase
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+    existing = sb.table("body_composition").select("date,weight_grams").eq(
+        "date", scan_date
+    ).eq("source", "egym").execute()
+
+    if existing.data:
+        existing_weight = existing.data[0].get("weight_grams")
+        new_weight = body_row.get("weight_grams")
+        if existing_weight == new_weight:
+            log.info("No new scan — data for %s already synced (weight=%sg)", scan_date, existing_weight)
+            print(json.dumps({"ok": True, "no_new_data": True, "scan_date": scan_date}))
+            return
+
+    # Fetch supplementary data
+    bio_age = client.get_bio_age()
+    strength = client.get_strength()
+    flexibility = client.get_flexibility()
+    bio_summary = extract_bio_age_summary(bio_age)
 
     # Build upsert row
     row = {
@@ -271,8 +297,6 @@ def main():
     if bio_summary:
         log.info("  bio_age: %s", bio_summary)
 
-    # Upsert to Supabase
-    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
     sb.table("body_composition").upsert(
         row, on_conflict="date,source"
     ).execute()

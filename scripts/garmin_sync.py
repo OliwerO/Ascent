@@ -18,10 +18,14 @@ import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-import garth
 from dotenv import load_dotenv
 from garminconnect import Garmin
 from supabase import create_client
+
+from garmin_auth import (
+    get_safe_client, save_tokens, alert_slack,
+    AuthExpiredError, RateLimitCooldownError,
+)
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -30,13 +34,9 @@ from supabase import create_client
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
-GARMIN_EMAIL = os.environ["GARMIN_EMAIL"]
-GARMIN_PASSWORD = os.environ["GARMIN_PASSWORD"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 
-TOKEN_STORE = PROJECT_ROOT / "garmin_tokens.json"  # legacy, kept for reference
-GARTH_TOKEN_DIR = PROJECT_ROOT / ".garth"
 API_DELAY = 1  # seconds between Garmin API calls
 
 logging.basicConfig(
@@ -45,55 +45,6 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger("garmin_sync")
-
-# ---------------------------------------------------------------------------
-# Garmin client
-# ---------------------------------------------------------------------------
-
-
-def _garth_login() -> garth.Client:
-    """Authenticate via garth (OAuth1/OAuth2, long-lived tokens).
-
-    Auth priority:
-      1. Resume from .garth/ directory (OAuth1 token lasts ~1 year)
-      2. Credential login via SSO (one-time, may need MFA)
-    """
-    token_dir = str(GARTH_TOKEN_DIR)
-
-    # --- Step 1: Try resuming saved OAuth tokens ---
-    try:
-        garth.resume(token_dir)
-        garth.client.username
-        log.info("Resumed garth session from saved OAuth tokens")
-        return garth.client
-    except Exception as e:
-        log.info("Garth token resume failed: %s", e)
-
-    # --- Step 2: Fresh login ---
-    log.info("Attempting garth credential login via SSO")
-    garth.login(GARMIN_EMAIL, GARMIN_PASSWORD)
-    garth.save(token_dir)
-    log.info("Garth login successful, tokens saved to %s", GARTH_TOKEN_DIR)
-    return garth.client
-
-
-def get_garmin_client() -> Garmin:
-    """Build a Garmin API client backed by garth's long-lived OAuth tokens.
-
-    Uses garth for authentication (OAuth1 tokens last ~1 year, auto-refresh
-    OAuth2 access tokens). Injects garth's Client into garminconnect's Garmin
-    class so all 127+ API methods work with garth's auth.
-    """
-    garth_client = _garth_login()
-
-    # Build Garmin wrapper without triggering its own auth
-    client = Garmin()
-    client.client = garth_client
-    client.display_name = garth_client.username or GARMIN_EMAIL
-
-    # Save tokens after successful auth (garth auto-refreshes OAuth2)
-    garth.save(str(GARTH_TOKEN_DIR))
-    return client
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +85,52 @@ def _ms_to_iso(ts):
         from datetime import timezone
         return datetime.fromtimestamp(ts / 1000, tz=timezone.utc).isoformat()
     return ts
+
+
+# ---------------------------------------------------------------------------
+# Data validation — reject/flag rules from CLAUDE.md
+# ---------------------------------------------------------------------------
+
+# Reject-level rules: data is physiologically impossible, discard before writing
+REJECT_RULES = {
+    "resting_hr": lambda v: v is not None and (v < 25 or v > 120),
+    "avg_hr": lambda v: v is not None and (v < 30 or v > 230),
+    "max_hr": lambda v: v is not None and (v < 30 or v > 230),
+    "min_hr": lambda v: v is not None and (v < 25 or v > 200),
+}
+
+# Sleep-specific reject rules
+SLEEP_REJECT_RULES = {
+    "total_sleep_seconds": lambda v: v is not None and (v < 7200 or v > 57600),  # <2h or >16h
+}
+
+
+def validate_daily_metrics(row: dict) -> dict:
+    """Validate daily_metrics row. Nulls out rejected fields, logs warnings."""
+    for field, check in REJECT_RULES.items():
+        if field in row and check(row[field]):
+            log.warning("REJECT %s=%s (out of physiological range)", field, row[field])
+            row[field] = None
+    return row
+
+
+def validate_sleep(row: dict) -> dict:
+    """Validate sleep row."""
+    for field, check in SLEEP_REJECT_RULES.items():
+        if field in row and check(row[field]):
+            log.warning("REJECT %s=%s (out of range)", field, row[field])
+            row[field] = None
+    return row
+
+
+def validate_hrv(row: dict) -> dict:
+    """Validate HRV row. rMSSD outside 5-250 is rejected."""
+    for field in ("weekly_avg", "last_night_avg", "last_night_5min_high"):
+        val = row.get(field)
+        if val is not None and (val < 5 or val > 250):
+            log.warning("REJECT %s=%s (rMSSD out of 5-250 range)", field, val)
+            row[field] = None
+    return row
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +206,7 @@ def sync_daily_metrics(client: Garmin, sb, d: date) -> bool:
         "respiration_avg": resp_avg,
         "raw_json": safe_json(stats),
     }
+    row = validate_daily_metrics(row)
     sb.table("daily_metrics").upsert(row, on_conflict="date").execute()
     log.info("daily_metrics upserted for %s", ds)
     return True
@@ -242,6 +240,7 @@ def sync_sleep(client: Garmin, sb, d: date) -> bool:
         "revitalization_score": extract_score(scores, "revitalization"),
         "raw_json": safe_json(data),
     }
+    row = validate_sleep(row)
     sb.table("sleep").upsert(row, on_conflict="date").execute()
     log.info("sleep upserted for %s", ds)
     return True
@@ -268,6 +267,7 @@ def sync_hrv(client: Garmin, sb, d: date) -> bool:
         "status": summary.get("status"),
         "readings": safe_json(data.get("hrvReadings", [])) if isinstance(data, dict) else None,
     }
+    row = validate_hrv(row)
     sb.table("hrv").upsert(row, on_conflict="date").execute()
     log.info("hrv upserted for %s", ds)
     return True
@@ -689,19 +689,21 @@ def main():
 
     log.info("Syncing %d date(s): %s → %s", len(dates), dates[0], dates[-1])
 
-    # Connect
-    client = get_garmin_client()
+    # Connect — safe auth only, never calls login()
+    try:
+        client = get_safe_client(require_garminconnect=True)
+    except RateLimitCooldownError as e:
+        log.error("Auth blocked: %s", e)
+        sys.exit(3)
+    except AuthExpiredError as e:
+        log.error("Auth failed: %s", e)
+        sys.exit(2)
+
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    # Sync each date (re-auth every 8 dates to avoid JWT expiry)
+    # Sync each date
     all_results = {}
     for i, d in enumerate(dates):
-        if i > 0 and i % 8 == 0:
-            log.info("Refreshing auth tokens...")
-            try:
-                client = get_garmin_client()
-            except Exception as exc:
-                log.warning("Token refresh failed, continuing with current session: %s", exc)
         all_results[d.isoformat()] = sync_date(client, sb, d)
 
     # Run one-shot syncs (personal records, etc.)
@@ -712,7 +714,7 @@ def main():
             log.error("Error in one-shot sync %s: %s", name, exc)
 
     # Save tokens at end of session to capture any mid-session refreshes
-    _save_tokens(client)
+    save_tokens(client)
 
     # Summary
     total_ok = sum(
@@ -725,6 +727,10 @@ def main():
 
     if total_fail > 0:
         log.warning("Some syncs failed — check warnings above")
+        alert_slack(
+            f":warning: *Garmin sync partially failed* — "
+            f"{total_ok} succeeded, {total_fail} failed. Check logs."
+        )
         sys.exit(1)
 
 
