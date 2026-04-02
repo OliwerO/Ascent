@@ -196,3 +196,14 @@ export function useCoachingLog(days = 7) {
     return data
   }, [days])
 }
+
+export function usePlannedWorkouts() {
+  return useFetch('planned_workouts', async () => {
+    const { data, error } = await supabase
+      .from('planned_workouts')
+      .select('id,training_block,week_number,session_name,session_type,scheduled_date,scheduled_time,estimated_duration_minutes,workout_definition,status,actual_garmin_activity_id,compliance_score,adjustment_reason')
+      .order('scheduled_date', { ascending: true })
+    if (error) return []
+    return data
+  }, [])
+}

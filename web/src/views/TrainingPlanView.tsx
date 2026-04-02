@@ -1,17 +1,20 @@
 import { useState, useMemo } from 'react'
 import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
-import { useActivities, useTrainingSessions, useTrainingSets, useCoachingLog } from '../hooks/useSupabase'
+import {
+  useActivities,
+  useTrainingSessions,
+  useTrainingSets,
+  useCoachingLog,
+  usePlannedWorkouts,
+} from '../hooks/useSupabase'
+import type { PlannedWorkout, WorkoutDefinition } from '../lib/types'
 import {
   getProgramWeek,
-  getPlannedWeight,
   getWeekSchedule,
-  SESSION_NAMES,
   isDeloadWeek,
-  analyzeLiftProgression,
-  type SessionType,
 } from '../lib/program'
-import { format, isSameDay, startOfWeek, endOfWeek, isWithinInterval } from 'date-fns'
+import { format, startOfWeek, endOfWeek, isWithinInterval } from 'date-fns'
 import {
   LineChart,
   Line,
@@ -25,54 +28,6 @@ import {
 } from 'recharts'
 import { ChevronDown, ChevronRight, Mountain, Dumbbell } from 'lucide-react'
 
-// ─── Session definitions ───────────────────────────────────────────
-interface ExerciseDef {
-  name: string
-  sets: number
-  reps: number | string
-}
-
-const SESSION_EXERCISES: Record<SessionType, ExerciseDef[]> = {
-  A: [
-    { name: 'Barbell Back Squat', sets: 3, reps: 8 },
-    { name: 'DB Bench Press', sets: 3, reps: 10 },
-    { name: 'Barbell Row', sets: 3, reps: 10 },
-    { name: 'KB Swings', sets: 3, reps: 15 },
-    { name: 'KB Halo', sets: 2, reps: 10 },
-    { name: 'KB Turkish Get-up', sets: 2, reps: 3 },
-  ],
-  B: [
-    { name: 'Overhead Press', sets: 3, reps: 10 },
-    { name: 'Chin-ups', sets: 3, reps: 8 },
-    { name: 'DB Incline Press', sets: 2, reps: 12 },
-    { name: 'Cable Row', sets: 2, reps: 12 },
-    { name: 'Core Circuit', sets: 3, reps: '1' },
-  ],
-  C: [
-    { name: 'Trap Bar Deadlift', sets: 3, reps: 8 },
-    { name: 'KB Clean & Press', sets: 3, reps: 8 },
-    { name: 'Single-Arm DB Row', sets: 3, reps: 10 },
-    { name: 'Bulgarian Split Squat', sets: 2, reps: 10 },
-    { name: 'Lateral Raises', sets: 2, reps: 15 },
-    { name: 'KB Farmer Carry', sets: 3, reps: '40m' },
-  ],
-  A2: [
-    { name: 'Barbell Back Squat', sets: 3, reps: 8 },
-    { name: 'DB Bench Press', sets: 3, reps: 10 },
-    { name: 'Barbell Row', sets: 3, reps: 10 },
-    { name: 'KB Swings', sets: 3, reps: 15 },
-    { name: 'KB Halo', sets: 2, reps: 10 },
-    { name: 'KB Turkish Get-up', sets: 2, reps: 3 },
-  ],
-  B2: [
-    { name: 'Overhead Press', sets: 3, reps: 10 },
-    { name: 'Chin-ups', sets: 3, reps: 8 },
-    { name: 'DB Incline Press', sets: 2, reps: 12 },
-    { name: 'Cable Row', sets: 2, reps: 12 },
-    { name: 'Core Circuit', sets: 3, reps: '1' },
-  ],
-}
-
 const MOUNTAIN_ACTIVITY_TYPES = new Set([
   'backcountry_snowboarding',
   'resort_snowboarding',
@@ -80,35 +35,6 @@ const MOUNTAIN_ACTIVITY_TYPES = new Set([
   'mountaineering',
   'hang_gliding',
 ])
-
-const COMPOUND_LIFTS = [
-  'Barbell Back Squat',
-  'DB Bench Press',
-  'Barbell Row',
-  'Trap Bar Deadlift',
-  'Overhead Press',
-]
-
-// Map Garmin/DB exercise names → program exercise names
-const EXERCISE_NAME_MAP: Record<string, string> = {
-  'Dumbbell Bench Press': 'DB Bench Press',
-  'Kettlebell Swing': 'KB Swings',
-  'Kettlebell Halo': 'KB Halo',
-  'Turkish Get-Up': 'KB Turkish Get-up',
-  'Turkish Get-up': 'KB Turkish Get-up',
-  'Arm Circles': 'KB Halo',
-  'Barbell Back Squat': 'Barbell Back Squat',
-  'Barbell Row': 'Barbell Row',
-  'Chin-Up': 'Chin-ups',
-  'Incline Dumbbell Press': 'DB Incline Press',
-  'Seated Cable Row': 'Cable Row',
-  'Lateral Raise': 'Lateral Raises',
-  'Bulgarian Split Squat': 'Bulgarian Split Squat',
-}
-
-function normalizeName(dbName: string): string {
-  return EXERCISE_NAME_MAP[dbName] ?? dbName
-}
 
 // ─── Helpers ───────────────────────────────────────────────────────
 function formatDuration(seconds: number | null | undefined): string {
@@ -127,7 +53,6 @@ function loadChangeColor(pct: number): string {
   if (Math.abs(pct) <= 25) return 'text-accent-yellow'
   return 'text-accent-red'
 }
-
 
 function fmtDate(d: Date): string {
   return format(d, 'yyyy-MM-dd')
@@ -185,6 +110,7 @@ export function TrainingPlanView() {
   const activitiesQuery = useActivities(60)
   const sessionsQuery = useTrainingSessions(60)
   const coachingQuery = useCoachingLog(7)
+  const plannedQuery = usePlannedWorkouts()
 
   const sessionIds = useMemo(
     () => (sessionsQuery.data ?? []).map((s: TrainingSession) => s.id),
@@ -193,9 +119,9 @@ export function TrainingPlanView() {
   const setsQuery = useTrainingSets(sessionIds)
 
   const loading =
-    activitiesQuery.loading || sessionsQuery.loading || coachingQuery.loading || setsQuery.loading
+    activitiesQuery.loading || sessionsQuery.loading || coachingQuery.loading || setsQuery.loading || plannedQuery.loading
   const error =
-    activitiesQuery.error || sessionsQuery.error || coachingQuery.error || setsQuery.error
+    activitiesQuery.error || sessionsQuery.error || coachingQuery.error || setsQuery.error || plannedQuery.error
 
   if (loading) return <LoadingState />
   if (error) return <div className="text-accent-red p-4">{error}</div>
@@ -204,15 +130,17 @@ export function TrainingPlanView() {
   const sessions = (sessionsQuery.data ?? []) as TrainingSession[]
   const sets = (setsQuery.data ?? []) as TrainingSet[]
   const coaching = (coachingQuery.data ?? []) as CoachingEntry[]
+  const planned = (plannedQuery.data ?? []) as PlannedWorkout[]
 
   return (
     <div className="space-y-4 pb-8">
-      <ProgramOverview activities={activities} sessions={sessions} />
-      <WeekGrid activities={activities} sessions={sessions} />
-      <TodaySession sessions={sessions} sets={sets} coaching={coaching} />
-      <LiftProgressionTracker sessions={sessions} sets={sets} />
+      <ProgramOverview activities={activities} sessions={sessions} planned={planned} />
+      <WeekGrid activities={activities} planned={planned} />
+      <TodaySession sessions={sessions} sets={sets} coaching={coaching} planned={planned} />
+      <LiftProgressionTracker sessions={sessions} sets={sets} planned={planned} />
       <EnduranceLoadTracker activities={activities} />
       <SessionHistory sessions={sessions} sets={sets} />
+      <SystemArchitecture />
     </div>
   )
 }
@@ -223,21 +151,22 @@ export function TrainingPlanView() {
 function ProgramOverview({
   activities,
   sessions,
+  planned,
 }: {
   activities: Activity[]
   sessions: TrainingSession[]
+  planned: PlannedWorkout[]
 }) {
   const today = new Date()
   const { block, week } = getProgramWeek(today)
   const nextDeload = week <= 4 ? 4 : 8
-  const rpeRange = block === 1 ? '6-7' : '7-8'
   const pctDone = (week / 8) * 100
 
   // Current week compliance
   const weekStart = startOfWeek(today, { weekStartsOn: 1 })
   const weekEnd = endOfWeek(today, { weekStartsOn: 1 })
 
-  const { gymCompleted, mountainCompleted, isConsolidated, gymTarget } = useMemo(() => {
+  const { gymCompleted, mountainCompleted, isConsolidated, gymTarget, rpeRange } = useMemo(() => {
     const inWeek = (dateStr: string) => {
       const d = new Date(dateStr + 'T12:00:00')
       return isWithinInterval(d, { start: weekStart, end: weekEnd })
@@ -247,14 +176,31 @@ function ProgramOverview({
     const mountain = activities.filter(
       (a) => MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type) && inWeek(a.date)
     ).length
-    const consolidated = mountain >= 2
+
+    // Derive gym target from planned workouts for this week
+    const thisWeekPlanned = planned.filter((pw) => pw.week_number === week)
+    const target = thisWeekPlanned.length || (block === 1 ? 3 : 3)
+
+    // Detect consolidated weeks by checking for A2/B2 session labels
+    const consolidated = thisWeekPlanned.some(
+      (pw) => pw.workout_definition?.session_label === 'A2' || pw.workout_definition?.session_label === 'B2'
+    )
+
+    // Derive RPE range from planned workouts
+    let rpe = block === 1 ? '6-7' : '7-8'
+    if (thisWeekPlanned.length > 0 && thisWeekPlanned[0].workout_definition?.rpe_range) {
+      const r = thisWeekPlanned[0].workout_definition.rpe_range
+      rpe = `${r[0]}-${r[1]}`
+    }
+
     return {
       gymCompleted: gym,
       mountainCompleted: mountain,
       isConsolidated: consolidated,
-      gymTarget: consolidated ? 2 : 3,
+      gymTarget: target,
+      rpeRange: rpe,
     }
-  }, [activities, sessions, weekStart, weekEnd])
+  }, [activities, sessions, planned, weekStart, weekEnd, week, block])
 
   return (
     <Card>
@@ -292,7 +238,7 @@ function ProgramOverview({
         </div>
 
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-text-secondary">
-          <span>{isConsolidated ? '2x/week gym (consolidated)' : '3x/week gym'} + mountain days</span>
+          <span>{isConsolidated ? '2x/week gym (consolidated)' : `${gymTarget}x/week gym`} + mountain days</span>
           <span>RPE {rpeRange} &middot; Linear progression</span>
           <span>Next deload: Week {nextDeload}</span>
         </div>
@@ -304,23 +250,39 @@ function ProgramOverview({
 // ═══════════════════════════════════════════════════════════════════
 // 2. 8-Week Grid
 // ═══════════════════════════════════════════════════════════════════
+
+function statusPillBg(
+  status: PlannedWorkout['status'],
+  scheduledDate: string,
+): string {
+  const today = new Date()
+  const todayStr = format(today, 'yyyy-MM-dd')
+
+  switch (status) {
+    case 'completed':
+      return 'bg-accent-green/20 text-accent-green'
+    case 'adjusted':
+      return 'bg-accent-yellow/20 text-accent-yellow'
+    case 'skipped':
+      return 'bg-bg-primary/40 text-text-muted line-through'
+    case 'planned':
+      if (scheduledDate === todayStr) return 'bg-accent-blue/20 text-accent-blue'
+      if (scheduledDate < todayStr) return 'bg-accent-red/20 text-accent-red'
+      return 'bg-accent-purple/20 text-accent-purple'
+    default:
+      return 'bg-bg-primary/40 text-text-muted'
+  }
+}
+
 function WeekGrid({
   activities,
-  sessions,
+  planned,
 }: {
   activities: Activity[]
-  sessions: TrainingSession[]
+  planned: PlannedWorkout[]
 }) {
   const [expandedWeek, setExpandedWeek] = useState<number | null>(null)
   const { week: currentWeek } = getProgramWeek(new Date())
-  const today = new Date()
-
-  // Build a set of dates with completed gym sessions
-  const completedDates = useMemo(() => {
-    const s = new Set<string>()
-    sessions.forEach((sess) => s.add(sess.date))
-    return s
-  }, [sessions])
 
   // Build a map of mountain activities by date
   const mountainByDate = useMemo(() => {
@@ -335,113 +297,53 @@ function WeekGrid({
     return m
   }, [activities])
 
-  // Build a map of all activities by date for overlay
-  const activitiesByDate = useMemo(() => {
-    const m = new Map<string, Activity[]>()
-    activities.forEach((a) => {
-      const existing = m.get(a.date) ?? []
-      existing.push(a)
-      m.set(a.date, existing)
+  // Group planned workouts by week
+  const plannedByWeek = useMemo(() => {
+    const m = new Map<number, PlannedWorkout[]>()
+    planned.forEach((pw) => {
+      const existing = m.get(pw.week_number) ?? []
+      existing.push(pw)
+      m.set(pw.week_number, existing)
     })
     return m
-  }, [activities])
+  }, [planned])
 
-  // Detect consolidated weeks: weeks where 2+ mountain days occurred
+  // Detect consolidated weeks: weeks that have A2 or B2 session labels
   const consolidatedWeeks = useMemo(() => {
     const s = new Set<number>()
-    for (let w = 1; w <= 8; w++) {
-      const ws = getWeekSchedule(w)
-      const weekDates = ws.days.map((d) => fmtDate(d.date))
-      const mountainCount = weekDates.reduce(
-        (count, date) => count + (mountainByDate.has(date) ? 1 : 0),
-        0
-      )
-      if (mountainCount >= 2) s.add(w)
-    }
-    return s
-  }, [mountainByDate])
-
-  const weeks = useMemo(() => Array.from({ length: 8 }, (_, i) => getWeekSchedule(i + 1)), [])
-
-  // Short pill labels
-  const pillLabel = (dayType: string, session: SessionType | null, isConsolidated: boolean, dayIndex: number): string => {
-    if (dayType === 'gym' && session) {
-      if (isConsolidated && dayIndex === 0) return '\u2014'
-      const labels: Record<string, string> = {
-        B: 'Upper+Core',
-        A: 'Full Body V1',
-        C: 'Full Body V2',
-        A2: 'Heavy',
-        B2: 'Functional',
+    planned.forEach((pw) => {
+      const label = pw.workout_definition?.session_label
+      if (label === 'A2' || label === 'B2') {
+        s.add(pw.week_number)
       }
-      return labels[session] ?? session
-    }
-    if (dayType === 'mobility') return 'Mob'
-    if (dayType === 'intervals' || dayType === 'cardio') return '\u2014'
-    if (dayType === 'mountain') return '\u{1F3D4}'
-    return '\u2014'
-  }
+    })
+    return s
+  }, [planned])
 
-  // Pill background color
-  const pillBg = (
-    dayType: string,
-    _session: SessionType | null,
-    completed: boolean,
-    isPast: boolean,
-    isToday: boolean,
-    hasMountainActual: boolean,
-    isConsolidated: boolean,
-    dayIndex: number,
-  ): string => {
-    // Consolidated week: Monday gym becomes rest
-    if (isConsolidated && dayType === 'gym' && dayIndex === 0)
-      return 'bg-bg-primary/40 text-text-muted'
-
-    if (dayType === 'gym') {
-      if (completed) return 'bg-accent-green/20 text-accent-green'
-      if (isToday) return 'bg-accent-blue/20 text-accent-blue'
-      if (isPast) return 'bg-accent-red/20 text-accent-red'
-      return 'bg-accent-purple/20 text-accent-purple'
-    }
-    if (dayType === 'mountain') {
-      if (hasMountainActual) return 'bg-sky-500/20 text-sky-400'
-      return 'bg-sky-500/10 text-sky-400/60'
-    }
-    // rest, mobility, intervals, cardio
-    return 'bg-bg-primary/40 text-text-muted'
-  }
+  const weeks = useMemo(() => Array.from({ length: 8 }, (_, i) => i + 1), [])
 
   return (
     <Card title="8-Week Program">
       <div className="space-y-1">
-        {weeks.map((ws) => {
-          const isCurrent = ws.weekNum === currentWeek
-          const isExpanded = expandedWeek === ws.weekNum
-          const isConsolidatedWeek = consolidatedWeeks.has(ws.weekNum)
+        {weeks.map((weekNum) => {
+          const isCurrent = weekNum === currentWeek
+          const isExpanded = expandedWeek === weekNum
+          const isConsolidatedWeek = consolidatedWeeks.has(weekNum)
+          const weekPlanned = plannedByWeek.get(weekNum) ?? []
+          const deload = isDeloadWeek(weekNum)
 
-          // Compute week stats
-          const weekDates = ws.days.map((d) => fmtDate(d.date))
-          const gymTarget = isConsolidatedWeek ? 2 : 3
-          const gymCompleted = weekDates.filter((d) => completedDates.has(d)).length
-          const mountainCompleted = weekDates.filter((d) => mountainByDate.has(d)).length
-
-          // Effective sessions per day (handles consolidation)
-          const effectiveDays = ws.days.map((day, i) => {
-            const effectiveDayType =
-              isConsolidatedWeek && day.dayType === 'gym' && i === 0
-                ? ('rest' as const)
-                : day.dayType
-            const effectiveSession: SessionType | null =
-              isConsolidatedWeek && day.dayType === 'gym'
-                ? i === 2 ? 'A2' : i === 4 ? 'B2' : null
-                : day.session
-            return { ...day, dayType: effectiveDayType, session: effectiveSession, origIndex: i }
-          })
+          // Compute week stats from planned workouts
+          const gymTarget = weekPlanned.length || 3
+          const gymCompleted = weekPlanned.filter((pw) => pw.status === 'completed').length
+          // Also check for mountain activities across the whole week schedule
+          const ws = getWeekSchedule(weekNum)
+          const allWeekDates = ws.days.map((d) => fmtDate(d.date))
+          const mountainCompleted = allWeekDates.filter((d) => mountainByDate.has(d)).length
 
           return (
-            <div key={ws.weekNum}>
+            <div key={weekNum}>
               <button
-                onClick={() => setExpandedWeek(isExpanded ? null : ws.weekNum)}
+                onClick={() => setExpandedWeek(isExpanded ? null : weekNum)}
                 className={`w-full text-left px-3 py-2.5 rounded-lg transition-colors hover:bg-bg-card-hover ${
                   isCurrent ? 'border-l-2 border-accent-blue bg-bg-card-hover/50' : ''
                 }`}
@@ -449,13 +351,13 @@ function WeekGrid({
                 {/* Top line: week number + badges + completion counts */}
                 <div className="flex items-center gap-2 mb-1.5">
                   {isExpanded ? <ChevronDown size={14} className="text-text-muted shrink-0" /> : <ChevronRight size={14} className="text-text-muted shrink-0" />}
-                  <span className="text-sm font-medium text-text-primary">Week {ws.weekNum}</span>
+                  <span className="text-sm font-medium text-text-primary">Week {weekNum}</span>
                   {isCurrent && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-blue/20 text-accent-blue font-medium">
                       Current
                     </span>
                   )}
-                  {ws.deload && (
+                  {deload && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-yellow/20 text-accent-yellow font-medium">
                       Deload
                     </span>
@@ -474,103 +376,129 @@ function WeekGrid({
                   </span>
                 </div>
 
-                {/* Pill row */}
+                {/* Pill row — one pill per planned workout */}
                 <div className="flex gap-1 flex-wrap ml-5">
-                  {effectiveDays.map((day, i) => {
-                    const dateStr = fmtDate(day.date)
-                    const isPast = day.date < today && !isSameDay(day.date, today)
-                    const isToday = isSameDay(day.date, today)
-                    const completed = completedDates.has(dateStr)
-                    const hasMountainActual = mountainByDate.has(dateStr)
-                    const dayActivities = activitiesByDate.get(dateStr) ?? []
-
-                    // Override pill for actual activity on non-gym days
-                    let label = pillLabel(day.dayType, day.session, isConsolidatedWeek, i)
-                    let bg = pillBg(day.dayType, day.session, completed, isPast, isToday, hasMountainActual, isConsolidatedWeek, i)
-
-                    if ((isPast || isToday) && dayActivities.length > 0 && day.dayType !== 'gym') {
-                      const hasActualMtn = dayActivities.some((a) => MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type))
-                      if (hasActualMtn) {
-                        label = '\u{1F3D4}'
-                        bg = 'bg-sky-500/20 text-sky-400'
-                      }
-                    }
+                  {weekPlanned.map((pw) => {
+                    const label = pw.workout_definition?.session_label
+                      ? `${pw.workout_definition.session_label}: ${pw.session_name}`
+                      : pw.session_name
+                    const shortLabel = pw.workout_definition?.session_name
+                      ? pw.workout_definition.session_name.replace(/^Strength [A-Z]: /, '')
+                      : pw.session_name
+                    const bg = statusPillBg(pw.status, pw.scheduled_date)
 
                     return (
                       <span
-                        key={i}
+                        key={pw.id}
                         className={`inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${bg}`}
-                        title={`${format(day.date, 'EEE d MMM')}`}
+                        title={`${pw.scheduled_date} — ${label}`}
                       >
-                        {label}
+                        {shortLabel}
                       </span>
                     )
                   })}
+                  {/* Mountain activity pills from Garmin data */}
+                  {allWeekDates
+                    .filter((d) => mountainByDate.has(d))
+                    .map((d) => (
+                      <span
+                        key={`mtn-${d}`}
+                        className="inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap bg-sky-500/20 text-sky-400"
+                        title={d}
+                      >
+                        {'\u{1F3D4}'}
+                      </span>
+                    ))}
                 </div>
               </button>
 
               {/* Expanded detail — inline */}
               {isExpanded && (
                 <div className="ml-8 mr-2 mb-2 mt-1 space-y-3">
-                  {/* Gym days */}
-                  {effectiveDays
-                    .filter((d) => d.dayType === 'gym' && d.session)
-                    .map((day) => {
-                      const dateStr = fmtDate(day.date)
-                      const completed = completedDates.has(dateStr)
-                      const exercises = SESSION_EXERCISES[day.session!] ?? []
-                      const sessionName = SESSION_NAMES[day.session!] ?? day.session
-                      const rpeLabel = ws.deload ? 'Deload 50% vol' : ws.block === 1 ? 'RPE 6-7' : 'RPE 7-8'
+                  {/* Gym sessions from planned_workouts */}
+                  {weekPlanned.map((pw) => {
+                    const def = pw.workout_definition as WorkoutDefinition | null
+                    const exercises = def?.exercises ?? []
+                    const warmup = def?.warmup ?? []
+                    const rpeLabel = deload
+                      ? 'Deload 50% vol'
+                      : def?.rpe_range
+                        ? `RPE ${def.rpe_range[0]}-${def.rpe_range[1]}`
+                        : ''
+                    const sessionLabel = def?.session_name ?? pw.session_name
 
-                      return (
-                        <div key={dateStr} className="bg-bg-primary/50 rounded-lg px-3 py-2">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Dumbbell size={13} className="text-gym shrink-0" />
-                            <span className="text-sm font-medium text-text-primary">
-                              {sessionName}
+                    return (
+                      <div key={pw.id} className="bg-bg-primary/50 rounded-lg px-3 py-2">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Dumbbell size={13} className="text-gym shrink-0" />
+                          <span className="text-sm font-medium text-text-primary">
+                            {sessionLabel}
+                          </span>
+                          {pw.status === 'completed' && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-green/20 text-accent-green font-medium">
+                              Done
                             </span>
-                            {completed && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-green/20 text-accent-green font-medium">
-                                Done
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-text-secondary mb-2">
-                            {format(day.date, 'EEE')} &middot; {rpeLabel}
-                          </div>
-                          <div className="space-y-0.5">
-                            {exercises.map((ex) => {
-                              const weight = getPlannedWeight(ex.name, ws.weekNum)
-                              const setsReps = ws.deload
-                                ? `${Math.ceil(ex.sets / 2)}\u00D7${ex.reps}`
-                                : `${ex.sets}\u00D7${ex.reps}`
-                              return (
-                                <div
-                                  key={ex.name}
-                                  className="flex justify-between text-xs font-mono"
-                                >
-                                  <span className="text-text-secondary">{ex.name}</span>
-                                  <span className="text-text-muted">
-                                    {setsReps}
-                                    {weight != null && weight > 0 ? ` @ ${weight}kg` : ''}
-                                  </span>
-                                </div>
-                              )
-                            })}
-                          </div>
+                          )}
+                          {pw.status === 'adjusted' && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-yellow/20 text-accent-yellow font-medium">
+                              Adjusted
+                            </span>
+                          )}
+                          {pw.status === 'skipped' && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-bg-primary/60 text-text-muted font-medium">
+                              Skipped
+                            </span>
+                          )}
                         </div>
-                      )
-                    })}
+                        <div className="text-xs text-text-secondary mb-2">
+                          {pw.scheduled_date} &middot; {rpeLabel}
+                          {def?.estimated_duration_minutes && (
+                            <span> &middot; ~{def.estimated_duration_minutes} min</span>
+                          )}
+                        </div>
+
+                        {/* Adjustment reason */}
+                        {pw.status === 'adjusted' && pw.adjustment_reason && (
+                          <div className="text-xs text-accent-yellow bg-accent-yellow/10 rounded px-2 py-1 mb-2">
+                            {pw.adjustment_reason}
+                          </div>
+                        )}
+
+                        {/* Warmup (collapsible) */}
+                        {warmup.length > 0 && (
+                          <WarmupSection warmup={warmup} />
+                        )}
+
+                        {/* Exercises */}
+                        <div className="space-y-0.5">
+                          {exercises.map((ex) => {
+                            const setsReps = deload
+                              ? `${Math.ceil(ex.sets / 2)}\u00D7${ex.reps}`
+                              : `${ex.sets}\u00D7${ex.reps}`
+                            return (
+                              <div
+                                key={ex.name}
+                                className="flex justify-between text-xs font-mono"
+                              >
+                                <span className="text-text-secondary">{ex.name}</span>
+                                <span className="text-text-muted">
+                                  {setsReps}
+                                  {ex.weight_kg != null && ex.weight_kg > 0 ? ` @ ${ex.weight_kg}kg` : ''}
+                                  {ex.note && <span className="text-text-muted/60 ml-1">({ex.note})</span>}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })}
 
                   {/* Mountain activities (actual from Garmin) */}
-                  {ws.days
-                    .filter((d) => {
-                      const dateStr = fmtDate(d.date)
-                      return mountainByDate.has(dateStr)
-                    })
-                    .flatMap((d) => {
-                      const dateStr = fmtDate(d.date)
-                      return (mountainByDate.get(dateStr) ?? []).map((a, ai) => (
+                  {allWeekDates
+                    .filter((d) => mountainByDate.has(d))
+                    .flatMap((dateStr) =>
+                      (mountainByDate.get(dateStr) ?? []).map((a, ai) => (
                         <div key={`${dateStr}-${ai}`} className="bg-bg-primary/50 rounded-lg px-3 py-2">
                           <div className="flex items-center gap-2 mb-1">
                             <Mountain size={13} className="text-mountain shrink-0" />
@@ -588,12 +516,12 @@ function WeekGrid({
                           </div>
                         </div>
                       ))
-                    })}
+                    )}
 
                   {/* Empty state */}
-                  {effectiveDays.filter((d) => d.dayType === 'gym' && d.session).length === 0 &&
-                    ws.days.every((d) => !mountainByDate.has(fmtDate(d.date))) && (
-                    <div className="text-xs text-text-muted py-1">No recorded sessions this week</div>
+                  {weekPlanned.length === 0 &&
+                    allWeekDates.every((d) => !mountainByDate.has(d)) && (
+                    <div className="text-xs text-text-muted py-1">No planned sessions this week</div>
                   )}
                 </div>
               )}
@@ -605,6 +533,36 @@ function WeekGrid({
   )
 }
 
+// ─── Warmup collapsible section ──────────────────────────────────
+function WarmupSection({ warmup }: { warmup: { name: string; reps: number | null; duration_s: number | null }[] }) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div className="mb-2">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 text-[10px] text-text-muted hover:text-text-secondary transition-colors"
+      >
+        {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+        Warmup ({warmup.length} exercises)
+      </button>
+      {open && (
+        <div className="mt-1 ml-3 space-y-0.5">
+          {warmup.map((w) => (
+            <div key={w.name} className="flex justify-between text-[10px] font-mono text-text-muted">
+              <span>{w.name}</span>
+              <span>
+                {w.reps != null ? `${w.reps} reps` : ''}
+                {w.duration_s != null ? `${w.duration_s}s` : ''}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // 3. Today's Session
 // ═══════════════════════════════════════════════════════════════════
@@ -612,28 +570,29 @@ function TodaySession({
   sessions,
   sets,
   coaching,
+  planned,
 }: {
   sessions: TrainingSession[]
   sets: TrainingSet[]
   coaching: CoachingEntry[]
+  planned: PlannedWorkout[]
 }) {
   const today = new Date()
+  const todayStr = fmtDate(today)
   const { block, week } = getProgramWeek(today)
-  const todaySchedule = getWeekSchedule(week)
-  const dayOfWeek = today.getDay() // 0=Sun
-  // Map to our 0-indexed days array (Mon=0 ... Sun=6)
-  const dayIndex = dayOfWeek === 0 ? 6 : dayOfWeek - 1
-  const todayDay = todaySchedule.days[dayIndex]
 
-  if (!todayDay || todayDay.dayType !== 'gym' || !todayDay.session) return null
+  // Find today's planned workout from the DB
+  const todayPlanned = planned.find((pw) => pw.scheduled_date === todayStr)
+  if (!todayPlanned) return null
 
-  const sessionType = todayDay.session
-  const exercises = SESSION_EXERCISES[sessionType] ?? []
-  const rpeTarget = block === 1 ? '6-7' : '7-8'
-  const estDuration = exercises.length <= 5 ? '45-55 min' : '55-65 min'
+  const def = todayPlanned.workout_definition as WorkoutDefinition | null
+  const exercises = def?.exercises ?? []
+  const warmup = def?.warmup ?? []
+  const rpeTarget = def?.rpe_range ? `${def.rpe_range[0]}-${def.rpe_range[1]}` : block === 1 ? '6-7' : '7-8'
+  const estDuration = def?.estimated_duration_minutes ? `~${def.estimated_duration_minutes} min` : ''
+  const sessionName = def?.session_name ?? todayPlanned.session_name
 
   // Check if there's an actual session logged today
-  const todayStr = fmtDate(today)
   const todaySession = sessions.find((s) => s.date === todayStr)
   const todaySets = todaySession ? sets.filter((s) => s.session_id === todaySession.id) : []
 
@@ -647,16 +606,31 @@ function TodaySession({
           <div className="flex items-center gap-2">
             <Dumbbell size={16} className="text-gym" />
             <h3 className="text-sm font-semibold text-text-primary">Today's Session</h3>
+            {todayPlanned.status === 'adjusted' && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-yellow/20 text-accent-yellow font-medium">
+                Adjusted
+              </span>
+            )}
           </div>
           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-text-secondary">
-            <span className="text-gym font-medium">{SESSION_NAMES[sessionType]}</span>
+            <span className="text-gym font-medium">{sessionName}</span>
             <span>
               Block {block} / Week {week}
             </span>
             <span>RPE {rpeTarget}</span>
-            <span>~{estDuration}</span>
+            {estDuration && <span>{estDuration}</span>}
           </div>
         </div>
+
+        {/* Adjustment reason */}
+        {todayPlanned.status === 'adjusted' && todayPlanned.adjustment_reason && (
+          <div className="text-xs text-accent-yellow bg-accent-yellow/10 rounded px-2 py-1">
+            {todayPlanned.adjustment_reason}
+          </div>
+        )}
+
+        {/* Warmup */}
+        {warmup.length > 0 && <WarmupSection warmup={warmup} />}
 
         {/* Exercise table */}
         <div className="overflow-x-auto -mx-4 px-4">
@@ -670,14 +644,13 @@ function TodaySession({
             </thead>
             <tbody>
               {exercises.map((ex) => {
-                const plannedWt = getPlannedWeight(ex.name, week)
-                const targetStr = plannedWt
-                  ? `${ex.sets}\u00D7${ex.reps} @ ${plannedWt}kg`
+                const targetStr = ex.weight_kg
+                  ? `${ex.sets}\u00D7${ex.reps} @ ${ex.weight_kg}kg`
                   : `${ex.sets}\u00D7${ex.reps}`
 
-                // Find actual sets for this exercise (normalize DB names to program names)
+                // Find actual sets for this exercise
                 const actualSetsForExercise = todaySets.filter(
-                  (s) => s.exercises?.name != null && normalizeName(s.exercises.name) === ex.name && s.set_type === 'working'
+                  (s) => s.exercises?.name != null && s.exercises.name === ex.name && s.set_type === 'working'
                 )
 
                 let actualStr = '\u2014'
@@ -697,7 +670,10 @@ function TodaySession({
 
                 return (
                   <tr key={ex.name} className="border-b border-border/50">
-                    <td className="py-1.5 text-text-primary">{ex.name}</td>
+                    <td className="py-1.5 text-text-primary">
+                      {ex.name}
+                      {ex.note && <span className="text-text-muted ml-1 text-[10px]">({ex.note})</span>}
+                    </td>
                     <td className="py-1.5 text-text-secondary">{targetStr}</td>
                     <td
                       className={`py-1.5 ${
@@ -735,74 +711,92 @@ function TodaySession({
 // 4. Lift Progression Tracker
 // ═══════════════════════════════════════════════════════════════════
 
-const statusColors: Record<string, string> = {
-  on_track: 'text-accent-green',
-  ahead: 'text-accent-blue',
-  stalled: 'text-accent-red',
-  behind: 'text-accent-yellow',
-  no_data: 'text-text-muted',
-}
-
-const trendArrows: Record<string, string> = {
-  up: '\u2197',  // ↗
-  flat: '\u2192', // →
-  down: '\u2198', // ↘
-}
-
 function LiftProgressionTracker({
   sessions,
   sets,
+  planned,
 }: {
   sessions: TrainingSession[]
   sets: TrainingSet[]
+  planned: PlannedWorkout[]
 }) {
   const { week: currentWeek } = getProgramWeek(new Date())
 
-  // Build list of exercises with actual data (normalized to program names)
+  // Derive compound lifts from planned workouts: unique exercise names where equipment is 'barbell'
+  const barbellLifts = useMemo(() => {
+    const names = new Set<string>()
+    planned.forEach((pw) => {
+      const def = pw.workout_definition as WorkoutDefinition | null
+      if (!def) return
+      def.exercises.forEach((ex) => {
+        if (ex.equipment === 'barbell') {
+          names.add(ex.name)
+        }
+      })
+    })
+    return Array.from(names)
+  }, [planned])
+
+  // Build list of exercises with actual data from training_sets
   const exercisesWithData = useMemo(() => {
     const names = new Set<string>()
     sets.forEach((s) => {
       if (s.exercises?.name && s.set_type === 'working' && s.weight_kg != null) {
-        names.add(normalizeName(s.exercises.name))
+        names.add(s.exercises.name)
       }
     })
     return names
   }, [sets])
 
-  // All program exercises (from all sessions)
-  const allProgramExercises = useMemo(() => {
-    const names = new Set<string>()
-    Object.values(SESSION_EXERCISES).forEach((exList) => {
-      exList.forEach((ex) => names.add(ex.name))
-    })
-    return names
-  }, [])
-
-  // Prioritized lift list: exercises with data first, then program exercises, skip others
+  // Prioritized lift list: barbell lifts with data first, then without data
   const liftOptions = useMemo(() => {
     const withData: string[] = []
-    const programOnly: string[] = []
+    const noData: string[] = []
 
-    // First: program exercises that have data
-    for (const name of COMPOUND_LIFTS) {
+    for (const name of barbellLifts) {
       if (exercisesWithData.has(name)) withData.push(name)
-      else programOnly.push(name)
+      else noData.push(name)
     }
-    // Then: other exercises with data that aren't in COMPOUND_LIFTS
+    // Also include non-barbell exercises that have actual data and appear in planned workouts
+    const allPlannedNames = new Set<string>()
+    planned.forEach((pw) => {
+      const def = pw.workout_definition as WorkoutDefinition | null
+      if (!def) return
+      def.exercises.forEach((ex) => allPlannedNames.add(ex.name))
+    })
     exercisesWithData.forEach((name) => {
-      if (!COMPOUND_LIFTS.includes(name) && allProgramExercises.has(name)) {
+      if (!barbellLifts.includes(name) && allPlannedNames.has(name)) {
         withData.push(name)
       }
     })
-    // Then: remaining program exercises without data (collapsed by default)
-    return { withData, programOnly }
-  }, [exercisesWithData, allProgramExercises])
 
-  const defaultLift = liftOptions.withData[0] ?? liftOptions.programOnly[0] ?? COMPOUND_LIFTS[0]
+    return { withData, noData }
+  }, [exercisesWithData, barbellLifts, planned])
+
+  const defaultLift = liftOptions.withData[0] ?? liftOptions.noData[0] ?? 'Barbell Back Squat'
   const [selectedLift, setSelectedLift] = useState(defaultLift)
   const [showAll, setShowAll] = useState(false)
 
-  // Build actual weights by week for selected lift
+  // Build planned weights by week from workout_definition
+  const plannedWeightsByWeek = useMemo(() => {
+    const map = new Map<number, number>()
+    planned.forEach((pw) => {
+      const def = pw.workout_definition as WorkoutDefinition | null
+      if (!def) return
+      const ex = def.exercises.find((e) => e.name === selectedLift)
+      if (ex?.weight_kg != null) {
+        // Use the weight from the planned workout for this week
+        const existing = map.get(pw.week_number)
+        // If multiple sessions in a week have this exercise, take the max weight
+        if (existing == null || ex.weight_kg > existing) {
+          map.set(pw.week_number, ex.weight_kg)
+        }
+      }
+    })
+    return map
+  }, [planned, selectedLift])
+
+  // Build actual weights by week for selected lift (from training_sets)
   const actualWeightsByWeek = useMemo(() => {
     const map = new Map<number, number>()
     for (let w = 1; w <= 8; w++) {
@@ -815,7 +809,7 @@ function LiftProgressionTracker({
         (s) =>
           weekSessionIds.has(s.session_id) &&
           s.exercises?.name != null &&
-          normalizeName(s.exercises.name) === selectedLift &&
+          s.exercises.name === selectedLift &&
           s.set_type === 'working' &&
           s.weight_kg != null
       )
@@ -826,24 +820,98 @@ function LiftProgressionTracker({
     return map
   }, [selectedLift, sessions, sets])
 
-  // Analyze progression
-  const analysis = useMemo(
-    () => analyzeLiftProgression(selectedLift, currentWeek, actualWeightsByWeek),
-    [selectedLift, currentWeek, actualWeightsByWeek]
-  )
+  // Simple trend analysis from actual data
+  const analysis = useMemo(() => {
+    let lastActualWeight: number | null = null
+    let lastActualWeek: number | null = null
+    for (let w = currentWeek; w >= 1; w--) {
+      if (actualWeightsByWeek.has(w)) {
+        lastActualWeight = actualWeightsByWeek.get(w)!
+        lastActualWeek = w
+        break
+      }
+    }
+
+    if (lastActualWeight === null) {
+      return {
+        status: 'no_data' as const,
+        statusLabel: 'No sessions yet',
+        lastActualWeight: null,
+        trend: null as 'up' | 'flat' | 'down' | null,
+        weeksAtSameWeight: 0,
+      }
+    }
+
+    // Count consecutive weeks at same weight
+    let weeksAtSameWeight = 0
+    for (let w = lastActualWeek!; w >= 1; w--) {
+      const wt = actualWeightsByWeek.get(w)
+      if (wt === lastActualWeight) weeksAtSameWeight++
+      else break
+    }
+
+    // Determine trend
+    const recentWeights: number[] = []
+    for (let w = lastActualWeek!; w >= 1 && recentWeights.length < 3; w--) {
+      if (actualWeightsByWeek.has(w)) recentWeights.unshift(actualWeightsByWeek.get(w)!)
+    }
+    let trend: 'up' | 'flat' | 'down' | null = null
+    if (recentWeights.length >= 2) {
+      const last = recentWeights[recentWeights.length - 1]
+      const prev = recentWeights[recentWeights.length - 2]
+      if (last > prev) trend = 'up'
+      else if (last < prev) trend = 'down'
+      else trend = 'flat'
+    }
+
+    // Compare vs planned
+    const plannedForLastWeek = plannedWeightsByWeek.get(lastActualWeek!)
+    let status: 'on_track' | 'ahead' | 'stalled' | 'behind' | 'no_data' = 'on_track'
+    let statusLabel = 'On track'
+
+    if (weeksAtSameWeight >= 3) {
+      status = 'stalled'
+      statusLabel = `Stalled ${weeksAtSameWeight} weeks`
+    } else if (weeksAtSameWeight >= 2) {
+      status = 'stalled'
+      statusLabel = `Same weight for ${weeksAtSameWeight} weeks`
+    } else if (plannedForLastWeek && lastActualWeight > plannedForLastWeek) {
+      status = 'ahead'
+      statusLabel = 'Ahead of plan'
+    } else if (plannedForLastWeek && lastActualWeight < plannedForLastWeek * 0.95) {
+      status = 'behind'
+      statusLabel = 'Behind plan'
+    }
+
+    return { status, statusLabel, lastActualWeight, trend, weeksAtSameWeight }
+  }, [selectedLift, currentWeek, actualWeightsByWeek, plannedWeightsByWeek])
+
+  const statusColors: Record<string, string> = {
+    on_track: 'text-accent-green',
+    ahead: 'text-accent-blue',
+    stalled: 'text-accent-red',
+    behind: 'text-accent-yellow',
+    no_data: 'text-text-muted',
+  }
+
+  const trendArrows: Record<string, string> = {
+    up: '\u2197',
+    flat: '\u2192',
+    down: '\u2198',
+  }
 
   const chartData = useMemo(() => {
     return Array.from({ length: 8 }, (_, i) => {
       const weekNum = i + 1
       return {
         week: `Wk${weekNum}`,
-        planned: getPlannedWeight(selectedLift, weekNum),
+        planned: plannedWeightsByWeek.get(weekNum) ?? null,
         actual: actualWeightsByWeek.get(weekNum) ?? null,
         deload: isDeloadWeek(weekNum),
         isCurrent: weekNum === currentWeek,
       }
     })
-  }, [selectedLift, currentWeek, actualWeightsByWeek])
+  }, [plannedWeightsByWeek, actualWeightsByWeek, currentWeek])
 
   return (
     <Card>
@@ -861,15 +929,12 @@ function LiftProgressionTracker({
             {analysis.lastActualWeight != null && (
               <div className="text-[11px] text-text-muted mt-0.5">
                 Last: {analysis.lastActualWeight}kg
-                {analysis.nextTargetWeight != null && (
-                  <> &rarr; Next: <span className="text-text-secondary">{analysis.nextTargetWeight}kg</span></>
-                )}
               </div>
             )}
           </div>
         </div>
 
-        {/* Lift selector — exercises with data shown first */}
+        {/* Lift selector */}
         <div className="flex gap-1.5 flex-wrap">
           {liftOptions.withData.map((lift) => (
             <button
@@ -881,10 +946,10 @@ function LiftProgressionTracker({
                   : 'text-text-secondary border-border hover:text-text-primary hover:border-border'
               }`}
             >
-              {lift.replace('Barbell ', '').replace('DB ', '').replace('KB ', '')}
+              {lift.replace('Barbell ', '').replace('Dumbbell ', '').replace('KB ', '')}
             </button>
           ))}
-          {showAll && liftOptions.programOnly.map((lift) => (
+          {showAll && liftOptions.noData.map((lift) => (
             <button
               key={lift}
               onClick={() => setSelectedLift(lift)}
@@ -894,15 +959,15 @@ function LiftProgressionTracker({
                   : 'text-text-muted border-border-subtle hover:text-text-secondary'
               }`}
             >
-              {lift.replace('Barbell ', '').replace('DB ', '').replace('KB ', '')}
+              {lift.replace('Barbell ', '').replace('Dumbbell ', '').replace('KB ', '')}
             </button>
           ))}
-          {liftOptions.programOnly.length > 0 && (
+          {liftOptions.noData.length > 0 && (
             <button
               onClick={() => setShowAll(!showAll)}
               className="text-[10px] px-2 py-1.5 text-text-muted hover:text-text-secondary"
             >
-              {showAll ? 'less' : `+${liftOptions.programOnly.length} more`}
+              {showAll ? 'less' : `+${liftOptions.noData.length} more`}
             </button>
           )}
         </div>
@@ -961,7 +1026,7 @@ function LiftProgressionTracker({
           <div className="flex gap-4 text-[10px] text-text-muted">
             <span className="flex items-center gap-1.5">
               <span className="w-5 h-px inline-block" style={{ borderTop: '1.5px dashed #5a5a6e' }} />
-              Baseline plan
+              Planned (DB)
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-gym inline-block" />
@@ -1197,6 +1262,48 @@ function SessionHistory({
           )
         })}
       </div>
+    </Card>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 7. System Architecture (collapsible)
+// ═══════════════════════════════════════════════════════════════════
+function SystemArchitecture() {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <Card>
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 w-full text-left"
+      >
+        {open ? <ChevronDown size={14} className="text-text-muted" /> : <ChevronRight size={14} className="text-text-muted" />}
+        <span className="text-xs font-medium text-text-muted uppercase tracking-wider">System</span>
+      </button>
+      {open && (
+        <pre className="mt-3 text-[10px] leading-relaxed font-mono text-text-muted bg-bg-primary/50 rounded-lg px-3 py-2 overflow-x-auto whitespace-pre">{`Data Flow:
+  coaching-program.md (Opus) -> workout_generator.py -> planned_workouts table -> This app
+
+Coaching Cycle:
+  Sunday: Generate next week's plan -> Push to Calendar
+  Daily: Check recovery -> Push workout to Garmin (if green)
+  Post-workout: Garmin sync -> mark_completed -> compliance score
+
+Adjustment Flow:
+  Jarvis detects mountain day -> Updates planned_workouts (status='adjusted')
+  -> App reflects change immediately
+
+Weight Progression:
+  progression_engine.py -> exercise_progression table -> workout_definition weights
+
+Scripts:
+  garmin_sync.py       - Pull Garmin data -> Supabase (daily 09:00)
+  scale_sync.py        - Pull Xiaomi weight -> Supabase (daily 10:00)
+  workout_generator.py - Populate/update planned_workouts
+  workout_push.py      - Push workout to Garmin watch
+  morning_briefing.py  - Daily Slack briefing (10:05)`}</pre>
+      )}
     </Card>
   )
 }

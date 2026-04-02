@@ -1,8 +1,7 @@
 import { LoadingState } from '../components/LoadingState'
-import { useDailySummary, useHRV, useDailyMetrics, useActivities, useSubjectiveWellness, useExerciseProgression } from '../hooks/useSupabase'
+import { useDailySummary, useHRV, useDailyMetrics, useActivities, useSubjectiveWellness, usePlannedWorkouts } from '../hooks/useSupabase'
 import {
   getProgramWeek, isDeloadWeek, getSessionForDate, SESSION_NAMES,
-  getPlannedWeight,
 } from '../lib/program'
 import { Clock, Flame, ArrowUpRight, Heart, ChevronDown, TrendingUp, Activity, Info } from 'lucide-react'
 import { useState, useMemo } from 'react'
@@ -38,50 +37,7 @@ function formatActivityType(type: string | null | undefined): string {
   return type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
-// ─── Session exercises ────────────────────────────────────────────
-
-type SessionType = 'A' | 'B' | 'C' | 'A2' | 'B2'
-const SESSION_EXERCISES: Record<SessionType, { name: string; sets: number; reps: number | string }[]> = {
-  A: [
-    { name: 'Barbell Back Squat', sets: 3, reps: 8 },
-    { name: 'DB Bench Press', sets: 3, reps: 10 },
-    { name: 'Barbell Row', sets: 3, reps: 10 },
-    { name: 'KB Swings', sets: 3, reps: 15 },
-    { name: 'KB Halo', sets: 2, reps: 10 },
-    { name: 'KB Turkish Get-up', sets: 2, reps: 3 },
-  ],
-  B: [
-    { name: 'Overhead Press', sets: 3, reps: 10 },
-    { name: 'Chin-ups', sets: 3, reps: 8 },
-    { name: 'DB Incline Press', sets: 2, reps: 12 },
-    { name: 'Cable Row', sets: 2, reps: 12 },
-    { name: 'Core Circuit', sets: 3, reps: '1 round' },
-  ],
-  C: [
-    { name: 'Trap Bar Deadlift', sets: 3, reps: 8 },
-    { name: 'KB Clean & Press', sets: 3, reps: 8 },
-    { name: 'Single-Arm DB Row', sets: 3, reps: 10 },
-    { name: 'Bulgarian Split Squat', sets: 2, reps: 10 },
-    { name: 'Lateral Raises', sets: 2, reps: 15 },
-    { name: 'KB Farmer Carry', sets: 3, reps: '40m' },
-  ],
-  A2: [
-    { name: 'Barbell Back Squat', sets: 3, reps: 8 },
-    { name: 'Overhead Press', sets: 3, reps: 10 },
-    { name: 'Barbell Row', sets: 3, reps: 10 },
-    { name: 'KB Swings', sets: 3, reps: 15 },
-    { name: 'KB Halo', sets: 2, reps: 10 },
-    { name: 'Core Circuit', sets: 3, reps: '1 round' },
-  ],
-  B2: [
-    { name: 'Trap Bar Deadlift', sets: 3, reps: 8 },
-    { name: 'KB Clean & Press', sets: 3, reps: 8 },
-    { name: 'Chin-ups', sets: 3, reps: 8 },
-    { name: 'Bulgarian Split Squat', sets: 2, reps: 10 },
-    { name: 'KB Turkish Get-up', sets: 2, reps: 3 },
-    { name: 'KB Farmer Carry', sets: 3, reps: '40m' },
-  ],
-}
+// Session exercises now come from planned_workouts table (no more hardcoded constants)
 
 // ─── Wellness Input Component ────────────────────────────────────
 
@@ -293,7 +249,7 @@ export default function TodayView() {
   const metrics = useDailyMetrics(14)
   const activities = useActivities(14)
   const wellness = useSubjectiveWellness(30)
-  const progression = useExerciseProgression(30)
+  const planned = usePlannedWorkouts()
   const [showExercises, setShowExercises] = useState(false)
   const [, setWellnessRefresh] = useState(0)
 
@@ -344,8 +300,11 @@ export default function TodayView() {
     ? Number((today.total_sleep_seconds / 3600).toFixed(1)) : null
   const { block, week } = getProgramWeek(new Date())
   const deload = isDeloadWeek(week)
-  const todaySession = getSessionForDate(new Date()) as SessionType | null
-  const isGymDay = todaySession != null
+  const todayPlanned = planned.data?.find((pw: any) => pw.scheduled_date === todayStr) ?? null
+  const todaySession = todayPlanned ? todayPlanned.workout_definition?.session_label : getSessionForDate(new Date())
+  const isGymDay = todayPlanned != null || getSessionForDate(new Date()) != null
+  const todaySessionName = todayPlanned?.workout_definition?.session_name ?? (todaySession ? SESSION_NAMES[todaySession as keyof typeof SESSION_NAMES] : null)
+  const isAdjusted = todayPlanned?.status === 'adjusted'
   const bbHigh = todayMetrics?.body_battery_highest ?? null
   const readiness = todayMetrics?.training_readiness_score != null
     ? Math.round(todayMetrics.training_readiness_score) : null
@@ -451,8 +410,11 @@ export default function TodayView() {
         <div className="flex items-start justify-between mb-2">
           <div>
             <div className={`text-lg font-semibold ${verdictColor}`}>{verdictLabel}</div>
-            {isGymDay && todaySession && (
-              <div className="text-sm text-text-primary">{SESSION_NAMES[todaySession]}</div>
+            {isGymDay && todaySessionName && (
+              <div className="text-sm text-text-primary">
+                {todaySessionName}
+                {isAdjusted && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-accent-yellow/20 text-accent-yellow">Adjusted</span>}
+              </div>
             )}
           </div>
           <div className="text-[10px] text-text-muted text-right">
@@ -479,9 +441,14 @@ export default function TodayView() {
           </div>
         )}
 
-        {/* Expandable workout */}
-        {isGymDay && todaySession && SESSION_EXERCISES[todaySession] && (
+        {/* Expandable workout — from planned_workouts */}
+        {isGymDay && todayPlanned?.workout_definition && (
           <div className="mt-3 pt-3 border-t border-white/5">
+            {isAdjusted && todayPlanned.adjustment_reason && (
+              <div className="text-[11px] text-accent-yellow mb-2">
+                Coach: {todayPlanned.adjustment_reason}
+              </div>
+            )}
             <button
               onClick={() => setShowExercises(!showExercises)}
               className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-text-secondary transition-colors"
@@ -491,20 +458,28 @@ export default function TodayView() {
             </button>
             {showExercises && (
               <div className="mt-2 space-y-1.5">
-                {SESSION_EXERCISES[todaySession].map((ex, i) => {
-                  const weight = getPlannedWeight(ex.name, week, progression.data ?? undefined)
-                  const sets = deload ? Math.max(1, Math.round(ex.sets * 0.5)) : ex.sets
-                  return (
-                    <div key={i} className="flex items-center justify-between text-[12px]">
-                      <span className="text-text-secondary">{ex.name}</span>
-                      <span className="text-text-muted font-data">
-                        {sets}×{ex.reps}{weight != null && <> @ {weight}kg</>}
-                      </span>
-                    </div>
-                  )
-                })}
+                {todayPlanned.workout_definition.warmup?.length > 0 && (
+                  <div className="mb-2 pb-1.5 border-b border-white/5">
+                    <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">Warm-up</div>
+                    {todayPlanned.workout_definition.warmup.map((wu: any, i: number) => (
+                      <div key={i} className="flex items-center justify-between text-[11px] text-text-muted/70">
+                        <span>{wu.name}</span>
+                        <span className="font-data">{wu.duration_s ? `${wu.duration_s}s` : `${wu.reps} reps`}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {todayPlanned.workout_definition.exercises.map((ex: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between text-[12px]">
+                    <span className="text-text-secondary">{ex.name}</span>
+                    <span className="text-text-muted font-data">
+                      {ex.sets}×{ex.reps}{ex.weight_kg != null && <> @ {ex.weight_kg}kg</>}
+                    </span>
+                  </div>
+                ))}
                 <div className="text-[10px] text-text-muted mt-2">
-                  ~{deload ? '30' : '45-55'} min
+                  ~{todayPlanned.workout_definition.estimated_duration_minutes ?? (deload ? 30 : 50)} min
+                  {' · '}RPE {todayPlanned.workout_definition.rpe_range?.join('-') ?? '6-7'}
                 </div>
               </div>
             )}
