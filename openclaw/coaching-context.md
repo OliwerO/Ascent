@@ -60,161 +60,28 @@
 5. Rib injury (early March) created a 2-week gap, now fully healed
 6. No body composition data (no Garmin scale) — gym scans needed for baseline
 
-### 8-Week Program: Base Rebuild + Season Transition
+### Training Program
 
-**Philosophy:** Rebuild gym strength that's been neglected during peak mountain season, while maintaining the endurance base. Transition toward summer (hike & fly) readiness. Polarized endurance model (80% Zone 1-2, 20% Zone 3+). HRV-guided autoregulation for daily intensity decisions.
+**Full program templates, exercises, progression scheme, and block structure are in the
+READ-ONLY file:** `/Users/jarvisforoli/projects/ascent/openclaw/coaching-program.md`
 
-**Block structure:**
-- **Block 1 (Weeks 1-4, Apr 1-28):** Strength re-introduction + maintained mountain volume
-- **Block 2 (Weeks 5-8, Apr 29 - May 26):** Strength progression + season transition to hiking
+**That file cannot be modified by the coaching agent.** It is Opus-authored and only changes
+during scheduled block reviews (Week 4 and Week 8).
 
-### Block 1 — Weeks 1-4 (April 1 – April 28)
+For today's session: read the program file to get the template, then check Session Exceptions
+below for any date-specific overrides.
 
-**Goal:** Re-establish strength training habit. Rebuild work capacity. Don't push intensity yet — coming back from 3 months of minimal gym work.
+-----
 
-#### Weekly Structure
+## Injury & Soreness Log
 
-| Day | Session | Location | Duration | Notes |
-|-----|---------|----------|----------|-------|
-| Monday | **Strength B: Upper + Core** | Gym | 35-45 min | Upper body after weekend mountain days — no leg conflict (KB 8-hour rule). |
-| Tuesday | Rest or **Mobility** | Home | 20-30 min | Foam roll, hip flexor stretches, thoracic rotation, shoulder CARs. Only if recovered. |
-| Wednesday | **Strength A: Full Body** | Gym | 45-55 min | Primary strength day. Moderate loads (RPE 6-7). Focus on movement quality. |
-| Thursday | Rest or **Easy Cardio** | Home/outdoors | 30-45 min | Walk, easy hike, or stair stepper. Zone 1 only. Skip if fatigued. |
-| Friday | **Strength C: Full Body Variant** | Gym | 45-55 min | Different movement variants from Wednesday. |
-| Saturday | **Mountain Day** | Mountain | 2-4 hrs | Splitboarding, touring, or hiking. This IS your endurance training. |
-| Sunday | Rest or **Mountain Day 2** | Mountain/rest | Variable | Only if conditions are good AND recovery allows. Default: rest. |
+|Date             |Issue            |Status         |Accommodations                                                                                |
+|-----------------|-----------------|---------------|----------------------------------------------------------------------------------------------|
+|~Early March 2026|Broken rib       |Fully recovered|No current restrictions. Monitor for discomfort during heavy pressing or rotational movements.|
 
-**Week 1 (Apr 1-6) is a shortened intro week:** Starts Wednesday Apr 1. Wed = Strength A, Fri = Strength C. No Monday session. Full weeks begin Apr 7.
+### Recurring Issues
 
-**Autoregulation rules (HRV-guided):**
-- HRV >baseline balanced range + sleep >7h → Train as planned, push intensity (RPE 7-8)
-- HRV within balanced range + sleep 6-7h → Train as planned, moderate intensity (RPE 6-7)
-- HRV below balanced low OR sleep <6h → Reduce volume by 30%, drop RPE by 1, or swap to mobility
-- HRV LOW status for 2+ consecutive days → Take a rest day regardless of schedule
-
-**Week 4 is a deload:** Reduce all gym volume by 50% (same exercises, same weight, half the sets). Keep one mountain day.
-
-#### Strength A: Full Body (Wednesday)
-
-| Exercise | Sets x Reps | RPE | Rest | Notes |
-|----------|-------------|-----|------|-------|
-| Barbell Back Squat | 3 x 8 | 6-7 | 2 min | Start conservative. Wk1: ~60% estimated max. Add 2.5-5kg/week. |
-| Dumbbell Bench Press | 3 x 10 | 6-7 | 90s | Dumbbells first — safer for shoulder re-adaptation post-rib. |
-| Barbell Row | 3 x 10 | 6-7 | 90s | Overhand grip. Control the eccentric. |
-| KB Swings | 3 x 15 | 6-7 | 60s | Hip hinge + power. Replaces RDL — higher SFR, adds explosive component. |
-| KB Halo | 2 x 10/direction | 5-6 | 60s | Shoulder mobility + warmup. |
-| KB Turkish Get-up | 2 x 3/side | 6 | 90s | Full body stability + shoulder health. Directly useful for mountain. |
-
-#### Strength B: Upper + Core (Monday)
-
-| Exercise | Sets x Reps | RPE | Rest | Notes |
-|----------|-------------|-----|------|-------|
-| Overhead Press (DB or BB) | 3 x 10 | 6-7 | 90s | Start with dumbbells if shoulder feels uncertain. |
-| Chin-ups or Lat Pulldown | 3 x 8-10 | 6-7 | 90s | Bodyweight chin-ups if possible, otherwise pulldown. |
-| Dumbbell Incline Press | 2 x 12 | 6 | 60s | Upper chest / shoulder stability. |
-| Cable Row (seated) | 2 x 12 | 6 | 60s | Neutral grip. |
-| **Core Circuit** (3 rounds): | | | 30s between exercises | |
-| — Dead Bugs | 10/side | 6 | — | Slow, controlled. |
-| — Copenhagen Plank | 20s/side | 6 | — | Adductor + core. Scale to knee if needed. |
-| — Pallof Walkouts | 8/side | 6 | — | Stability under load. |
-
-#### Strength C: Full Body Variant (Friday)
-
-| Exercise | Sets x Reps | RPE | Rest | Notes |
-|----------|-------------|-----|------|-------|
-| Trap Bar Deadlift or Leg Press | 3 x 8 | 6-7 | 2 min | Different hip hinge than Wednesday. |
-| KB Clean & Press | 3 x 8/side | 6-7 | 90s | Unilateral, dynamic pressing. Replaces landmine press. |
-| Single-Arm DB Row | 3 x 10/side | 6-7 | 60s | Unilateral work. |
-| Bulgarian Split Squat | 2 x 10/side | 6-7 | 60s | Single-leg strength for mountain stability. |
-| Lateral Raises | 2 x 15 | 5-6 | 60s | Shoulder health and aesthetics. |
-| KB Farmer Carry | 3 x 40m | 6-7 | 60s | Pack carry specificity for hike & fly. Grip + core + posture. |
-
-#### Mobility Routine (Tuesday, or any off day, 20-30 min)
-
-| Exercise | Duration | Focus |
-|----------|----------|-------|
-| Foam roll: T-spine, lats, quads, glutes | 5 min | General tissue prep |
-| 90/90 hip switches | 10/side | Hip internal/external rotation |
-| World's Greatest Stretch | 5/side | Hip flexor + thoracic + hamstring |
-| Cat-Cow + Thoracic Rotation | 10 + 8/side | Spinal mobility |
-| Shoulder CARs (controlled articular rotations) | 5/side | Full ROM maintenance |
-| Pigeon Stretch | 60s/side | Deep hip external rotation |
-| Couch Stretch (hip flexor) | 60s/side | Counteracts sitting + touring posture |
-
-### Block 2 — Weeks 5-8 (April 29 – May 26)
-
-**Goal:** Progress strength loads. Begin season transition — introduce loaded hiking for hike & fly specificity. Add one structured high-intensity endurance session per week.
-
-#### Weekly Structure (3x gym default)
-
-| Day | Session | Notes |
-|-----|---------|-------|
-| Monday | **Strength B: Upper + Core** | Same as Block 1 but RPE 7-8. |
-| Tuesday | Rest or **Mobility** | Same as Block 1. |
-| Wednesday | **Strength A: Full Body** | RPE 7-8. Progressive overload continues. |
-| Thursday | **Intervals** | Steep uphill repeats (5 x 3min Zone 3, 2min recovery) OR stair stepper intervals. Replaces rest/easy cardio. |
-| Friday | **Strength C: Full Body Variant** | RPE 7-8. |
-| Saturday | **Mountain Day** | Touring if snow allows, loaded hiking (15-20kg pack) otherwise. Your call week by week. |
-| Sunday | Rest or **Mountain Day 2** | Default: rest. Tour/hike if conditions are good AND recovery allows. |
-
-#### Consolidated 2x Template (high hiking volume weeks)
-
-Triggered automatically by the coaching agent when 2+ mountain/hiking days happen in a week, or on your request. Maintains full-body stimulus in fewer sessions — compounds and KB work kept, accessories trimmed.
-
-**Wednesday: Full Body A (heavier)**
-
-| Exercise | Sets x Reps | RPE | Rest | Notes |
-|----------|-------------|-----|------|-------|
-| Barbell Back Squat | 3 x 8 | 7-8 | 2 min | Keep intensity — last thing to cut (KB rule #3). |
-| Overhead Press (DB/BB) | 3 x 10 | 7-8 | 90s | Pressing covered since Monday is dropped. |
-| Barbell Row | 3 x 10 | 7-8 | 90s | Primary pull. |
-| KB Swings | 3 x 15 | 6-7 | 60s | Hip hinge + power. |
-| KB Halo | 2 x 10/direction | 5-6 | 60s | Shoulder warmup. |
-| Core Circuit (3 rounds) | Dead Bugs + Copenhagen Plank + Pallof Walkouts | 6 | 30s | From Strength B. |
-
-**Friday: Full Body B (functional)**
-
-| Exercise | Sets x Reps | RPE | Rest | Notes |
-|----------|-------------|-----|------|-------|
-| Trap Bar Deadlift or Leg Press | 3 x 8 | 7-8 | 2 min | Different hinge pattern. |
-| KB Clean & Press | 3 x 8/side | 7-8 | 90s | Dynamic pressing. |
-| Chin-ups or Lat Pulldown | 3 x 8-10 | 7-8 | 90s | Vertical pull covered. |
-| Bulgarian Split Squat | 2 x 10/side | 7-8 | 60s | Single-leg stability. |
-| KB Turkish Get-up | 2 x 3/side | 6-7 | 90s | Full body stability. |
-| KB Farmer Carry | 3 x 40m | 6-7 | 60s | Pack carry specificity. |
-
-#### Block 2 Changes from Block 1
-- Increase gym RPE to 7-8 (progressive overload phase)
-- Add weight weekly: 2.5kg/week on compounds, 1kg/week on accessories
-- Thursday becomes **interval day** (replaces rest/easy cardio)
-- Saturday mountain day: touring when snow allows, loaded hiking otherwise (your call)
-- Coaching agent auto-switches to 2x consolidated template on high-volume hiking weeks
-- **Week 8 is a deload** + body comp scan for mid-program check
-
-#### Strength Progression Targets (end of Block 2)
-- Concrete targets set during Week 4 assessment based on actual working weights
-- Pull-ups: bodyweight x 8-10 clean reps (standalone target)
-
-### Progression Scheme
-
-**Block 1 (Weeks 1-3):** Linear progression, conservative
-- Start at RPE 6-7 (should feel like "I could do 3-4 more reps")
-- Add 2.5kg/week on barbell compounds (squat, deadlift, row, press)
-- Add 1kg/week (or +1 rep) on dumbbell and accessory work
-- If RPE hits 8 before week 3, hold weight and add reps instead
-- Week 4: deload (50% volume, same weight)
-
-**Block 2 (Weeks 5-7):** Continued linear with autoregulation
-- Resume at Week 3 weights + 2.5kg
-- RPE target: 7-8 (should feel like "I could do 2-3 more reps")
-- If a set goes above RPE 8, drop weight 5% for remaining sets
-- Track estimated 1RM weekly for: squat, deadlift, bench press, overhead press, row
-- Week 8: deload + assessment
-
-**When to stall/reset:**
-- If weight can't increase for 2 consecutive weeks on a lift → hold for 1 more week
-- If still stalled → drop 10%, increase reps to 12, rebuild over 3 weeks
-- Flag for Opus review if 3+ lifts stall simultaneously (likely systemic fatigue, not programming)
+- None currently flagged. Update as they arise.
 
 -----
 
@@ -295,6 +162,17 @@ Triggered automatically by the coaching agent when 2+ mountain/hiking days happe
 |2026-03-31|Sync time moved from 06:00 to 09:00|User sleeps past 06:00 — early sync would capture incomplete sleep data.|
 |2026-03-31|Slack channels created|#ascent-daily (briefing + alerts) and #ascent-training (plans + analysis). Interactive — user chats directly with coach in channels.|
 |2026-03-31|Program reviewed interactively|Day swap (Mon=Upper, Wed/Fri=Full Body) to protect legs after weekend mountain days. KB exercises integrated (swings, TGU, clean&press, halos, farmer carry). Week 1 starts Wed Apr 1 (shortened). Block 2 consolidated 2x template added. Subjective + body battery + training readiness added to decision matrix. Sleep coaching set to friendly reminders. Opus reviews to be calendar-triggered.|
+|2026-04-02|Strength C templates restored + Session Exceptions system added|Coach had incorrectly rewritten the Strength C template (permanent change) instead of logging a one-day exception. Templates restored to Opus-authored originals. New Session Exceptions section added for day-specific overrides. SKILL.md updated with explicit guardrails.|
+
+-----
+
+## Session Exceptions
+
+> One-day overrides to the standard templates. These do NOT change the program — the original template applies again the following week. Coach logs exceptions here with the date, what was changed, and why. Garmin gets the exception workout (not the template) on that day.
+
+| Date | Original Session | Exception | Reason | Pushed to Garmin |
+|------|-----------------|-----------|--------|-----------------|
+| 2026-04-04 | Strength C: Full Body Variant | Upper Body + Core (incline DB press 3×10, chest-supported row 3×10, landmine press 3×8/side, chin-ups 3×6-8, core circuit: ab wheel + bird dogs + suitcase carry) | Snowboarding morning + residual fatigue from Norway trip. Lower body already taxed — swap to upper + core to avoid compounding leg fatigue. | Pending |
 
 -----
 

@@ -1,6 +1,6 @@
 import { useState, lazy, Suspense, useCallback, Component } from 'react'
 import type { ReactNode, ErrorInfo } from 'react'
-import { Mountain, Calendar, Dumbbell, Heart, TrendingUp, Target, RefreshCw } from 'lucide-react'
+import { Mountain, Calendar, Dumbbell, Heart, TrendingUp, Target, RefreshCw, Watch } from 'lucide-react'
 import { LoadingState } from './components/LoadingState'
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -45,8 +45,25 @@ type TabId = (typeof tabs)[number]['id']
 function App() {
   const [activeTab, setActiveTab] = useState<TabId>('today')
   const [refreshKey, setRefreshKey] = useState(0)
+  const [syncing, setSyncing] = useState(false)
+  const [syncMsg, setSyncMsg] = useState<string | null>(null)
   const handleRefresh = useCallback(() => {
     setRefreshKey((k) => k + 1)
+  }, [])
+  const handleSync = useCallback(async () => {
+    setSyncing(true)
+    setSyncMsg(null)
+    try {
+      const resp = await fetch('/api/garmin-sync-trigger', { method: 'POST' })
+      const data = await resp.json()
+      setSyncMsg(data.ok ? 'Sync queued — data arrives in ~5 min' : (data.error || 'Failed'))
+      setTimeout(() => setSyncMsg(null), 5000)
+    } catch {
+      setSyncMsg('Sync request failed')
+      setTimeout(() => setSyncMsg(null), 5000)
+    } finally {
+      setSyncing(false)
+    }
   }, [])
 
   return (
@@ -63,6 +80,14 @@ function App() {
               {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
             </span>
             <button
+              onClick={handleSync}
+              disabled={syncing}
+              className="text-text-muted hover:text-accent-green disabled:opacity-50 transition-all"
+              title="Sync Garmin data now"
+            >
+              <Watch size={14} className={syncing ? 'animate-pulse' : ''} />
+            </button>
+            <button
               onClick={handleRefresh}
               className="text-text-muted hover:text-text-secondary active:rotate-180 transition-all duration-300"
               title="Refresh data"
@@ -71,6 +96,15 @@ function App() {
             </button>
           </div>
         </div>
+        {syncMsg && (
+          <div className="max-w-2xl mx-auto px-5 pb-2">
+            <div className={`text-[11px] px-3 py-1.5 rounded-lg ${
+              syncMsg.includes('queued') ? 'bg-accent-green/10 text-accent-green' : 'bg-accent-red/10 text-accent-red'
+            }`}>
+              {syncMsg}
+            </div>
+          </div>
+        )}
       </header>
 
       {/* Content */}
