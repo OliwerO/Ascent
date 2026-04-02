@@ -58,6 +58,16 @@ function fmtDate(d: Date): string {
   return format(d, 'yyyy-MM-dd')
 }
 
+/** Normalize exercise names for matching: lowercase, strip underscores/spaces, collapse */
+function normalizeExName(name: string): string {
+  return name.toLowerCase().replace(/[_\s-]+/g, ' ').trim()
+}
+
+/** Check if two exercise names match (display name vs DB name) */
+function exerciseNameMatch(a: string, b: string): boolean {
+  return normalizeExName(a) === normalizeExName(b)
+}
+
 // ─── Types for Supabase data ──────────────────────────────────────
 type Activity = {
   date: string
@@ -209,7 +219,7 @@ function ProgramOverview({
           <h2 className="text-lg font-semibold text-text-primary">
             Base Rebuild &mdash; Block {block} of 2
           </h2>
-          <p className="text-sm text-text-secondary mt-0.5">
+          <p className="text-sm text-white/60 mt-0.5">
             Week {week} / 8 &middot; Apr 1 &ndash; May 26
           </p>
         </div>
@@ -224,10 +234,10 @@ function ProgramOverview({
 
         {/* Compliance stats */}
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-          <span className={gymCompleted >= gymTarget ? 'text-accent-green' : 'text-text-secondary'}>
+          <span className={gymCompleted >= gymTarget ? 'text-accent-green' : 'text-white/70'}>
             Gym: {gymCompleted}/{gymTarget}
           </span>
-          <span className={mountainCompleted > 0 ? 'text-accent-green' : 'text-text-secondary'}>
+          <span className={mountainCompleted > 0 ? 'text-accent-green' : 'text-white/70'}>
             Mountain: {mountainCompleted}
           </span>
           {isConsolidated && (
@@ -237,7 +247,7 @@ function ProgramOverview({
           )}
         </div>
 
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-text-secondary">
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-white/60">
           <span>{isConsolidated ? '2x/week gym (consolidated)' : `${gymTarget}x/week gym`} + mountain days</span>
           <span>RPE {rpeRange} &middot; Linear progression</span>
           <span>Next deload: Week {nextDeload}</span>
@@ -260,17 +270,17 @@ function statusPillBg(
 
   switch (status) {
     case 'completed':
-      return 'bg-accent-green/20 text-accent-green'
+      return 'bg-accent-green/30 text-accent-green'
     case 'adjusted':
-      return 'bg-accent-yellow/20 text-accent-yellow'
+      return 'bg-accent-yellow/30 text-accent-yellow'
     case 'skipped':
-      return 'bg-bg-primary/40 text-text-muted line-through'
+      return 'bg-bg-primary/40 text-white/40 line-through'
     case 'planned':
-      if (scheduledDate === todayStr) return 'bg-accent-blue/20 text-accent-blue'
-      if (scheduledDate < todayStr) return 'bg-accent-red/20 text-accent-red'
-      return 'bg-accent-purple/20 text-accent-purple'
+      if (scheduledDate === todayStr) return 'bg-accent-blue/30 text-accent-blue'
+      if (scheduledDate < todayStr) return 'bg-accent-red/30 text-accent-red'
+      return 'bg-accent-purple/25 text-accent-purple'
     default:
-      return 'bg-bg-primary/40 text-text-muted'
+      return 'bg-bg-primary/40 text-white/40'
   }
 }
 
@@ -350,27 +360,27 @@ function WeekGrid({
               >
                 {/* Top line: week number + badges + completion counts */}
                 <div className="flex items-center gap-2 mb-1.5">
-                  {isExpanded ? <ChevronDown size={14} className="text-text-muted shrink-0" /> : <ChevronRight size={14} className="text-text-muted shrink-0" />}
-                  <span className="text-sm font-medium text-text-primary">Week {weekNum}</span>
+                  {isExpanded ? <ChevronDown size={14} className="text-white/50 shrink-0" /> : <ChevronRight size={14} className="text-white/50 shrink-0" />}
+                  <span className="text-sm font-medium text-white/90">Week {weekNum}</span>
                   {isCurrent && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-blue/20 text-accent-blue font-medium">
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent-blue/30 text-accent-blue font-semibold">
                       Current
                     </span>
                   )}
                   {deload && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-yellow/20 text-accent-yellow font-medium">
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent-yellow/30 text-accent-yellow font-semibold">
                       Deload
                     </span>
                   )}
                   {isConsolidatedWeek && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-purple/20 text-accent-purple font-medium">
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent-purple/25 text-accent-purple font-semibold">
                       Consolidated
                     </span>
                   )}
-                  <span className="ml-auto text-xs text-text-secondary">
+                  <span className="ml-auto text-xs text-white/70">
                     <Dumbbell size={11} className="inline text-gym mr-0.5" />
                     {gymCompleted}/{gymTarget}
-                    <span className="mx-1.5 text-text-muted">&middot;</span>
+                    <span className="mx-1.5 text-white/40">&middot;</span>
                     <Mountain size={11} className="inline text-mountain mr-0.5" />
                     {mountainCompleted}
                   </span>
@@ -390,7 +400,7 @@ function WeekGrid({
                     return (
                       <span
                         key={pw.id}
-                        className={`inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${bg}`}
+                        className={`inline-block text-[11px] px-2 py-0.5 rounded-full font-semibold whitespace-nowrap ${bg}`}
                         title={`${pw.scheduled_date} — ${label}`}
                       >
                         {shortLabel}
@@ -431,26 +441,26 @@ function WeekGrid({
                       <div key={pw.id} className="bg-bg-primary/50 rounded-lg px-3 py-2">
                         <div className="flex items-center gap-2 mb-1">
                           <Dumbbell size={13} className="text-gym shrink-0" />
-                          <span className="text-sm font-medium text-text-primary">
+                          <span className="text-sm font-medium text-white/90">
                             {sessionLabel}
                           </span>
                           {pw.status === 'completed' && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-green/20 text-accent-green font-medium">
+                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent-green/30 text-accent-green font-semibold">
                               Done
                             </span>
                           )}
                           {pw.status === 'adjusted' && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-yellow/20 text-accent-yellow font-medium">
+                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent-yellow/30 text-accent-yellow font-semibold">
                               Adjusted
                             </span>
                           )}
                           {pw.status === 'skipped' && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-bg-primary/60 text-text-muted font-medium">
+                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-bg-primary/60 text-white/40 font-semibold">
                               Skipped
                             </span>
                           )}
                         </div>
-                        <div className="text-xs text-text-secondary mb-2">
+                        <div className="text-xs text-white/60 mb-2">
                           {pw.scheduled_date} &middot; {rpeLabel}
                           {def?.estimated_duration_minutes && (
                             <span> &middot; ~{def.estimated_duration_minutes} min</span>
@@ -469,27 +479,35 @@ function WeekGrid({
                           <WarmupSection warmup={warmup} />
                         )}
 
-                        {/* Exercises */}
-                        <div className="space-y-0.5">
-                          {exercises.map((ex) => {
-                            const setsReps = deload
-                              ? `${Math.ceil(ex.sets / 2)}\u00D7${ex.reps}`
-                              : `${ex.sets}\u00D7${ex.reps}`
-                            return (
-                              <div
-                                key={ex.name}
-                                className="flex justify-between text-xs font-mono"
-                              >
-                                <span className="text-text-secondary">{ex.name}</span>
-                                <span className="text-text-muted">
-                                  {setsReps}
-                                  {ex.weight_kg != null && ex.weight_kg > 0 ? ` @ ${ex.weight_kg}kg` : ''}
-                                  {ex.note && <span className="text-text-muted/60 ml-1">({ex.note})</span>}
-                                </span>
-                              </div>
-                            )
-                          })}
-                        </div>
+                        {/* Exercises — table layout */}
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-white/40 border-b border-white/10">
+                              <th className="text-left py-1 font-medium pr-2">Exercise</th>
+                              <th className="text-right py-1 font-medium px-2 whitespace-nowrap">Sets{'\u00D7'}Reps</th>
+                              <th className="text-right py-1 font-medium pl-2">Weight</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {exercises.map((ex) => {
+                              const setsReps = deload
+                                ? `${Math.ceil(ex.sets / 2)}\u00D7${ex.reps}`
+                                : `${ex.sets}\u00D7${ex.reps}`
+                              return (
+                                <tr key={ex.name} className="border-b border-white/5">
+                                  <td className="py-1 pr-2 text-white/90">
+                                    {ex.name}
+                                    {ex.note && <span className="text-white/40 ml-1 text-[10px]">({ex.note})</span>}
+                                  </td>
+                                  <td className="py-1 px-2 text-right font-mono text-white/70">{setsReps}</td>
+                                  <td className="py-1 pl-2 text-right font-mono text-white/70">
+                                    {ex.weight_kg != null && ex.weight_kg > 0 ? `${ex.weight_kg}kg` : '\u2014'}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
                       </div>
                     )
                   })}
@@ -506,7 +524,7 @@ function WeekGrid({
                               {a.activity_name ?? formatActivityType(a.activity_type)}
                             </span>
                           </div>
-                          <div className="text-xs text-text-secondary">
+                          <div className="text-xs text-white/60">
                             {format(new Date(a.date + 'T12:00:00'), 'EEE')}
                             {a.duration_seconds != null && <span> &middot; {formatDuration(a.duration_seconds)}</span>}
                             {a.elevation_gain != null && a.elevation_gain > 0 && (
@@ -521,7 +539,7 @@ function WeekGrid({
                   {/* Empty state */}
                   {weekPlanned.length === 0 &&
                     allWeekDates.every((d) => !mountainByDate.has(d)) && (
-                    <div className="text-xs text-text-muted py-1">No planned sessions this week</div>
+                    <div className="text-xs text-white/40 py-1">No planned sessions this week</div>
                   )}
                 </div>
               )}
@@ -538,10 +556,10 @@ function WarmupSection({ warmup }: { warmup: { name: string; reps: number | null
   const [open, setOpen] = useState(false)
 
   return (
-    <div className="mb-2">
+    <div className="mb-2 border-b border-white/5 pb-2">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 text-[10px] text-text-muted hover:text-text-secondary transition-colors"
+        className="flex items-center gap-1 text-[10px] text-white/40 hover:text-white/60 transition-colors"
       >
         {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
         Warmup ({warmup.length} exercises)
@@ -549,8 +567,8 @@ function WarmupSection({ warmup }: { warmup: { name: string; reps: number | null
       {open && (
         <div className="mt-1 ml-3 space-y-0.5">
           {warmup.map((w) => (
-            <div key={w.name} className="flex justify-between text-[10px] font-mono text-text-muted">
-              <span>{w.name}</span>
+            <div key={w.name} className="flex justify-between text-[10px] font-mono text-white/40">
+              <span className="italic">{w.name}</span>
               <span>
                 {w.reps != null ? `${w.reps} reps` : ''}
                 {w.duration_s != null ? `${w.duration_s}s` : ''}
@@ -612,7 +630,7 @@ function TodaySession({
               </span>
             )}
           </div>
-          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-text-secondary">
+          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-white/60">
             <span className="text-gym font-medium">{sessionName}</span>
             <span>
               Block {block} / Week {week}
@@ -636,7 +654,7 @@ function TodaySession({
         <div className="overflow-x-auto -mx-4 px-4">
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-text-muted border-b border-border">
+              <tr className="text-white/50 border-b border-border">
                 <th className="text-left py-1 font-medium">Exercise</th>
                 <th className="text-left py-1 font-medium">Target</th>
                 <th className="text-left py-1 font-medium">Actual</th>
@@ -648,9 +666,9 @@ function TodaySession({
                   ? `${ex.sets}\u00D7${ex.reps} @ ${ex.weight_kg}kg`
                   : `${ex.sets}\u00D7${ex.reps}`
 
-                // Find actual sets for this exercise
+                // Find actual sets for this exercise (handle DB name vs display name)
                 const actualSetsForExercise = todaySets.filter(
-                  (s) => s.exercises?.name != null && s.exercises.name === ex.name && s.set_type === 'working'
+                  (s) => s.exercises?.name != null && exerciseNameMatch(s.exercises.name, ex.name) && s.set_type === 'working'
                 )
 
                 let actualStr = '\u2014'
@@ -670,14 +688,14 @@ function TodaySession({
 
                 return (
                   <tr key={ex.name} className="border-b border-border/50">
-                    <td className="py-1.5 text-text-primary">
+                    <td className="py-1.5 text-white/90">
                       {ex.name}
-                      {ex.note && <span className="text-text-muted ml-1 text-[10px]">({ex.note})</span>}
+                      {ex.note && <span className="text-white/40 ml-1 text-[10px]">({ex.note})</span>}
                     </td>
-                    <td className="py-1.5 text-text-secondary">{targetStr}</td>
+                    <td className="py-1.5 text-white/70 font-mono">{targetStr}</td>
                     <td
-                      className={`py-1.5 ${
-                        actualStr !== '\u2014' ? 'text-accent-green' : 'text-text-muted'
+                      className={`py-1.5 font-mono ${
+                        actualStr !== '\u2014' ? 'text-accent-green' : 'text-white/40'
                       }`}
                     >
                       {actualStr}
@@ -692,11 +710,11 @@ function TodaySession({
         {/* Coach notes */}
         {todayNotes.length > 0 && (
           <div className="space-y-1">
-            <div className="text-[10px] text-text-muted font-medium uppercase tracking-wide">
+            <div className="text-[10px] text-white/50 font-medium uppercase tracking-wide">
               Coach Notes
             </div>
             {todayNotes.map((n) => (
-              <div key={n.id} className="text-xs text-text-secondary bg-bg-primary/50 rounded px-2 py-1">
+              <div key={n.id} className="text-xs text-white/70 bg-bg-primary/50 rounded px-2 py-1">
                 {n.message}
               </div>
             ))}
@@ -738,6 +756,7 @@ function LiftProgressionTracker({
   }, [planned])
 
   // Build list of exercises with actual data from training_sets
+  // Map: normalized name -> display name (from DB)
   const exercisesWithData = useMemo(() => {
     const names = new Set<string>()
     sets.forEach((s) => {
@@ -748,13 +767,21 @@ function LiftProgressionTracker({
     return names
   }, [sets])
 
+  // Helper: check if any exercise in the actual data matches a planned name
+  const hasActualData = (plannedName: string): boolean => {
+    for (const dbName of exercisesWithData) {
+      if (exerciseNameMatch(dbName, plannedName)) return true
+    }
+    return false
+  }
+
   // Prioritized lift list: barbell lifts with data first, then without data
   const liftOptions = useMemo(() => {
     const withData: string[] = []
     const noData: string[] = []
 
     for (const name of barbellLifts) {
-      if (exercisesWithData.has(name)) withData.push(name)
+      if (hasActualData(name)) withData.push(name)
       else noData.push(name)
     }
     // Also include non-barbell exercises that have actual data and appear in planned workouts
@@ -764,13 +791,22 @@ function LiftProgressionTracker({
       if (!def) return
       def.exercises.forEach((ex) => allPlannedNames.add(ex.name))
     })
-    exercisesWithData.forEach((name) => {
-      if (!barbellLifts.includes(name) && allPlannedNames.has(name)) {
-        withData.push(name)
+    exercisesWithData.forEach((dbName) => {
+      // Check if this DB exercise matches any barbell lift already included
+      const alreadyIncluded = barbellLifts.some((bl) => exerciseNameMatch(bl, dbName))
+      if (!alreadyIncluded) {
+        // Check if it matches any planned exercise
+        for (const plannedName of allPlannedNames) {
+          if (exerciseNameMatch(dbName, plannedName)) {
+            withData.push(plannedName)
+            break
+          }
+        }
       }
     })
 
     return { withData, noData }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exercisesWithData, barbellLifts, planned])
 
   const defaultLift = liftOptions.withData[0] ?? liftOptions.noData[0] ?? 'Barbell Back Squat'
@@ -809,7 +845,7 @@ function LiftProgressionTracker({
         (s) =>
           weekSessionIds.has(s.session_id) &&
           s.exercises?.name != null &&
-          s.exercises.name === selectedLift &&
+          exerciseNameMatch(s.exercises.name, selectedLift) &&
           s.set_type === 'working' &&
           s.weight_kg != null
       )
@@ -869,18 +905,32 @@ function LiftProgressionTracker({
     let status: 'on_track' | 'ahead' | 'stalled' | 'behind' | 'no_data' = 'on_track'
     let statusLabel = 'On track'
 
-    if (weeksAtSameWeight >= 3) {
-      status = 'stalled'
-      statusLabel = `Stalled ${weeksAtSameWeight} weeks`
-    } else if (weeksAtSameWeight >= 2) {
-      status = 'stalled'
-      statusLabel = `Same weight for ${weeksAtSameWeight} weeks`
-    } else if (plannedForLastWeek && lastActualWeight > plannedForLastWeek) {
-      status = 'ahead'
-      statusLabel = 'Ahead of plan'
-    } else if (plannedForLastWeek && lastActualWeight < plannedForLastWeek * 0.95) {
-      status = 'behind'
-      statusLabel = 'Behind plan'
+    // Compare actual vs planned first, then check for stalls
+    if (plannedForLastWeek != null) {
+      if (lastActualWeight > plannedForLastWeek) {
+        status = 'ahead'
+        statusLabel = 'Ahead of plan'
+      } else if (lastActualWeight >= plannedForLastWeek) {
+        // Actual matches planned — on track (exact match or rounding)
+        status = 'on_track'
+        statusLabel = 'On track'
+      } else {
+        // Actual is below planned
+        status = 'behind'
+        statusLabel = 'Behind plan'
+      }
+    }
+
+    // Stall detection overrides only if not ahead
+    if (status !== 'ahead') {
+      if (weeksAtSameWeight >= 3) {
+        status = 'stalled'
+        statusLabel = `Stalled ${weeksAtSameWeight} weeks`
+      } else if (weeksAtSameWeight >= 2 && status !== 'on_track') {
+        // Only flag stall if also behind plan; matching planned weight for 2 weeks is fine
+        status = 'stalled'
+        statusLabel = `Same weight for ${weeksAtSameWeight} weeks`
+      }
     }
 
     return { status, statusLabel, lastActualWeight, trend, weeksAtSameWeight }
@@ -891,7 +941,7 @@ function LiftProgressionTracker({
     ahead: 'text-accent-blue',
     stalled: 'text-accent-red',
     behind: 'text-accent-yellow',
-    no_data: 'text-text-muted',
+    no_data: 'text-white/40',
   }
 
   const trendArrows: Record<string, string> = {
@@ -919,15 +969,15 @@ function LiftProgressionTracker({
         {/* Header with analysis */}
         <div className="flex items-start justify-between">
           <div>
-            <div className="text-[11px] text-text-muted uppercase tracking-wider mb-1">Lift Progression</div>
-            <div className="text-base font-semibold text-text-primary">{selectedLift}</div>
+            <div className="text-[11px] text-white/50 uppercase tracking-wider mb-1">Lift Progression</div>
+            <div className="text-base font-semibold text-white/90">{selectedLift}</div>
           </div>
           <div className="text-right">
             <div className={`text-sm font-medium ${statusColors[analysis.status]}`}>
               {analysis.trend && trendArrows[analysis.trend]} {analysis.statusLabel}
             </div>
             {analysis.lastActualWeight != null && (
-              <div className="text-[11px] text-text-muted mt-0.5">
+              <div className="text-[11px] text-white/50 mt-0.5">
                 Last: {analysis.lastActualWeight}kg
               </div>
             )}
@@ -943,7 +993,7 @@ function LiftProgressionTracker({
               className={`text-[11px] px-3 py-1.5 rounded-full border transition-colors ${
                 selectedLift === lift
                   ? 'bg-gym/15 text-gym border-gym/30'
-                  : 'text-text-secondary border-border hover:text-text-primary hover:border-border'
+                  : 'text-white/60 border-border hover:text-white/80 hover:border-border'
               }`}
             >
               {lift.replace('Barbell ', '').replace('Dumbbell ', '').replace('KB ', '')}
@@ -956,7 +1006,7 @@ function LiftProgressionTracker({
               className={`text-[11px] px-3 py-1.5 rounded-full border transition-colors ${
                 selectedLift === lift
                   ? 'bg-gym/15 text-gym border-gym/30'
-                  : 'text-text-muted border-border-subtle hover:text-text-secondary'
+                  : 'text-white/40 border-border hover:text-white/60'
               }`}
             >
               {lift.replace('Barbell ', '').replace('Dumbbell ', '').replace('KB ', '')}
@@ -965,7 +1015,7 @@ function LiftProgressionTracker({
           {liftOptions.noData.length > 0 && (
             <button
               onClick={() => setShowAll(!showAll)}
-              className="text-[10px] px-2 py-1.5 text-text-muted hover:text-text-secondary"
+              className="text-[10px] px-2 py-1.5 text-white/40 hover:text-white/60"
             >
               {showAll ? 'less' : `+${liftOptions.noData.length} more`}
             </button>
@@ -1023,7 +1073,7 @@ function LiftProgressionTracker({
 
         {/* Legend + stall warning */}
         <div className="flex items-center justify-between">
-          <div className="flex gap-4 text-[10px] text-text-muted">
+          <div className="flex gap-4 text-[10px] text-white/50">
             <span className="flex items-center gap-1.5">
               <span className="w-5 h-px inline-block" style={{ borderTop: '1.5px dashed #5a5a6e' }} />
               Planned (DB)
@@ -1112,11 +1162,11 @@ function EnduranceLoadTracker({ activities }: { activities: Activity[] }) {
         {/* Weekly load badges */}
         <div className="grid grid-cols-2 gap-2">
           <div className="bg-bg-primary/50 rounded-lg p-2">
-            <div className="text-[10px] text-text-muted">Weekly Vertical Gain</div>
-            <div className="text-sm font-semibold text-text-primary">
+            <div className="text-[10px] text-white/50">Weekly Vertical Gain</div>
+            <div className="text-sm font-semibold text-white/90">
               {thisWeekElev.toLocaleString()}m
             </div>
-            <div className="text-[10px] text-text-muted">
+            <div className="text-[10px] text-white/50">
               4wk avg: {Math.round(fourWeekAvgElev).toLocaleString()}m
             </div>
             {elevPctChange != null && (
@@ -1126,11 +1176,11 @@ function EnduranceLoadTracker({ activities }: { activities: Activity[] }) {
             )}
           </div>
           <div className="bg-bg-primary/50 rounded-lg p-2">
-            <div className="text-[10px] text-text-muted">Weekly Mountain Duration</div>
-            <div className="text-sm font-semibold text-text-primary">
+            <div className="text-[10px] text-white/50">Weekly Mountain Duration</div>
+            <div className="text-sm font-semibold text-white/90">
               {formatDuration(thisWeekDur)}
             </div>
-            <div className="text-[10px] text-text-muted">
+            <div className="text-[10px] text-white/50">
               4wk avg: {formatDuration(Math.round(fourWeekAvgDur))}
             </div>
             {durPctChange != null && (
@@ -1216,7 +1266,7 @@ function SessionHistory({
   if (recentSessions.length === 0) {
     return (
       <Card title="Session History">
-        <div className="text-sm text-text-muted py-2">No sessions logged yet</div>
+        <div className="text-sm text-white/50 py-2">No sessions logged yet</div>
       </Card>
     )
   }
@@ -1242,10 +1292,10 @@ function SessionHistory({
                     {session.name ?? 'Session'}
                   </span>
                 </div>
-                <span className="text-[10px] text-text-muted">{session.date}</span>
+                <span className="text-[10px] text-white/50">{session.date}</span>
               </div>
 
-              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-text-secondary">
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-white/60">
                 {session.duration_minutes != null && <span>{session.duration_minutes} min</span>}
                 {session.total_volume_kg != null && (
                   <span>{Math.round(session.total_volume_kg).toLocaleString()}kg volume</span>
@@ -1254,7 +1304,7 @@ function SessionHistory({
               </div>
 
               {exerciseNames.length > 0 && (
-                <div className="text-[10px] text-text-muted truncate">
+                <div className="text-[10px] text-white/50 truncate">
                   {exerciseNames.join(' \u00B7 ')}
                 </div>
               )}
@@ -1278,11 +1328,11 @@ function SystemArchitecture() {
         onClick={() => setOpen(!open)}
         className="flex items-center gap-2 w-full text-left"
       >
-        {open ? <ChevronDown size={14} className="text-text-muted" /> : <ChevronRight size={14} className="text-text-muted" />}
-        <span className="text-xs font-medium text-text-muted uppercase tracking-wider">System</span>
+        {open ? <ChevronDown size={14} className="text-white/40" /> : <ChevronRight size={14} className="text-white/40" />}
+        <span className="text-xs font-medium text-white/40 uppercase tracking-wider">System</span>
       </button>
       {open && (
-        <pre className="mt-3 text-[10px] leading-relaxed font-mono text-text-muted bg-bg-primary/50 rounded-lg px-3 py-2 overflow-x-auto whitespace-pre">{`Data Flow:
+        <pre className="mt-3 text-[10px] leading-relaxed font-mono text-white/40 bg-bg-primary/50 rounded-lg px-3 py-2 overflow-x-auto whitespace-pre">{`Data Flow:
   coaching-program.md (Opus) -> workout_generator.py -> planned_workouts table -> This app
 
 Coaching Cycle:

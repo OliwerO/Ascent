@@ -536,6 +536,142 @@ Do NOT create a "standing exception." Instead respond:
 session to redesign the block. Want me to flag that for the Week 4 review? For this Friday
 specifically, I can log a one-day upper body exception."
 
+## Session Adjustments
+
+When the coaching agent adjusts a session (e.g., swapping Strength C for a lighter upper body
+session due to snowboarding), it MUST update the `planned_workouts` Supabase table in addition
+to logging the exception in coaching-context.md. The `planned_workouts` table is the single
+source of truth for the React app's training plan display — if it's not updated there, the
+user sees stale data.
+
+### Required: Update planned_workouts in Supabase
+
+For every session adjustment, update the `planned_workouts` row for that date:
+
+```bash
+source /Users/jarvisforoli/projects/ascent/.env
+TODAY=$(date +%Y-%m-%d)
+
+curl -s "${SUPABASE_URL}/rest/v1/planned_workouts?date=eq.${TODAY}" \
+  -X PATCH \
+  -H "apikey: ${SUPABASE_KEY}" \
+  -H "Content-Type: application/json" \
+  -H "Prefer: return=minimal" \
+  -d '{
+    "status": "adjusted",
+    "adjustment_reason": "Snowboarding morning — lower body already taxed, swapped to upper body + core",
+    "session_name": "Upper Body + Core (Light)",
+    "workout_definition": {
+      "session_label": "exception",
+      "session_name": "Upper Body + Core (Light)",
+      "estimated_duration_minutes": 35,
+      "rpe_range": [5, 6],
+      "warmup": [
+        {"name": "Band pull-aparts", "reps": 15, "duration_s": null},
+        {"name": "Arm circles", "reps": null, "duration_s": 120}
+      ],
+      "exercises": [
+        {"name": "Incline Dumbbell Press", "sets": 2, "reps": 10, "weight_kg": 14.0, "rest_s": 60, "equipment": "dumbbell", "note": null},
+        {"name": "Cable Row", "sets": 2, "reps": 10, "weight_kg": 40.0, "rest_s": 60, "equipment": "cable", "note": null},
+        {"name": "Chin-ups", "sets": 2, "reps": 6, "weight_kg": 0, "rest_s": 90, "equipment": "bodyweight", "note": null},
+        {"name": "Pallof Press", "sets": 2, "reps": 10, "weight_kg": 10.0, "rest_s": 45, "equipment": "cable", "note": "per side"},
+        {"name": "Dead Bug", "sets": 2, "reps": 8, "weight_kg": 0, "rest_s": 45, "equipment": "bodyweight", "note": "per side"}
+      ]
+    }
+  }'
+```
+
+### workout_definition JSONB format
+
+Every adjusted workout must use this structure:
+
+```json
+{
+  "session_label": "exception",
+  "session_name": "Upper Body + Core (Light)",
+  "estimated_duration_minutes": 35,
+  "rpe_range": [5, 6],
+  "warmup": [
+    {"name": "Band pull-aparts", "reps": 15, "duration_s": null},
+    {"name": "Arm circles", "reps": null, "duration_s": 120}
+  ],
+  "exercises": [
+    {
+      "name": "Exercise Name",
+      "sets": 2,
+      "reps": 8,
+      "weight_kg": 14.0,
+      "rest_s": 60,
+      "equipment": "dumbbell",
+      "note": null
+    }
+  ]
+}
+```
+
+Fields:
+- `session_label`: always `"exception"` for adjusted sessions
+- `session_name`: descriptive name for the replacement session
+- `estimated_duration_minutes`: expected session length
+- `rpe_range`: target RPE as `[low, high]`
+- `warmup`: list of warmup movements (use `reps` or `duration_s`, set the other to null)
+- `exercises`: list of working exercises with full prescription
+
+### Adjustment checklist
+
+Every time a session is adjusted, complete ALL of these steps:
+
+1. **Update `planned_workouts` in Supabase** — PATCH the row for that date:
+   - Set `status` to `'adjusted'`
+   - Set `adjustment_reason` to a brief explanation (1 sentence)
+   - Set `session_name` to the new session name
+   - Set `workout_definition` to the full JSONB with exercises, sets, reps, weights
+
+2. **Log the exception in coaching-context.md** — add a row to the Session Exceptions table
+   (this is the existing workflow, unchanged)
+
+3. **Post to Slack** — the adjusted session details go to #ascent-daily and #ascent-training
+
+4. **Push to Garmin** — push the adjusted workout (not the original template) to the watch
+
+### Mountain day adjustments: remove ALL lower body work
+
+When adjusting for mountain days that are leg-heavy (snowboarding, ski touring, hiking,
+mountaineering), the replacement session MUST remove ALL lower body exercises. This includes:
+- Squats (back, front, goblet)
+- Deadlifts (trap bar, conventional, Romanian)
+- Lunges / split squats
+- Leg press, leg curl, leg extension
+- KB swings (hip-dominant but still loads legs)
+
+Replace with upper body + core work only:
+- Pressing: incline DB press, overhead press, landmine press
+- Pulling: cable rows, chin-ups, face pulls, band pull-aparts
+- Core: Pallof press, dead bugs, hollow holds, hanging leg raises, Turkish get-ups (light)
+
+Cap RPE at 5-6 for these replacement sessions — the goal is maintenance, not progression.
+
+### Consolidated weeks (2+ mountain days)
+
+When a week has 2+ mountain days and the coach switches to the 2x consolidated template:
+
+1. **Mark the dropped session as skipped** — PATCH the Monday Strength B row in `planned_workouts`:
+   ```bash
+   curl -s "${SUPABASE_URL}/rest/v1/planned_workouts?date=eq.${MONDAY_DATE}" \
+     -X PATCH \
+     -H "apikey: ${SUPABASE_KEY}" \
+     -H "Content-Type: application/json" \
+     -H "Prefer: return=minimal" \
+     -d '{"status": "skipped", "adjustment_reason": "2+ mountain days this week — switched to 2x consolidated template"}'
+   ```
+
+2. **Update remaining sessions to consolidated templates** — PATCH Wednesday and Friday rows
+   with the A2/B2 `workout_definition` JSONB from the consolidated template in coaching-context.md.
+   Set `status` to `'adjusted'` and `adjustment_reason` to explain the consolidation.
+
+3. **Log the consolidation** in coaching-context.md Coaching Decisions Log and post to
+   #ascent-training with the full rationale.
+
 ## What NOT to Do
 
 - Don't give generic fitness advice — use actual data from Supabase

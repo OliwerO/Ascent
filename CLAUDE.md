@@ -820,3 +820,13 @@ GS (Garmin spike) ──► Phase 7a ──► Phase 8 (workout gen)
 Phase 5 (weekly analysis) ──────────►      │
                               Phase 10 (orchestration)
 ```
+
+-----
+
+## Working Rules (for Claude Code sessions)
+
+- **Prioritize quality over speed.** Always test before calling something done. Only stop when everything passes strict testing or when user input is needed.
+- **Split work when it produces better results.** Don't rush complex changes in a single pass.
+- **`planned_workouts` is the single source of truth** for the React app's training plan display. Any session adjustments must be written to this Supabase table.
+- **Jarvis (coaching agent) must update `planned_workouts`** when adjusting sessions — not just coaching-context.md. Update his skill definition accordingly.
+- **Test frontend changes** by running `cd web && npm run build` before committing. TypeScript errors block deployment.

@@ -451,33 +451,40 @@ export default function TodayView() {
             )}
             <button
               onClick={() => setShowExercises(!showExercises)}
-              className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-text-secondary transition-colors"
+              className="flex items-center gap-1.5 text-[12px] text-white/60 hover:text-white/80 transition-colors"
             >
               <ChevronDown size={12} className={`transition-transform ${showExercises ? 'rotate-180' : ''}`} />
               {showExercises ? 'Hide workout' : 'Show workout'}
             </button>
             {showExercises && (
-              <div className="mt-2 space-y-1.5">
+              <div className="mt-3">
                 {todayPlanned.workout_definition.warmup?.length > 0 && (
-                  <div className="mb-2 pb-1.5 border-b border-white/5">
-                    <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">Warm-up</div>
+                  <div className="mb-3 pb-2 border-b border-white/10">
+                    <div className="text-[10px] text-white/40 uppercase tracking-wider mb-1.5">Warm-up</div>
                     {todayPlanned.workout_definition.warmup.map((wu: any, i: number) => (
-                      <div key={i} className="flex items-center justify-between text-[11px] text-text-muted/70">
-                        <span>{wu.name}</span>
-                        <span className="font-data">{wu.duration_s ? `${wu.duration_s}s` : `${wu.reps} reps`}</span>
+                      <div key={i} className="flex items-center justify-between text-[11px] py-0.5">
+                        <span className="text-white/50 italic">{wu.name}</span>
+                        <span className="text-white/40 font-mono text-[10px]">{wu.duration_s ? `${wu.duration_s}s` : `${wu.reps} reps`}</span>
                       </div>
                     ))}
                   </div>
                 )}
-                {todayPlanned.workout_definition.exercises.map((ex: any, i: number) => (
-                  <div key={i} className="flex items-center justify-between text-[12px]">
-                    <span className="text-text-secondary">{ex.name}</span>
-                    <span className="text-text-muted font-data">
-                      {ex.sets}×{ex.reps}{ex.weight_kg != null && <> @ {ex.weight_kg}kg</>}
-                    </span>
-                  </div>
-                ))}
-                <div className="text-[10px] text-text-muted mt-2">
+                <table className="w-full text-[12px]">
+                  <tbody>
+                    {todayPlanned.workout_definition.exercises.map((ex: any, i: number) => (
+                      <tr key={i} className="border-b border-white/5 last:border-0">
+                        <td className="py-1 text-white/90">{ex.name}</td>
+                        <td className="py-1 text-right text-white/60 font-mono text-[11px]">
+                          {ex.sets}×{ex.reps}
+                        </td>
+                        <td className="py-1 text-right text-white/70 font-mono text-[11px] w-16">
+                          {ex.weight_kg != null ? `${ex.weight_kg}kg` : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="text-[11px] text-white/40 mt-2">
                   ~{todayPlanned.workout_definition.estimated_duration_minutes ?? (deload ? 30 : 50)} min
                   {' · '}RPE {todayPlanned.workout_definition.rpe_range?.join('-') ?? '6-7'}
                 </div>
