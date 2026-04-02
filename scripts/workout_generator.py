@@ -116,19 +116,21 @@ def _get_equipment(exercise_name: str) -> str:
     """Determine equipment type from exercise name."""
     if exercise_name in BARBELL_COMPOUNDS:
         return "barbell"
-    if exercise_name.startswith("KB "):
+    if exercise_name.startswith("Kettlebell ") or exercise_name.startswith("KB "):
         return "kettlebell"
     if exercise_name.startswith("Dumbbell ") or exercise_name.startswith("DB "):
         return "dumbbell"
     if "Cable" in exercise_name:
         return "cable"
-    if exercise_name in ("Chin-ups", "Dead Bugs", "Copenhagen Plank", "Pallof Walkouts"):
+    if exercise_name in ("Chin-Up", "Dead Bugs", "Copenhagen Plank", "Pallof Walkouts"):
         return "bodyweight"
     if "Split Squat" in exercise_name:
         return "dumbbell"
-    if "Lateral Raises" in exercise_name:
+    if "Lateral Raise" in exercise_name:
         return "dumbbell"
     if "Farmer Carry" in exercise_name:
+        return "kettlebell"
+    if "Turkish Get-Up" in exercise_name:
         return "kettlebell"
     if "Trap Bar" in exercise_name:
         return "barbell"

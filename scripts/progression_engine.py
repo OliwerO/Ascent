@@ -36,26 +36,9 @@ PLATE_INCREMENTS = {
     "bodyweight": 0,
 }
 
-# Exercises that use barbell plates (for the 2-sides rule)
-# Equipment type is fetched from DB, but this is the fallback
-# Name aliases: workout_push.py names → DB names
-NAME_ALIASES = {
-    "KB Swings": "Kettlebell Swing",
-    "KB Halo": "Kettlebell Halo",
-    "KB Turkish Get-up": "Turkish Get-Up",
-    "KB Clean & Press": "KB Clean & Press",
-    "KB Farmer Carry": "KB Farmer Carry",
-    "Dumbbell Incline Press": "Incline Dumbbell Press",
-    "Single-Arm DB Row": "Single-Arm DB Row",
-    "Cable Row": "Seated Cable Row",
-    "Chin-ups": "Chin-Up",
-    "Lateral Raises": "Lateral Raise",
-}
-
-
 def resolve_exercise_name(name: str) -> str:
-    """Resolve an exercise name alias to its canonical DB name."""
-    return NAME_ALIASES.get(name, name)
+    """Return the exercise name as-is (names are now canonical DB names)."""
+    return name
 
 
 EQUIPMENT_FALLBACK = {
@@ -147,7 +130,7 @@ def get_exercise_history(sb, exercise_name: str, limit: int = 30) -> list[dict]:
     Returns list of {weight_kg, reps, rpe, set_number, date} ordered by
     date desc, set_number asc.
     """
-    # Resolve name aliases (e.g., "KB Swings" → "Kettlebell Swing")
+    # Names are now canonical DB names (no alias resolution needed)
     db_name = resolve_exercise_name(exercise_name)
 
     try:

@@ -114,14 +114,14 @@ GARMIN_EXERCISE_MAP = {
     "Barbell Back Squat":       ("SQUAT",          "BARBELL_BACK_SQUAT"),
     "Dumbbell Bench Press":     ("BENCH_PRESS",    "DUMBBELL_BENCH_PRESS"),
     "Barbell Row":              ("ROW",            "BARBELL_ROW"),
-    "KB Swings":                ("HIP_RAISE",      "KETTLEBELL_SWING"),          # FIT SDK: HIP_RAISE category
-    "KB Halo":                  ("WARM_UP",        "ARM_CIRCLES"),               # No exact match — use Arm Circles. Actual: KB Halo
-    "KB Turkish Get-up":        ("CORE",           "TURKISH_GET_UP"),            # FIT SDK: CORE category
+    "Kettlebell Swing":         ("HIP_RAISE",      "KETTLEBELL_SWING"),          # FIT SDK: HIP_RAISE category
+    "Kettlebell Halo":          ("WARM_UP",        "ARM_CIRCLES"),               # No exact match — use Arm Circles. Actual: KB Halo
+    "Turkish Get-Up":           ("CORE",           "TURKISH_GET_UP"),            # FIT SDK: CORE category
 
     # Strength B (Monday)
     "Overhead Press":           ("SHOULDER_PRESS",  "OVERHEAD_BARBELL_PRESS"),
     "DB Overhead Press":        ("SHOULDER_PRESS",  "DUMBBELL_SHOULDER_PRESS"),
-    "Chin-ups":                 ("PULL_UP",         "CHIN_UP"),
+    "Chin-Up":                  ("PULL_UP",         "CHIN_UP"),
     "Lat Pulldown":             ("PULL_UP",         "LAT_PULLDOWN"),
     "Dumbbell Incline Press":   ("BENCH_PRESS",     "INCLINE_DUMBBELL_BENCH_PRESS"),
     "Cable Row":                ("ROW",             "SEATED_CABLE_ROW"),
@@ -134,7 +134,7 @@ GARMIN_EXERCISE_MAP = {
     "KB Clean & Press":         ("OLYMPIC_LIFT",    "CLEAN_AND_PRESS"),          # FIT SDK: OLYMPIC_LIFT category
     "Single-Arm DB Row":        ("ROW",             "ONE_ARM_DUMBBELL_ROW"),
     "Bulgarian Split Squat":    ("LUNGE",           "DUMBBELL_BULGARIAN_SPLIT_SQUAT"),  # FIT SDK: LUNGE category
-    "Lateral Raises":           ("LATERAL_RAISE",   "DUMBBELL_LATERAL_RAISE"),   # FIT SDK: LATERAL_RAISE category
+    "Lateral Raise":            ("LATERAL_RAISE",   "DUMBBELL_LATERAL_RAISE"),   # FIT SDK: LATERAL_RAISE category
     "KB Farmer Carry":          ("CARRY",           "FARMERS_WALK"),
 
     # Warm-up exercises (Protocol B from Domain 9: Mobility)
@@ -171,7 +171,7 @@ GARMIN_BENCHMARKS = {
 # Exercises where the Garmin name doesn't match the actual exercise
 # These get a note in the description field
 EXERCISE_NOTES = {
-    "KB Halo":           "Actual exercise: Kettlebell Halo",
+    "Kettlebell Halo":   "Actual exercise: Kettlebell Halo",
     "Copenhagen Plank":  "Actual exercise: Copenhagen Plank",
     "Pallof Walkouts":   "Actual exercise: Pallof Walkouts",
     "KB Clean & Press":  "Actual exercise: KB Clean & Press",
@@ -191,10 +191,10 @@ DB_ACCESSORIES = {
     "Dumbbell Incline Press",
     "DB Overhead Press",
     "Cable Row",
-    "KB Swings",
-    "KB Halo",
-    "KB Turkish Get-up",
-    "Chin-ups",
+    "Kettlebell Swing",
+    "Kettlebell Halo",
+    "Turkish Get-Up",
+    "Chin-Up",
     "Lat Pulldown",
     "Dead Bugs",
     "Copenhagen Plank",
@@ -202,7 +202,7 @@ DB_ACCESSORIES = {
     "KB Clean & Press",
     "Single-Arm DB Row",
     "Bulgarian Split Squat",
-    "Lateral Raises",
+    "Lateral Raise",
     "KB Farmer Carry",
 }
 
@@ -233,9 +233,9 @@ SESSIONS = {
             {"name": "Barbell Back Squat",   "sets": 3, "reps": 8,  "rpe_low": 6, "rpe_high": 7, "rest_s": 120, "start_kg": 70.0},
             {"name": "Dumbbell Bench Press",  "sets": 3, "reps": 10, "rpe_low": 6, "rpe_high": 7, "rest_s": 90,  "start_kg": 18.0},
             {"name": "Barbell Row",           "sets": 3, "reps": 10, "rpe_low": 6, "rpe_high": 7, "rest_s": 90,  "start_kg": 25.0},
-            {"name": "KB Swings",             "sets": 3, "reps": 15, "rpe_low": 6, "rpe_high": 7, "rest_s": 60,  "start_kg": 24.0},
-            {"name": "KB Halo",               "sets": 2, "reps": 10, "rpe_low": 5, "rpe_high": 6, "rest_s": 60,  "start_kg": 12.0},
-            {"name": "KB Turkish Get-up",     "sets": 2, "reps": 3,  "rpe_low": 6, "rpe_high": 6, "rest_s": 90,  "start_kg": 12.0},
+            {"name": "Kettlebell Swing",             "sets": 3, "reps": 15, "rpe_low": 6, "rpe_high": 7, "rest_s": 60,  "start_kg": 24.0},
+            {"name": "Kettlebell Halo",               "sets": 2, "reps": 10, "rpe_low": 5, "rpe_high": 6, "rest_s": 60,  "start_kg": 12.0},
+            {"name": "Turkish Get-Up",     "sets": 2, "reps": 3,  "rpe_low": 6, "rpe_high": 6, "rest_s": 90,  "start_kg": 12.0},
         ],
     },
     "B": {
@@ -244,7 +244,7 @@ SESSIONS = {
         "estimated_duration_minutes": 40,
         "exercises": [
             {"name": "Overhead Press",        "sets": 3, "reps": 10, "rpe_low": 6, "rpe_high": 7, "rest_s": 90,  "start_kg": 35.0},
-            {"name": "Chin-ups",              "sets": 3, "reps": 8,  "rpe_low": 6, "rpe_high": 7, "rest_s": 90,  "start_kg": None},
+            {"name": "Chin-Up",              "sets": 3, "reps": 8,  "rpe_low": 6, "rpe_high": 7, "rest_s": 90,  "start_kg": None},
             {"name": "Dumbbell Incline Press", "sets": 2, "reps": 12, "rpe_low": 6, "rpe_high": 6, "rest_s": 60,  "start_kg": 14.0},
             {"name": "Cable Row",             "sets": 2, "reps": 12, "rpe_low": 6, "rpe_high": 6, "rest_s": 60,  "start_kg": 35.0},
             # Core circuit — 3 rounds, 30s between exercises
@@ -263,7 +263,7 @@ SESSIONS = {
             {"name": "KB Clean & Press",      "sets": 3, "reps": 8,  "rpe_low": 6, "rpe_high": 7, "rest_s": 90,  "start_kg": 16.0},
             {"name": "Single-Arm DB Row",     "sets": 3, "reps": 10, "rpe_low": 6, "rpe_high": 7, "rest_s": 60,  "start_kg": 22.0},
             {"name": "Bulgarian Split Squat", "sets": 2, "reps": 10, "rpe_low": 6, "rpe_high": 7, "rest_s": 60,  "start_kg": 10.0},
-            {"name": "Lateral Raises",        "sets": 2, "reps": 15, "rpe_low": 5, "rpe_high": 6, "rest_s": 60,  "start_kg": 6.0},
+            {"name": "Lateral Raise",        "sets": 2, "reps": 15, "rpe_low": 5, "rpe_high": 6, "rest_s": 60,  "start_kg": 6.0},
             {"name": "KB Farmer Carry",       "sets": 3, "reps": 1,  "rpe_low": 6, "rpe_high": 7, "rest_s": 60,  "start_kg": 24.0,
              "distance_m": 40, "note": "40m carry"},
         ],
@@ -277,8 +277,8 @@ SESSIONS = {
             {"name": "Barbell Back Squat",    "sets": 3, "reps": 8,  "rpe_low": 6, "rpe_high": 7, "rest_s": 120, "start_kg": 70.0},
             {"name": "Overhead Press",        "sets": 3, "reps": 10, "rpe_low": 6, "rpe_high": 7, "rest_s": 90,  "start_kg": 35.0},
             {"name": "Barbell Row",           "sets": 3, "reps": 10, "rpe_low": 6, "rpe_high": 7, "rest_s": 90,  "start_kg": 25.0},
-            {"name": "KB Swings",             "sets": 3, "reps": 15, "rpe_low": 6, "rpe_high": 7, "rest_s": 60,  "start_kg": 24.0},
-            {"name": "KB Halo",               "sets": 2, "reps": 10, "rpe_low": 5, "rpe_high": 6, "rest_s": 60,  "start_kg": 12.0},
+            {"name": "Kettlebell Swing",             "sets": 3, "reps": 15, "rpe_low": 6, "rpe_high": 7, "rest_s": 60,  "start_kg": 24.0},
+            {"name": "Kettlebell Halo",               "sets": 2, "reps": 10, "rpe_low": 5, "rpe_high": 6, "rest_s": 60,  "start_kg": 12.0},
             # Core circuit (3 rounds) — matches coaching-context.md consolidated A2
             {"name": "Dead Bugs",             "sets": 3, "reps": 10, "rpe_low": 6, "rpe_high": 6, "rest_s": 30,  "start_kg": None},
             {"name": "Copenhagen Plank",      "sets": 3, "reps": 1,  "rpe_low": 6, "rpe_high": 6, "rest_s": 30,  "start_kg": None,
@@ -293,9 +293,9 @@ SESSIONS = {
         "exercises": [
             {"name": "Trap Bar Deadlift",     "sets": 3, "reps": 8,  "rpe_low": 6, "rpe_high": 7, "rest_s": 120, "start_kg": 65.0},
             {"name": "KB Clean & Press",      "sets": 3, "reps": 8,  "rpe_low": 6, "rpe_high": 7, "rest_s": 90,  "start_kg": 16.0},
-            {"name": "Chin-ups",              "sets": 3, "reps": 8,  "rpe_low": 6, "rpe_high": 7, "rest_s": 90,  "start_kg": None},
+            {"name": "Chin-Up",              "sets": 3, "reps": 8,  "rpe_low": 6, "rpe_high": 7, "rest_s": 90,  "start_kg": None},
             {"name": "Bulgarian Split Squat", "sets": 2, "reps": 10, "rpe_low": 6, "rpe_high": 7, "rest_s": 60,  "start_kg": 10.0},
-            {"name": "KB Turkish Get-up",     "sets": 2, "reps": 3,  "rpe_low": 6, "rpe_high": 6, "rest_s": 90,  "start_kg": 12.0},
+            {"name": "Turkish Get-Up",     "sets": 2, "reps": 3,  "rpe_low": 6, "rpe_high": 6, "rest_s": 90,  "start_kg": 12.0},
             {"name": "KB Farmer Carry",       "sets": 3, "reps": 1,  "rpe_low": 6, "rpe_high": 7, "rest_s": 60,  "start_kg": 24.0,
              "distance_m": 40, "note": "40m carry"},
         ],
