@@ -79,9 +79,8 @@ export default function TrendsView() {
       const resp = await fetch('/api/egym-sync', { method: 'POST' })
       const data = await resp.json()
       if (data.ok) {
-        setSyncResult(`Synced: ${data.weight_kg?.toFixed(1)}kg / ${data.body_fat_pct?.toFixed(1)}% bf`)
-        // Reload page after short delay to show new data
-        setTimeout(() => window.location.reload(), 1500)
+        setSyncResult('Sync queued — data arrives in ~5 min')
+        setTimeout(() => setSyncResult(null), 5000)
       } else {
         setSyncResult(data.error || data.message || 'Sync failed')
       }
