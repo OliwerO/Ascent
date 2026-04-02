@@ -28,7 +28,7 @@ KB_WEIGHTS = [4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 36, 40, 44, 48]
 
 # Equipment type → minimum weight increment
 PLATE_INCREMENTS = {
-    "barbell": 2.5,     # 1.25kg plates × 2 sides
+    "barbell": 5.0,     # 2.5kg plates × 2 sides (smallest available)
     "dumbbell": 2.5,    # DB pairs go in 2.5kg steps
     "kettlebell": 4.0,  # snapped to KB_WEIGHTS
     "cable": 2.5,       # cable stack steps (gym-dependent)
@@ -347,9 +347,10 @@ def calculate_next_weight(
         new_weight = next_plate_up(last_weight, equipment)
         increase = new_weight - last_weight
 
-        # 10% cap — only for heavier lifts (>20kg) where it's meaningful.
-        # For light weights, the minimum plate increment inherently exceeds 10%.
-        if last_weight > 20 and increase / last_weight > 0.10:
+        # 10% cap — only for heavier lifts where the increment is a choice.
+        # With 5kg barbell plates, anything under 50kg inherently exceeds 10%.
+        # Only apply when the increment could reasonably be smaller.
+        if last_weight >= 50 and increase / last_weight > 0.10:
             return ProgressionResult(
                 weight_kg=last_weight,
                 reps=target_reps,
