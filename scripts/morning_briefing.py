@@ -69,18 +69,6 @@ def fetch_daily_summary(target_date: date) -> dict | None:
 
 def fetch_daily_summary_range(start: date, end: date) -> list:
     """Fetch daily_summary for a date range (inclusive)."""
-    rows = supabase_get("daily_summary", {
-        "date": f"gte.{start.isoformat()}",
-        "date": f"lte.{end.isoformat()}",
-        "select": "*",
-        "order": "date.desc",
-    })
-    # The above has duplicate 'date' keys — use PostgREST 'and' syntax instead
-    return rows
-
-
-def fetch_daily_summary_range_proper(start: date, end: date) -> list:
-    """Fetch daily_summary for a date range using proper PostgREST filtering."""
     url = f"{SUPABASE_URL}/rest/v1/daily_summary"
     params = {
         "select": "*",
@@ -104,7 +92,7 @@ def fetch_activities(target_date: date) -> list:
 def fetch_resting_hr_7d(end_date: date) -> float | None:
     """Calculate 7-day average resting HR ending on end_date."""
     start = end_date - timedelta(days=6)
-    rows = fetch_daily_summary_range_proper(start, end_date)
+    rows = fetch_daily_summary_range(start, end_date)
     hrs = [r["resting_hr"] for r in rows if r.get("resting_hr")]
     return round(sum(hrs) / len(hrs), 1) if hrs else None
 

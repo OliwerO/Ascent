@@ -33,9 +33,9 @@ from supabase import create_client
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
-EGYM_BRAND = os.environ["EGYM_BRAND"]
-EGYM_USERNAME = os.environ["EGYM_USERNAME"]
-EGYM_PASSWORD = os.environ["EGYM_PASSWORD"]
+EGYM_BRAND = os.environ.get("EGYM_BRAND", "")
+EGYM_USERNAME = os.environ.get("EGYM_USERNAME", "")
+EGYM_PASSWORD = os.environ.get("EGYM_PASSWORD", "")
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ["SUPABASE_KEY"]
 
@@ -235,6 +235,10 @@ def main():
         help="Override scan date (YYYY-MM-DD). Default: use actual scan date from eGym.",
     )
     args = parser.parse_args()
+
+    if not EGYM_BRAND or not EGYM_USERNAME or not EGYM_PASSWORD:
+        log.error("EGYM_BRAND, EGYM_USERNAME, and EGYM_PASSWORD must be set in .env")
+        sys.exit(1)
 
     # Authenticate
     client = EgymClient(EGYM_BRAND, EGYM_USERNAME, EGYM_PASSWORD)

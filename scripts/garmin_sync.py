@@ -19,7 +19,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
-from garminconnect import Garmin
+from garminconnect import Garmin, GarminConnectTooManyRequestsError
 from supabase import create_client
 
 from garmin_auth import (
@@ -57,6 +57,8 @@ def api_call(fn, *args, **kwargs):
     time.sleep(API_DELAY)
     try:
         return fn(*args, **kwargs)
+    except (GarminConnectTooManyRequestsError, RateLimitCooldownError, AuthExpiredError):
+        raise  # must abort — continuing would deepen rate limit ban
     except Exception as exc:
         log.warning("API call %s failed: %s", fn.__name__, exc)
         return None
@@ -653,6 +655,8 @@ def sync_date(client: Garmin, sb, d: date) -> dict:
     for name, fn in DAILY_SYNC_FUNCTIONS:
         try:
             results[name] = fn(client, sb, d)
+        except (GarminConnectTooManyRequestsError, RateLimitCooldownError, AuthExpiredError):
+            raise  # abort entire sync immediately
         except Exception as exc:
             log.error("Error syncing %s for %s: %s", name, d.isoformat(), exc)
             results[name] = False
@@ -703,15 +707,28 @@ def main():
 
     # Sync each date
     all_results = {}
-    for i, d in enumerate(dates):
-        all_results[d.isoformat()] = sync_date(client, sb, d)
+    try:
+        for i, d in enumerate(dates):
+            all_results[d.isoformat()] = sync_date(client, sb, d)
 
-    # Run one-shot syncs (personal records, etc.)
-    for name, fn in ONESHOT_SYNC_FUNCTIONS:
-        try:
-            fn(client, sb, dates[-1])
-        except Exception as exc:
-            log.error("Error in one-shot sync %s: %s", name, exc)
+        # Run one-shot syncs (personal records, etc.)
+        for name, fn in ONESHOT_SYNC_FUNCTIONS:
+            try:
+                fn(client, sb, dates[-1])
+            except (GarminConnectTooManyRequestsError, RateLimitCooldownError, AuthExpiredError):
+                raise
+            except Exception as exc:
+                log.error("Error in one-shot sync %s: %s", name, exc)
+    except GarminConnectTooManyRequestsError:
+        log.error("429 Too Many Requests — Garmin rate limit hit, aborting sync")
+        alert_slack(":rotating_light: *Garmin sync aborted* — 429 rate limit hit mid-sync. Cooldown needed.")
+        save_tokens(client)
+        sys.exit(3)
+    except (RateLimitCooldownError, AuthExpiredError) as e:
+        log.error("Auth/rate limit error mid-sync: %s", e)
+        alert_slack(f":rotating_light: *Garmin sync aborted* — {e}")
+        save_tokens(client)
+        sys.exit(2)
 
     # Save tokens at end of session to capture any mid-session refreshes
     save_tokens(client)

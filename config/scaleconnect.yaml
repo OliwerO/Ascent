@@ -1,0 +1,3 @@
+sync_weight:
+  from: zepp/xiaomi ${XIAOMI_EMAIL} ${XIAOMI_PASSWORD}
+  to: csv /Users/jarvisforoli/projects/ascent/data/scale_export.csv

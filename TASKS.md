@@ -62,7 +62,7 @@ See `docs/schema-conflict-resolution.md`. New migration: `sql/006_training_expan
   Session kept alive by `garmin_session_refresh.sh` (launchd, every 4h).
   3-month backfill complete: 90 days of data (Jan 1 – Mar 31), 47 activities.
 - MFA is permanently enabled (ECG feature, irreversible).
-- Body composition: no Garmin scale. User does gym body comp scans — input via screenshot/Telegram → Claude Vision parsing.
+- Body composition: daily weight from Xiaomi Mi Scale via Zepp Life (`scale_sync.py`). Full body comp scans from eGym (`egym_sync.py`).
 
 ### Terra API — shelved (2026-04-02)
 
@@ -80,6 +80,19 @@ See `docs/schema-conflict-resolution.md`. New migration: `sql/006_training_expan
 - Grafana dashboard spec updated: Dashboard 1/2 design notes, new Dashboard 3 (Quarterly Strategic Review), alerts rewritten with compound conditions.
 - CLAUDE.md updated with data validation rules and new critical decisions.
 - Migration `009_research_integration.sql` created: `subjective_wellness`, `daily_data_quality`, `data_epochs` tables + `srpe`/`srpe_load` columns on `training_sessions`.
+
+### Xiaomi Mi Scale sync (2026-04-02)
+
+- `scale_sync.py` pulls daily weight from Zepp Life cloud via SmartScaleConnect (Go binary).
+- Binary: `bin/scaleconnect` (Darwin arm64, v0.4.1, gitignored). Source: `github.com/AlexxIT/SmartScaleConnect`.
+- Inline config (no credentials on disk) — pulls from Zepp Life using Xiaomi account auth.
+- Parses CSV export, upserts to `body_composition` with `source='xiaomi'`. Weight only (kg→grams).
+- Body fat, muscle mass, etc. left NULL — those come from eGym scans.
+- Skips rows already in Supabase (match on date + source).
+- Supports `--dry-run` and `--skip-export` flags.
+- Launchd: `com.ascent.scale-sync.plist` — daily at 10:00 (after weigh-in window 06:30–09:30), logs to `logs/scale-sync.log`.
+- Env vars: `XIAOMI_EMAIL`, `XIAOMI_PASSWORD`.
+- **Note:** Zepp Life sync logs you out of the Zepp Life mobile app each time.
 
 ### eGym body scan sync (2026-04-01)
 
@@ -226,6 +239,9 @@ After Grafana connected:
 | `scripts/garmin_sync.py` | **Primary read pipeline.** Nightly Garmin → Supabase sync (hardened auth, no SSO) |
 | `scripts/terra_sync.py` | Backup: Terra API → Supabase (shelved — $399/mo, no free tier) |
 | `scripts/egym_sync.py` | eGym body scan → Supabase sync (body composition) |
+| `scripts/scale_sync.py` | Xiaomi Mi Scale → Supabase sync (daily weight via Zepp Life) |
+| `config/scaleconnect.yaml` | SmartScaleConnect config (template — credentials passed inline) |
+| `scripts/com.ascent.scale-sync.plist` | macOS launchd: scale sync daily at 05:30 |
 | `scripts/garmin_workout_push.py` | Push workouts to Garmin watch (Phase 7b, scaffolded) |
 | `scripts/workout_generator.py` | Generate weekly workouts (Phase 8, scaffolded) |
 | `scripts/setup_phase3.sh` | One-shot Phase 3 Mac deployment |

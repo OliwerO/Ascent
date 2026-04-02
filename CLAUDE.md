@@ -56,7 +56,7 @@ Garmin Connect (cloud)
 |-----------------------------------------------------------------------|------------|----------------------------------------------|---------------------|----------------|
 |HRV, sleep, HR, stress, Body Battery, steps, VO2max, training readiness|Garmin      |Automatic sync                                |Supabase             |Nightly         |
 |Activities (runs, rides, strength, ski tours)                          |Garmin      |Automatic sync                                |Supabase             |Nightly         |
-|Body weight                                                            |Garmin scale|Automatic sync                                |Supabase             |Nightly         |
+|Body weight                                                            |Xiaomi Mi Scale (Zepp Life)|Automatic sync (SmartScaleConnect)        |Supabase             |Daily 05:30     |
 |Food/nutrition                                                         |User        |Text/voice/photo via React app or Telegram    |Supabase             |Manual, optional|
 |Blood tests                                                            |User        |PDF upload via Telegram → Claude Vision parses|Supabase + Obsidian  |~1x/year        |
 |DEXA scans                                                             |User        |Screenshot via Telegram → Claude parses       |Supabase + Obsidian  |Occasional      |

@@ -3,23 +3,23 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.ascent.morning-briefing</string>
+    <string>com.ascent.scale-sync</string>
     <key>ProgramArguments</key>
     <array>
         <string>/Users/jarvisforoli/projects/ascent/venv/bin/python</string>
-        <string>/Users/jarvisforoli/projects/ascent/scripts/morning_briefing.py</string>
+        <string>/Users/jarvisforoli/projects/ascent/scripts/scale_sync.py</string>
     </array>
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
         <integer>10</integer>
         <key>Minute</key>
-        <integer>5</integer>
+        <integer>0</integer>
     </dict>
     <key>StandardOutPath</key>
-    <string>/Users/jarvisforoli/projects/ascent/logs/briefing.log</string>
+    <string>/Users/jarvisforoli/projects/ascent/logs/scale-sync.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/jarvisforoli/projects/ascent/logs/briefing-error.log</string>
+    <string>/Users/jarvisforoli/projects/ascent/logs/scale-sync.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>

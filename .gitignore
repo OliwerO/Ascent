@@ -11,6 +11,7 @@ logs/
 .garth/
 garmin_tokens.json
 garmin_tokens.json.old
+scaleconnect.json
 *.garmin_session*
 .agents/
 .claude/
@@ -18,4 +19,5 @@ skills/
 skills-lock.json
 venv/
 bin/
+data/
 .vercel
