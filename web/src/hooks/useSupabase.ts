@@ -137,6 +137,18 @@ export function useTrainingSets(sessionIds: number[]) {
   }, [sessionIds.join(',')])
 }
 
+export function useExerciseProgression(days = 60) {
+  return useFetch('exercise_progression', async () => {
+    const { data, error } = await supabase
+      .from('exercise_progression')
+      .select('exercise_name,date,planned_weight_kg,planned_reps,planned_sets,progression_applied,progression_amount')
+      .gte('date', fmt(daysAgo(days)))
+      .order('date', { ascending: false })
+    if (error) return []
+    return data
+  }, [days])
+}
+
 export function useSubjectiveWellness(days = 30) {
   return useFetch('subjective_wellness', async () => {
     const { data, error } = await supabase

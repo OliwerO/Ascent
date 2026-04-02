@@ -1,5 +1,5 @@
 import { LoadingState } from '../components/LoadingState'
-import { useDailySummary, useHRV, useDailyMetrics, useActivities, useSubjectiveWellness } from '../hooks/useSupabase'
+import { useDailySummary, useHRV, useDailyMetrics, useActivities, useSubjectiveWellness, useExerciseProgression } from '../hooks/useSupabase'
 import {
   getProgramWeek, isDeloadWeek, getSessionForDate, SESSION_NAMES,
   getPlannedWeight,
@@ -293,6 +293,7 @@ export default function TodayView() {
   const metrics = useDailyMetrics(14)
   const activities = useActivities(14)
   const wellness = useSubjectiveWellness(30)
+  const progression = useExerciseProgression(30)
   const [showExercises, setShowExercises] = useState(false)
   const [, setWellnessRefresh] = useState(0)
 
@@ -491,7 +492,7 @@ export default function TodayView() {
             {showExercises && (
               <div className="mt-2 space-y-1.5">
                 {SESSION_EXERCISES[todaySession].map((ex, i) => {
-                  const weight = getPlannedWeight(ex.name, week)
+                  const weight = getPlannedWeight(ex.name, week, progression.data ?? undefined)
                   const sets = deload ? Math.max(1, Math.round(ex.sets * 0.5)) : ex.sets
                   return (
                     <div key={i} className="flex items-center justify-between text-[12px]">

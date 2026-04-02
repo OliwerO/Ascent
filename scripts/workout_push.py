@@ -32,7 +32,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_KEY"]
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ["SUPABASE_KEY"]
 
 COACHING_CONTEXT_PATH = PROJECT_ROOT / "openclaw" / "coaching-context.md"
 
@@ -295,87 +295,66 @@ SESSIONS = {
 # ---------------------------------------------------------------------------
 
 
-def get_last_strength_session(sb, session_name_prefix: str) -> dict | None:
-    """Query Supabase for the most recent completed strength session matching a name prefix.
-
-    Looks in the activities table for strength_training activities with matching names,
-    then checks raw_json for exercise/set data.
-
-    Returns dict with exercise data or None.
-    """
-    try:
-        result = sb.table("activities").select(
-            "date,activity_name,raw_json,total_sets,total_reps"
-        ).eq(
-            "activity_type", "strength_training"
-        ).like(
-            "activity_name", f"%{session_name_prefix}%"
-        ).order(
-            "date", desc=True
-        ).limit(1).execute()
-
-        if result.data:
-            return result.data[0]
-    except Exception as exc:
-        log.warning("Failed to query last strength session: %s", exc)
-    return None
-
-
 def calculate_weight(
     exercise_name: str,
     start_kg: float | None,
     block: int,
     week: int,
-    last_session_data: dict | None,
-) -> float | None:
-    """Apply progressive overload rules to determine target weight.
+    sb=None,
+    target_reps: int = 8,
+    target_sets: int = 3,
+) -> tuple[float | None, str]:
+    """Apply smart progressive overload based on actual performance data.
 
-    Block 1 (Weeks 1-3):
-    - +2.5kg/week on barbell compounds
-    - +1kg/week on DB/accessories
-    - If RPE hit 8 before week 3, hold weight and add reps
-    - Week 4: deload (same weight, 50% volume)
+    Uses progression_engine to query training_sets for last actual weights
+    and apply double progression logic. Falls back to formula if no data.
 
-    Block 2 (Weeks 5-7):
-    - Resume at Week 3 weights + 2.5kg
-    - RPE 7-8 target
-    - If RPE > 8, drop 5% for remaining sets
-    - Week 8: deload
+    Returns (weight_kg, progression_note).
     """
     if start_kg is None:
-        return None
+        return None, "bodyweight"
 
+    # Try data-driven progression via the engine
+    if sb:
+        try:
+            from progression_engine import calculate_next_weight, record_progression
+
+            result = calculate_next_weight(
+                sb, exercise_name,
+                target_reps=target_reps,
+                target_sets=target_sets,
+                current_week=week,
+                start_kg=start_kg,
+            )
+
+            # Record the decision to exercise_progression table
+            from datetime import date
+            record_progression(sb, exercise_name, date.today().isoformat(), result,
+                               planned_rpe=7.0 if block == 1 else 8.0)
+
+            return round(result.weight_kg, 1), result.note
+
+        except Exception as exc:
+            log.warning("Progression engine failed for %s, using formula fallback: %s",
+                        exercise_name, exc)
+
+    # Formula fallback (no Supabase or engine failure)
     if week <= 3:
-        # Block 1 progression: weeks 1-3 → 0, 1, 2 increments
         weeks_of_progression = week - 1
     elif week == 4:
-        # Deload: same weight as week 3 (volume halved elsewhere)
         weeks_of_progression = 2
     elif week <= 7:
-        # Block 2: resume at week 3 weight + one increment, then progress
-        # Week 5=3, Week 6=4, Week 7=5 increments
         weeks_of_progression = week - 2
     else:
-        # Week 8 deload: same weight as week 7
         weeks_of_progression = 5
 
     if exercise_name in BARBELL_COMPOUNDS:
         increment_per_week = 2.5
-    elif exercise_name in DB_ACCESSORIES:
-        increment_per_week = 1.0
     else:
         increment_per_week = 1.0
 
     target_kg = start_kg + (weeks_of_progression * increment_per_week)
-
-    # Block 2 RPE check: if we had data showing RPE > 8, drop 5%
-    # (This would use last_session_data in a full implementation)
-    if block == 2 and last_session_data:
-        # Placeholder for RPE-based adjustment
-        # In practice, parse raw_json for RPE data from Garmin
-        pass
-
-    return round(target_kg, 1)
+    return round(target_kg, 1), "formula fallback"
 
 
 def calculate_sets(exercise: dict, week: int) -> int:
@@ -555,13 +534,9 @@ def build_garmin_workout(
     session = SESSIONS[session_key]
     exercises = session["exercises"]
 
-    # Query last session data for progressive overload
-    last_session = None
-    if sb:
-        last_session = get_last_strength_session(sb, session["name"].split(":")[0])
-
     # Build workout steps
     workout_steps = []
+    progression_notes = []  # Collect progression decisions for summary
 
     for ex in exercises:
         num_sets = calculate_sets(ex, week)
@@ -570,13 +545,16 @@ def build_garmin_workout(
         if volume_reduction > 0:
             num_sets = max(1, round(num_sets * (1 - volume_reduction)))
 
-        weight = calculate_weight(
+        weight, prog_note = calculate_weight(
             ex["name"],
             ex["start_kg"],
             block,
             week,
-            last_session,
+            sb=sb,
+            target_reps=ex["reps"],
+            target_sets=ex["sets"],
         )
+        progression_notes.append((ex["name"], weight, prog_note))
 
         for set_num in range(num_sets):
             # Working set
@@ -640,6 +618,7 @@ def build_garmin_workout(
                 "workoutSteps": workout_steps,
             }
         ],
+        "_progression_notes": progression_notes,
     }
 
     return workout
@@ -650,7 +629,8 @@ def build_garmin_workout(
 # ---------------------------------------------------------------------------
 
 
-def format_weight_summary(session_key: str, block: int, week: int) -> str:
+def format_weight_summary(session_key: str, block: int, week: int,
+                          progression_notes: list | None = None, sb=None) -> str:
     """Return a human-readable summary of target weights for logging."""
     session = SESSIONS[session_key]
     lines = [f"\n{session['name']} — Block {block}, Week {week}"]
@@ -658,9 +638,23 @@ def format_weight_summary(session_key: str, block: int, week: int) -> str:
         lines.append("  ** DELOAD WEEK — 50% volume, same weight **")
     lines.append("")
 
+    # Build a lookup from progression notes if available
+    prog_lookup = {}
+    if progression_notes:
+        for name, weight, note in progression_notes:
+            prog_lookup[name] = (weight, note)
+
     for ex in session["exercises"]:
         num_sets = calculate_sets(ex, week)
-        weight = calculate_weight(ex["name"], ex["start_kg"], block, week, None)
+
+        # Use progression data if available, otherwise compute
+        if ex["name"] in prog_lookup:
+            weight, prog_note = prog_lookup[ex["name"]]
+        else:
+            weight, prog_note = calculate_weight(
+                ex["name"], ex["start_kg"], block, week, sb=sb,
+                target_reps=ex["reps"], target_sets=ex["sets"],
+            )
 
         if weight:
             weight_str = f"{weight}kg"
@@ -671,13 +665,12 @@ def format_weight_summary(session_key: str, block: int, week: int) -> str:
         else:
             weight_str = "BW"
 
-        note = ex.get("note", "")
-        note_str = f" ({note})" if note else ""
         reps_str = f"{ex['reps']}" if ex['reps'] > 1 else ""
+        prog_str = f" [{prog_note}]" if prog_note and prog_note != "formula fallback" else ""
 
         lines.append(
-            f"  {ex['name']}: {num_sets}x{reps_str} @ {weight_str} "
-            f"[RPE {ex['rpe_low']}-{ex['rpe_high']}, {ex['rest_s']}s rest]{note_str}"
+            f"  {ex['name']}: {num_sets}x{reps_str} @ {weight_str}"
+            f" [RPE {ex['rpe_low']}-{ex['rpe_high']}]{prog_str}"
         )
 
     return "\n".join(lines)
@@ -1126,8 +1119,10 @@ def main():
             rpe_cap=args.rpe_cap,
         )
 
-        # Log weight summary
-        summary = format_weight_summary(session_key, block, week)
+        # Log weight summary with progression decisions
+        prog_notes = workout.pop("_progression_notes", None)
+        summary = format_weight_summary(session_key, block, week,
+                                        progression_notes=prog_notes, sb=sb)
         log.info(summary)
 
     if args.dry_run:

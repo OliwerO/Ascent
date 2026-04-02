@@ -78,44 +78,73 @@ export function getWeekSchedule(weekNum: number): WeekSchedule {
   return { weekNum, block, deload, days }
 }
 
-// Starting weights (Week 1)
+// Starting weights (Week 1) — fallback only, real weights come from exercise_progression
 export const STARTING_WEIGHTS: Record<string, { weight: number; increment: number }> = {
   'Barbell Back Squat': { weight: 70, increment: 2.5 },
-  'DB Bench Press': { weight: 18, increment: 1 },
-  'Barbell Row': { weight: 25, increment: 2.5 },
+  'Dumbbell Bench Press': { weight: 18, increment: 2.5 },
+  'Barbell Row': { weight: 40, increment: 2.5 },
   'KB Swings': { weight: 24, increment: 0 },
   'KB Halo': { weight: 12, increment: 0 },
-  'KB Turkish Get-up': { weight: 12, increment: 0 },
-  'Overhead Press': { weight: 20, increment: 2.5 },
+  'KB Turkish Get-up': { weight: 8, increment: 0 },
+  'Overhead Press': { weight: 35, increment: 2.5 },
   'Chin-ups': { weight: 0, increment: 0 },
-  'DB Incline Press': { weight: 14, increment: 1 },
-  'Cable Row': { weight: 30, increment: 2.5 },
+  'Dumbbell Incline Press': { weight: 14, increment: 2.5 },
+  'Cable Row': { weight: 35, increment: 2.5 },
   'Trap Bar Deadlift': { weight: 65, increment: 2.5 },
-  'KB Clean & Press': { weight: 16, increment: 1 },
-  'Single-Arm DB Row': { weight: 18, increment: 1 },
-  'Bulgarian Split Squat': { weight: 10, increment: 1 },
-  'Lateral Raises': { weight: 8, increment: 0.5 },
-  'KB Farmer Carry': { weight: 24, increment: 2 },
+  'KB Clean & Press': { weight: 16, increment: 0 },
+  'Single-Arm DB Row': { weight: 22, increment: 2.5 },
+  'Bulgarian Split Squat': { weight: 10, increment: 2.5 },
+  'Lateral Raises': { weight: 6, increment: 2.5 },
+  'KB Farmer Carry': { weight: 24, increment: 0 },
+}
+
+// Name aliases for backward compatibility with older keys
+const NAME_ALIASES: Record<string, string> = {
+  'DB Bench Press': 'Dumbbell Bench Press',
+  'DB Incline Press': 'Dumbbell Incline Press',
+}
+
+export function resolveExerciseName(name: string): string {
+  return NAME_ALIASES[name] ?? name
 }
 
 /**
- * Get the baseline planned weight for a given week.
- * This is the "if everything goes perfectly" target — the coaching agent
- * and actual performance data override this in practice.
+ * Get the planned weight for an exercise.
+ *
+ * If exercise_progression data is available (from the progression engine),
+ * uses the latest planned_weight_kg from that table. Otherwise falls back
+ * to the formula-based calculation.
  */
-export function getPlannedWeight(exercise: string, week: number): number | null {
-  const config = STARTING_WEIGHTS[exercise]
+export function getPlannedWeight(
+  exercise: string,
+  week: number,
+  progressionData?: Array<{ exercise_name: string; planned_weight_kg: number; progression_applied: string }>,
+): number | null {
+  const resolved = resolveExerciseName(exercise)
+
+  // Check progression engine data first (data-driven weights)
+  if (progressionData) {
+    const entry = progressionData.find(
+      (p) => p.exercise_name === exercise || p.exercise_name === resolved
+    )
+    if (entry?.planned_weight_kg != null) {
+      return entry.planned_weight_kg
+    }
+  }
+
+  // Formula fallback
+  const config = STARTING_WEIGHTS[resolved] ?? STARTING_WEIGHTS[exercise]
   if (!config || config.increment === 0) return config?.weight ?? null
 
   let increments: number
   if (week <= 3) {
     increments = week - 1
   } else if (week === 4) {
-    increments = 2 // deload uses week 3 weight
+    increments = 2
   } else if (week <= 7) {
     increments = week - 2
   } else {
-    increments = 5 // deload uses week 7 weight
+    increments = 5
   }
 
   return config.weight + increments * config.increment
