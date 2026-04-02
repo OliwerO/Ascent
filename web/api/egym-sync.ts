@@ -31,7 +31,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 1. Login to eGym via Netpulse
     const loginResp = await fetch(`https://${brand}.netpulse.com/np/exerciser/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+        'User-Agent': 'NetpulseFitness/3.11 (com.netpulse.netpulsefitness; build:853; iOS 17.2.0) Alamofire/5.4.4',
+        'x-np-user-agent': 'clientType=MOBILE_DEVICE; devicePlatform=IOS; deviceUid=0B7F0E30-9598-43EF-8DA6-7018BD289B3C; applicationName=EGYM Fitness; applicationVersion=3.11; applicationVersionCode=853; containerName=NetpulseFitness;',
+        'x-np-app-version': '3.11',
+      },
       body: new URLSearchParams({ username, password, relogin: 'false' }),
     })
 
