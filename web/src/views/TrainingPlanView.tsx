@@ -122,25 +122,10 @@ function formatActivityType(type: string): string {
   return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-function acwrColor(acwr: number): 'green' | 'yellow' | 'red' {
-  if (acwr > 1.5) return 'red'
-  if (acwr >= 0.8 && acwr <= 1.3) return 'green'
-  return 'yellow'
-}
-
-function acwrBgClass(acwr: number): string {
-  const c = acwrColor(acwr)
-  if (c === 'green') return 'text-accent-green'
-  if (c === 'yellow') return 'text-accent-yellow'
+function loadChangeColor(pct: number): string {
+  if (Math.abs(pct) <= 15) return 'text-accent-green'
+  if (Math.abs(pct) <= 25) return 'text-accent-yellow'
   return 'text-accent-red'
-}
-
-function acwrLabel(acwr: number): { text: string; color: string } {
-  if (acwr > 1.5) return { text: 'Spike risk — high injury probability', color: 'text-accent-red' }
-  if (acwr >= 1.3) return { text: 'Elevated load — monitor recovery', color: 'text-accent-yellow' }
-  if (acwr >= 0.8) return { text: 'Sweet spot — optimal training zone', color: 'text-accent-green' }
-  if (acwr >= 0.5) return { text: 'Detraining risk — consider increasing volume', color: 'text-accent-yellow' }
-  return { text: 'Significant detraining — fitness declining', color: 'text-accent-red' }
 }
 
 
@@ -997,7 +982,7 @@ function LiftProgressionTracker({
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// 5. Endurance Load Tracker (ACWR)
+// 5. Endurance Load Tracker (absolute load monitoring)
 // ═══════════════════════════════════════════════════════════════════
 function EnduranceLoadTracker({ activities }: { activities: Activity[] }) {
   const mountainActivities = useMemo(
@@ -1043,13 +1028,23 @@ function EnduranceLoadTracker({ activities }: { activities: Activity[] }) {
     return weeks.reduce((sum, w) => sum + w.duration, 0) / weeks.length
   }, [weeklyData, currentIdx])
 
-  const acwrElev = fourWeekAvgElev > 0 ? thisWeekElev / fourWeekAvgElev : 0
-  const acwrDur = fourWeekAvgDur > 0 ? thisWeekDur / fourWeekAvgDur : 0
+  const elevPctChange = fourWeekAvgElev > 0 ? Math.round(((thisWeekElev - fourWeekAvgElev) / fourWeekAvgElev) * 100) : null
+  const durPctChange = fourWeekAvgDur > 0 ? Math.round(((thisWeekDur - fourWeekAvgDur) / fourWeekAvgDur) * 100) : null
+
+  // Consecutive zero-elevation weeks (actual detraining signal)
+  const zeroElevWeeks = useMemo(() => {
+    let count = 0
+    for (let i = currentIdx; i >= 0; i--) {
+      if (weeklyData[i]?.elevation === 0) count++
+      else break
+    }
+    return count
+  }, [weeklyData, currentIdx])
 
   return (
-    <Card title="Endurance Load (ACWR)">
+    <Card title="Mountain Load">
       <div className="space-y-4">
-        {/* ACWR badges */}
+        {/* Weekly load badges */}
         <div className="grid grid-cols-2 gap-2">
           <div className="bg-bg-primary/50 rounded-lg p-2">
             <div className="text-[10px] text-text-muted">Weekly Vertical Gain</div>
@@ -1059,12 +1054,11 @@ function EnduranceLoadTracker({ activities }: { activities: Activity[] }) {
             <div className="text-[10px] text-text-muted">
               4wk avg: {Math.round(fourWeekAvgElev).toLocaleString()}m
             </div>
-            <div className={`text-xs font-semibold mt-1 ${acwrBgClass(acwrElev)}`}>
-              ACWR {acwrElev.toFixed(2)}
-            </div>
-            <div className={`text-[10px] mt-0.5 ${acwrLabel(acwrElev).color}`}>
-              {acwrLabel(acwrElev).text}
-            </div>
+            {elevPctChange != null && (
+              <div className={`text-xs font-semibold mt-1 ${loadChangeColor(elevPctChange)}`}>
+                {elevPctChange >= 0 ? '+' : ''}{elevPctChange}% vs avg
+              </div>
+            )}
           </div>
           <div className="bg-bg-primary/50 rounded-lg p-2">
             <div className="text-[10px] text-text-muted">Weekly Mountain Duration</div>
@@ -1074,39 +1068,27 @@ function EnduranceLoadTracker({ activities }: { activities: Activity[] }) {
             <div className="text-[10px] text-text-muted">
               4wk avg: {formatDuration(Math.round(fourWeekAvgDur))}
             </div>
-            <div className={`text-xs font-semibold mt-1 ${acwrBgClass(acwrDur)}`}>
-              ACWR {acwrDur.toFixed(2)}
-            </div>
-            <div className={`text-[10px] mt-0.5 ${acwrLabel(acwrDur).color}`}>
-              {acwrLabel(acwrDur).text}
-            </div>
-          </div>
-        </div>
-
-        {/* This week vs plan context */}
-        <div className="bg-bg-primary/50 rounded-lg p-2">
-          <div className="text-[10px] text-text-muted mb-1">This week vs typical</div>
-          <div className="text-xs text-text-secondary">
-            {fourWeekAvgElev > 0 ? (
-              <>
-                Vertical: {thisWeekElev.toLocaleString()}m vs {Math.round(fourWeekAvgElev).toLocaleString()}m avg
-                <span className={`ml-1 font-semibold ${
-                  thisWeekElev > fourWeekAvgElev * 1.3
-                    ? 'text-accent-red'
-                    : thisWeekElev < fourWeekAvgElev * 0.7
-                      ? 'text-accent-yellow'
-                      : 'text-accent-green'
-                }`}>
-                  ({thisWeekElev > fourWeekAvgElev
-                    ? `+${Math.round(((thisWeekElev - fourWeekAvgElev) / fourWeekAvgElev) * 100)}%`
-                    : `${Math.round(((thisWeekElev - fourWeekAvgElev) / fourWeekAvgElev) * 100)}%`})
-                </span>
-              </>
-            ) : (
-              <span className="text-text-muted">Not enough history for comparison</span>
+            {durPctChange != null && (
+              <div className={`text-xs font-semibold mt-1 ${loadChangeColor(durPctChange)}`}>
+                {durPctChange >= 0 ? '+' : ''}{durPctChange}% vs avg
+              </div>
             )}
           </div>
         </div>
+
+        {/* Load spike warning */}
+        {elevPctChange != null && elevPctChange > 15 && (
+          <div className="text-xs font-medium text-accent-yellow bg-accent-yellow/10 rounded-lg px-3 py-2">
+            Vertical gain increased &gt;15% vs 4-week average — monitor recovery
+          </div>
+        )}
+
+        {/* Actual detraining signal (not ACWR-derived) */}
+        {zeroElevWeeks >= 3 && (
+          <div className="text-xs font-medium text-accent-red bg-accent-red/10 rounded-lg px-3 py-2">
+            No mountain activity for {zeroElevWeeks} consecutive weeks during mountain-primary season
+          </div>
+        )}
 
         {/* 8-week elevation bar chart */}
         <div className="h-36">

@@ -11,15 +11,19 @@
 
 **Purpose:** Morning check-in dashboard. Glanceable on phone without scrolling. Shows today's recovery state + yesterday's activity.
 
+**Design note:** This dashboard must be scannable in <30 seconds on a phone. Every panel must answer: *should I train normally today?* Maximum 5–6 panels. Use Grafana Stat panel background color mode (entire panel turns green/amber/red) rather than small color indicators.
+
 **Layout:** Single-column, mobile-optimized. 6 panels stacked vertically.
 
 ### Panel 1: Recovery Status (Stat panel, full width)
 
-Three stat values side by side:
+Three stat values side by side. **Use personal rolling baselines** (30-day mean ± 1 SD), not fixed population thresholds, for all color coding:
 
 - **HRV** — last_night_avg from `hrv` table. Color: green if within baseline balanced range, yellow if below balanced_low, red if >15% below baseline_low_upper.
 - **Sleep Score** — overall_score from `sleep` table. Color: green >75, yellow 60-75, red <60.
 - **Training Readiness** — training_readiness_score from `daily_metrics`. Color: green >60, yellow 40-60, red <40.
+
+**Future addition:** Once the Telegram/Slack subjective wellness questionnaire is implemented, add subjective wellness composite score to this panel as the primary readiness metric (strongest evidence base).
 
 ```sql
 SELECT
@@ -107,6 +111,8 @@ ORDER BY start_time
 
 **Purpose:** Weekly/on-demand deep dive. Training volume analysis, progression tracking, body comp trends. Check during weekly review or when curious.
 
+**Design note:** Default to collapsed rows on mobile; expand on tap. Use progressive disclosure — summary stats visible, detail charts collapsed.
+
 **Layout:** Single-column mobile-first, scrollable. 7 panels.
 
 ### Panel 1: Weekly Training Volume — Gym vs Mountain (Bar chart)
@@ -181,6 +187,7 @@ ORDER BY date
 - Y axis: estimated_1rm (best per session)
 - Last 16 weeks
 - Only show working sets (set_type = 'working')
+- **Note:** Normal session-to-session e1RM variation is ±3–5%. Only flag plateaus after ≥4 weeks of flat/declining trend. Cross-reference with mountain activity log before concluding "plateau."
 
 ```sql
 SELECT
@@ -202,6 +209,7 @@ ORDER BY ts.date
 - Stacked areas: deep, light, REM, awake (in seconds → hours)
 - Last 14 days
 - Useful for spotting deep sleep deficits
+- **Label as "approximate — ±45 min accuracy per stage"** and never color-code individual stages red/green. Garmin correctly classifies only ~69% of sleep epochs vs PSG; REM detection is only 33% accurate (Schyvens et al. 2025).
 
 ```sql
 SELECT
@@ -248,44 +256,146 @@ ORDER BY date
 
 -----
 
+## Dashboard 3: Quarterly Strategic Review
+
+**Purpose:** Deep analysis for seasonal planning and goal review. 20–30 minute session, ideally quarterly (or at end of each training block). This dashboard is for detailed analysis, not phone glance — wider panels, multi-axis charts acceptable.
+
+**Layout:** Wider panels, multi-axis charts, scrollable. Best viewed on tablet or desktop.
+
+### Panel 1: Training Volume & Intensity Evolution (Stacked area, 90 days)
+
+- Stacked area chart: weekly training volume by type (strength volume in kg, mountain elevation in m, other cardio in minutes)
+- Overlay: average weekly sRPE load (once sRPE capture is implemented)
+- 90-day view
+
+```sql
+SELECT
+  date_trunc('week', date) AS week,
+  SUM(CASE WHEN activity_type = 'strength_training' THEN duration_seconds / 60.0 ELSE 0 END) AS gym_minutes,
+  SUM(CASE WHEN activity_type IN ('ski_touring', 'splitboarding', 'hiking', 'resort_skiing', 'backcountry_skiing')
+      THEN elevation_gain ELSE 0 END) AS mountain_elevation_m,
+  SUM(CASE WHEN activity_type NOT IN ('strength_training', 'ski_touring', 'splitboarding', 'hiking', 'resort_skiing', 'backcountry_skiing')
+      THEN duration_seconds / 60.0 ELSE 0 END) AS other_minutes
+FROM activities
+WHERE date >= CURRENT_DATE - INTERVAL '90 days'
+GROUP BY week
+ORDER BY week
+```
+
+### Panel 2: Fitness Progression (Multi-line time series, 90 days)
+
+- VO2max 90-day trend (running-derived only — filter by activity_type)
+- Display as "48 ± 5 ml/kg/min" with confidence band
+- Flag single-session changes >3 ml/kg/min as noise
+
+```sql
+SELECT date, vo2max
+FROM daily_metrics
+WHERE vo2max IS NOT NULL
+AND date >= CURRENT_DATE - INTERVAL '90 days'
+ORDER BY date
+```
+
+### Panel 3: e1RM Trajectories for Compound Lifts (Multi-line, 90 days)
+
+- One line per lift: squat, deadlift, bench press, overhead press, barbell row
+- Best e1RM per session, with 30-day rolling average overlay
+- Flag lifts with ≥4 weeks flat/declining as "plateau detected"
+
+### Panel 4: Body Composition Trend (Dual-axis, 90 days)
+
+- Weight 90-day EWMA trend line with target band
+- Body fat % overlay if available (from eGym scans)
+- Muscle mass overlay if available
+
+```sql
+SELECT date, weight_kg, body_fat_pct, muscle_mass_grams / 1000.0 AS muscle_mass_kg, source
+FROM body_composition
+WHERE date >= CURRENT_DATE - INTERVAL '90 days'
+ORDER BY date
+```
+
+### Panel 5: Season Periodization Timeline (Annotated)
+
+- Annotated timeline showing training blocks (strength focus, pre-season, in-season, transition)
+- Key events: races, multi-day trips, illness, deload weeks
+- Manual annotations from coaching_log or goals table
+
+### Panel 6: Goal Progress (Stat panels)
+
+- Current vs target for each active goal
+- Progress percentage and projected completion date
+
+```sql
+SELECT category, metric, target_value, current_value,
+  ROUND((current_value / NULLIF(target_value, 0)) * 100) AS progress_pct
+FROM goals
+WHERE status = 'active'
+ORDER BY category
+```
+
+-----
+
 ## Alerts (via Grafana → Telegram)
 
 All alerts delivered via Grafana alerting → webhook to Jarvis/Telegram.
 
-### Alert 1: HRV Drop >15% from Baseline
+**Design principles:**
+- **Compound conditions required:** Alerts should fire only when 2+ signals converge (e.g., HRV drop AND poor sleep, not HRV drop alone). Compound conditions dramatically reduce false positives.
+- **Time-delay filtering:** Require 2–3 consecutive concerning days before alerting. Single-day anomalies are noise.
+- **Three-tier structure:** Red (push notification — requires action), Amber (dashboard badge — visible at next check), Informational (weekly summary only — no real-time alert).
+- **Target:** No more than 1–2 genuine alerts per week. If exceeding this, thresholds are too sensitive.
+
+### Alert 1: Recovery Compound Alert (RED tier)
 
 ```
-Condition: last_night_avg < (baseline_balanced_low * 0.85)
+Condition: 7-day rolling ln(rMSSD) drops >1.5 SD below 60-day baseline
+         for 2+ consecutive days
+         AND sleep quality below threshold (total_sleep < 6h OR overall_score < 60)
 Evaluation: Daily at 07:00
-Message: "HRV Alert: Last night's HRV ({value}) is >15% below your baseline. Consider a lighter session today."
-Cooldown: 24 hours (don't repeat same-day)
+Message: "Recovery Alert: HRV has been significantly below your baseline for {days} days,
+         and sleep quality is also compromised. Consider a lighter session or rest day today."
+Cooldown: 48 hours
 ```
 
-### Alert 2: Sleep Score <60
+### Alert 2: Sleep Score <60 (AMBER tier)
 
 ```
-Condition: overall_score < 60
+Condition: overall_score < 60 for 2+ consecutive nights
 Evaluation: Daily at 07:00
-Message: "Sleep Alert: Score was {value} last night. Recovery may be impaired — consider adjusting today's training intensity."
-Cooldown: 24 hours
+Message: "Sleep Alert: Score below 60 for {count} consecutive nights. Recovery may be accumulating a deficit."
+Cooldown: 48 hours
+Delivery: Dashboard badge (not push notification unless 3+ nights)
 ```
 
-### Alert 3: Training Status = Detraining
+### Alert 3: Training Status = Detraining (INFORMATIONAL tier)
 
 ```
 Condition: training_readiness field or Garmin training_status indicates 'detraining'
 Evaluation: Daily
-Message: "Training Status: Garmin reports 'detraining'. You may need to increase training stimulus this week."
-Cooldown: 48 hours (this status persists, don't spam)
+Message: Included in weekly summary only — "Garmin reported 'detraining' on {dates}. Note: this can be triggered by GPS/HR artifacts."
+Delivery: Weekly summary only (Garmin Training Status is Tier 3 — contextual, never drives decisions)
 ```
 
-### Alert 4: Weight Change >1kg in 3 Days
+### Alert 4: Weight Trend Shift (AMBER tier)
 
 ```
-Condition: ABS(today_weight - weight_3_days_ago) > 1.0
-Evaluation: Daily at 07:00
-Message: "Weight Alert: {direction} {delta}kg in 3 days (now {current}kg). Check hydration and nutrition."
-Cooldown: 48 hours
+Condition: 7-day rolling average shifts >0.5 kg sustained over 2+ weeks
+         (compared to previous 30-day rolling average)
+Evaluation: Weekly (Sunday)
+Message: "Weight Trend: 7-day average has shifted {direction} by {delta}kg over the past {weeks} weeks (now {current}kg)."
+Cooldown: 1 week
+Delivery: Dashboard badge + weekly summary
+```
+
+### Alert 5: Training Load Spike (RED tier)
+
+```
+Condition: Current week's total sRPE load > 115% of 28-day rolling average
+         (once sRPE capture is implemented)
+Evaluation: Daily
+Message: "Load Alert: This week's training load is {pct}% above your 4-week average. Consider moderating remaining sessions."
+Cooldown: 1 week
 ```
 
 -----

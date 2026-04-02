@@ -137,6 +137,30 @@ export function useTrainingSets(sessionIds: number[]) {
   }, [sessionIds.join(',')])
 }
 
+export function useSubjectiveWellness(days = 30) {
+  return useFetch('subjective_wellness', async () => {
+    const { data, error } = await supabase
+      .from('subjective_wellness')
+      .select('date,sleep_quality,energy,muscle_soreness,motivation,stress,composite_score,notes')
+      .gte('date', fmt(daysAgo(days)))
+      .order('date', { ascending: false })
+    if (error) throw error
+    return data
+  }, [days])
+}
+
+export function useReadinessComposite(days = 7) {
+  return useFetch('readiness_composite', async () => {
+    const { data, error } = await supabase
+      .from('readiness_composite')
+      .select('*')
+      .gte('date', fmt(daysAgo(days)))
+      .order('date', { ascending: false })
+    if (error) throw error
+    return data
+  }, [days])
+}
+
 export function useCoachingLog(days = 7) {
   return useFetch('coaching_log', async () => {
     const { data, error } = await supabase

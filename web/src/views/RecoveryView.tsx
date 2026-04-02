@@ -137,18 +137,13 @@ export default function RecoveryView() {
   const flagBBLow = bodyBattery != null && bodyBattery < 30
   const flagTRLow = trainingReadiness != null && trainingReadiness < 40
 
-  const fatigueFlags = [
+  // --- Primary recovery signals (evidence-backed) ---
+  const primaryFlags = [
     {
       label: flagHRVSuppressed
         ? `HRV suppressed: ${hrvSuppressedDays} of 7 days >10% below avg${hrvAvg ? ` (avg ${Math.round(hrvAvg)}ms)` : ''}`
         : `HRV stable${hrvAvg ? ` (${Math.round(hrvAvg)}ms 7d avg)` : ''}`,
       active: flagHRVSuppressed,
-    },
-    {
-      label: flagHRElevated
-        ? `Resting HR elevated: ${hrElevatedDays} of 7 days >5bpm above avg${restingHRAvg ? ` (avg ${Math.round(restingHRAvg)})` : ''}`
-        : `Resting HR normal${restingHRAvg ? ` (${Math.round(restingHRAvg)}bpm 7d avg)` : ''}`,
-      active: flagHRElevated,
     },
     {
       label: flagSleepLow
@@ -157,19 +152,25 @@ export default function RecoveryView() {
       active: flagSleepLow,
     },
     {
-      label: flagBBLow
-        ? `Body Battery critically low: ${bodyBattery} (<30 threshold)`
-        : `Body Battery OK${bodyBattery != null ? ` (${bodyBattery})` : ''}`,
+      label: flagHRElevated
+        ? `Resting HR elevated: ${hrElevatedDays} of 7 days >5bpm above avg${restingHRAvg ? ` (avg ${Math.round(restingHRAvg)})` : ''}`
+        : `Resting HR normal${restingHRAvg ? ` (${Math.round(restingHRAvg)}bpm 7d avg)` : ''}`,
+      active: flagHRElevated,
+    },
+  ]
+  const primaryFlagCount = primaryFlags.filter((f) => f.active).length
+
+  // --- Garmin indicators (proprietary estimates — secondary) ---
+  const garminIndicators = [
+    {
+      label: `Body Battery: ${bodyBattery ?? '—'}`,
       active: flagBBLow,
     },
     {
-      label: flagTRLow
-        ? `Training Readiness low: ${trainingReadiness} (<40 threshold)`
-        : `Training Readiness OK${trainingReadiness != null ? ` (${trainingReadiness})` : ''}`,
+      label: `Training Readiness: ${trainingReadiness ?? '—'}`,
       active: flagTRLow,
     },
   ]
-  const activeFlagCount = fatigueFlags.filter((f) => f.active).length
 
   // --- HRV 14d trend direction ---
   const hrvFirst7 = (hrv.data ?? []).slice(7, 14).filter((d: any) => d.last_night_avg != null)
@@ -212,10 +213,10 @@ export default function RecoveryView() {
 
   return (
     <div className="space-y-4 pb-8">
-      {/* Fatigue Flags (primary diagnostic) */}
-      <Card title="Fatigue Flags">
+      {/* Recovery Signals (primary — evidence-backed) */}
+      <Card title="Recovery Signals">
         <div className="space-y-2">
-          {fatigueFlags.map((flag) => (
+          {primaryFlags.map((flag) => (
             <div key={flag.label} className="flex items-start gap-2 text-sm">
               {flag.active ? (
                 <AlertTriangle size={16} className="text-accent-red mt-0.5 shrink-0" />
@@ -230,14 +231,33 @@ export default function RecoveryView() {
         </div>
         <div
           className={`mt-3 rounded-lg px-3 py-2 text-sm font-medium ${
-            activeFlagCount >= 2
+            primaryFlagCount >= 2
               ? 'bg-accent-red/10 text-accent-red'
               : 'bg-bg-card-hover text-text-secondary'
           }`}
         >
-          {activeFlagCount} / 5 flags active
-          {activeFlagCount >= 2 && ' — auto rest override recommended'}
+          {primaryFlagCount} / {primaryFlags.length} signals flagged
+          {primaryFlagCount >= 2 && ' — consider rest or light session'}
         </div>
+
+        {/* Garmin Indicators (secondary — collapsed by default) */}
+        <details className="mt-3 pt-2 border-t border-border">
+          <summary className="text-[11px] text-text-muted cursor-pointer hover:text-text-secondary">
+            Show Garmin indicators (estimates)
+          </summary>
+          <div className="mt-2 space-y-1.5 opacity-70">
+            {garminIndicators.map((ind) => (
+              <div key={ind.label} className="flex items-start gap-2 text-xs">
+                {ind.active ? (
+                  <AlertTriangle size={12} className="text-accent-yellow mt-0.5 shrink-0" />
+                ) : (
+                  <CheckCircle size={12} className="text-accent-green/60 mt-0.5 shrink-0" />
+                )}
+                <span className="text-text-muted">{ind.label}</span>
+              </div>
+            ))}
+          </div>
+        </details>
       </Card>
 
       {/* HRV Trend (14d) */}
@@ -329,7 +349,7 @@ export default function RecoveryView() {
       </Card>
 
       {/* Sleep Trend (14d) */}
-      <Card title="Sleep Trend (14d)">
+      <Card title="Sleep Trend (14d)" subtitle="Stage breakdown is approximate (±45 min per stage). Total duration is the reliable number.">
         {sleepTrendLabel && (
           <div className="text-xs font-medium text-text-secondary mb-1">{sleepTrendLabel}</div>
         )}

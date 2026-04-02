@@ -751,6 +751,40 @@ validate the push side (uploading workouts to the watch).
 | Sunday 20:45 | `weekly_summary` | Claude Code |
 | On trigger | `opus_data_prep` | Script |
 
+### Data Integrity & Validation Rules
+
+All wearable data passes through validation before reaching the dashboard or coaching layer.
+
+**Reject-level rules (applied in garmin_sync.py before writing to Supabase):**
+
+| Metric | Reject if |
+|--------|-----------|
+| rMSSD (ms) | < 5 or > 250 |
+| Resting HR (bpm) | < 25 or > 120 |
+| Exercise HR (bpm) | < 30 or > 230 |
+| Sleep duration (hours) | < 2 or > 16 |
+| Daily weight change (kg) | > ± 3.0 in 24h |
+| VO2max change | > 5 ml/kg/min in one session |
+| Elevation gain rate | > 300 m/hour (non-climbing) |
+
+**Flag-level rules (applied at dashboard/coaching query layer):**
+- rMSSD < 8 or > 200; resting HR < 30 or > 100; sleep < 3h or > 14h
+- Daily weight change > ± 2.0 kg; weekly weight change > ± 3.0 kg
+- VO2max change > 3 ml/kg/min week-over-week
+- All HR data during tagged strength activities (wrist HR MAPE 15–28% during RT)
+
+**Gap-aware rolling calculations:**
+- Never use `ROWS BETWEEN N PRECEDING` — it counts rows, not dates.
+- Always use `generate_series()` date spine with LEFT JOIN, NULL-aware aggregation.
+- Minimum valid-day thresholds: 4/7 for weekly, 20/30 for monthly, 60/90 for quarterly.
+
+**Epoch-aware baselines:**
+- Device changes, firmware updates, or algorithm shifts trigger baseline reset.
+- Track in `data_epochs` table. Baselines recalculate from epoch start date.
+- HRV: 7-day short-term vs 60-day normal. Weight: 7-day vs 30-day. Performance: 30-day vs 90-day.
+
+**Data retention:** Daily granularity forever. Sub-daily: full 90 days → hourly aggregates 90d–2y → daily aggregates permanently.
+
 ### Critical Decisions
 
 These are locked and must not be changed without an Opus session:
@@ -761,6 +795,11 @@ These are locked and must not be changed without an Opus session:
 - Target weights MUST be pre-filled on Garmin watch — athlete should never have to look up what weight to use.
 - Daily adjustments require Telegram confirmation before applying.
 - Training times default to: gym 19:00 weekday evenings, touring 17:00 weekdays / 07:00 weekends.
+- Subjective wellness questionnaire is the highest-priority unbuilt feature — stronger evidence base than any wearable metric for detecting maladaptation (Saw et al. 2016, Nummela et al. 2024).
+- ACWR ratio is not implemented — use absolute weekly load monitoring with >10–15% spike detection.
+- Body Battery, sleep staging, and Garmin Training Status/Readiness are displayed as contextual information only — never used as inputs to automated coaching decisions.
+- All coaching messages use autonomy-supportive framing per SDT research — never directive language ("should," "must," "need to").
+- Alert system uses compound conditions and time-delay filtering — no single-metric single-day alerts.
 
 ### Open Items (Blocked on Garmin Spike)
 

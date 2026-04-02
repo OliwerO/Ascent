@@ -278,22 +278,8 @@ export default function WeekView() {
         )}
       </Card>
 
-      {/* HRV Trend */}
-      <Card title="HRV Trend (14d)">
-        {hrvSparkline.length > 1 ? (
-          <Sparkline
-            data={hrvSparkline}
-            color="#818cf8"
-            height={60}
-            baseline={hrvBaseline}
-          />
-        ) : (
-          <div className="text-sm text-text-muted">Not enough data</div>
-        )}
-      </Card>
-
       {/* Sleep Trend */}
-      <Card title="Sleep Trend (14d)">
+      <Card title="Sleep Trend (14d)" subtitle="Stage breakdown is approximate (±45 min per stage). Total duration is the reliable number.">
         {sleepBars.length > 0 ? (
           <ResponsiveContainer width="100%" height={120}>
             <BarChart data={sleepBars} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>

@@ -1,9 +1,11 @@
 # Ascent Scientific Knowledge Base — Unified Reference for AI Coaching
 
-**Version:** 1.1 — March 2026
+**Version:** 1.2 — April 2026
 **Scope:** Strength training, mountain endurance (ski touring/splitboarding, hike-and-fly paragliding), concurrent training, recovery, periodization, and biomarker integration for a recreational mountain athlete based in Innsbruck, Austria.
 **Purpose:** Machine-readable decision reference for the Ascent AI coaching system. Every number, threshold, and protocol detail is preserved from source research. When sources conflict, all positions are presented with relative evidence strength.
 **Assumptions:** All volume prescriptions assume "hard working sets" (0–4 RIR, 5–30 reps, 30–85% 1RM). All recommendations assume adequate protein intake (1.6–2.2 g/kg/day) and sufficient sleep (7–9 hours) unless otherwise specified.
+**Changelog v1.2:** Added Domain 7 (Metric Hierarchy & Signal Quality) and Domain 8 (Dashboard & Communication Design Principles). Updated §1.1 with double progression decision logic, §1.3 with 2025 SUCRA autoregulation rankings, §1.5 with autoregulated deload triggers and natural deload concept, §3.1 with fatigue-driven interference mechanism clarification and progression expectations, §3.1 application rule with session displacement strategy, §3.4 with e1RM tracking rules, §4.1 with Le Meur et al. (2013) HRV caveat, §4.3 with subjective wellness questionnaire specification and Nummela et al. (2024) finding.
+
 **Changelog v1.1:** Added Integration Rules #21–24 (schedule disruptions, illness, multi-day touring, caloric deficit). Corrected Schoenfeld 10+ sets claim to reflect non-significant trend (p=0.074). Updated §1.3 with Robinson et al. (2024) proximity-to-failure dose-response distinction. Corrected Roberts snowboarding HR data (§2.5c) to distinguish session average from active riding. Added §2.7 (multi-day touring protocol), §4.6 (training during illness), §4.7 (caloric deficit interaction), §5.6 (schedule disruption management). Updated §5.1 with 2025 ACSM Position Stand context. Updated §6.4 with creatine cognitive benefits. Added missing landmark sources throughout.
 
 -----
@@ -75,7 +77,7 @@ Progressive overload — systematically increasing training demands over time �
 
 **Linear progression** works via session-to-session load increases of **2.5–5 lbs (upper body) and 5–10 lbs (lower body)** for novices. The ACSM Position Stand (2009) recommends a 2–10% load increase when the trainee can perform 1–2 reps beyond the target RM. Linear progression typically stalls after **3–6 months** of consistent training as neural adaptations plateau.
 
-**Double progression** increases reps within a fixed range before increasing load. A standard protocol: train at a weight until all sets hit the top of the range (e.g., 3×12), then increase load by the smallest available increment and resume at the bottom of the range (e.g., 3×8). Tighter rep ranges (2-rep gaps like 4–6) suit barbell compounds; wider ranges (4–6-rep gaps like 8–15) suit isolation and machine exercises where percentage jumps are smaller.
+**Double progression** increases reps within a fixed range before increasing load. A standard protocol: train at a weight until all sets hit the top of the range (e.g., 3×12), then increase load by the smallest available increment and resume at the bottom of the range (e.g., 3×8). Tighter rep ranges (2-rep gaps like 4–6) suit barbell compounds; wider ranges (4–6-rep gaps like 8–15) suit isolation and machine exercises where percentage jumps are smaller. **Decision logic for automated double progression:** when all sets hit the top of the prescribed rep range with ≥ 2 RIR, increase weight by the minimum increment (2.5 kg compounds, 1–2 kg isolation) and reset reps to the bottom of the range. If reps decrease from the previous session at the same weight, flag for fatigue assessment and cross-reference the mountain activity log. When load stalls for 3+ consecutive attempts, add one set per exercise (up to a per-session maximum) for 3–4 weeks, then retry load progression.
 
 **Undulating periodization (DUP)** varies intensity/volume within each week. A typical structure: Day 1 heavy (4–6 sets × 3–5 reps @ 85–90% 1RM), Day 2 moderate (3–4 sets × 8–12 reps @ 65–80%), Day 3 light (3–4 sets × 12–15 reps @ 50–65%). Zourdos et al. (2016) found DUP configurations produce significant 1RM gains in trained powerlifters over 6 weeks, with some weekly orderings slightly outperforming others. The Moesgaard et al. (2022) meta-analysis found DUP favored over linear periodization for 1RM strength in trained participants **(ES = 0.61, p = 0.04)** but showed no difference for hypertrophy. The Williams et al. (2017) meta-analysis confirmed periodized > non-periodized (ES = 0.43), with undulating models slightly more favorable. Stronger By Science re-analysis estimated undulating periodization produced strength gains **~28% faster** than linear (weekly gains: 2.19–2.24% vs. 1.57–1.58%).
 
@@ -217,9 +219,11 @@ Intensity can be prescribed via fixed percentages of 1RM or autoregulated via RP
 - Refalo et al. (2023): trained individuals were within **0.40 (±0.68) reps of a 1-RIR target** and 0.90 (±0.81) reps of a 3-RIR target.
 
 **Autoregulation vs. fixed loading outcomes:**
+- **2025 network meta-analysis** ranked load prescription methods for squat 1RM improvement by SUCRA: **APRE 93.0% > RPE 66.8% > VBT 27.0% > percentage-based 13.2%**. This confirms autoregulation is superior to fixed loading, with RPE-based methods the most practical for automated implementation (requires no special equipment unlike VBT).
 - Helms et al. (2018): RPE-based vs. percentage 1RM loading in periodized programs matched for sets and repetitions. Both groups significantly increased 1RM and muscle thickness, with non-significant but small effect size advantages favoring the RPE group.
 - Mann et al. (2010): APRE significantly outperformed linear periodization in bench press 1RM (+93.4 N vs. −0.40 N, p = 0.02) and squat 1RM (+192.7 N vs. +37.2 N, p = 0.05) over 6 weeks.
 - Graham & Cleather (2021): autoregulated training produced significantly greater strength gains than fixed loading: front squat **+11.7% vs. +8.3%** (p = 0.004), back squat **+10.8% vs. +7.1%** (p = 0.006) over 12 weeks.
+- Zhang et al. (2021 meta-analysis): confirmed autoregulation is superior to fixed loading for maximal strength across multiple studies.
 
 **Proximity to failure: different dose-response for hypertrophy vs. strength (Robinson et al., 2024, *Sports Medicine*):**
 
@@ -337,7 +341,7 @@ A deload is a planned period of **reduced training stress (typically 5–7 days)
 - Rogerson et al. (2024), cross-sectional survey of 246 competitive athletes: average deload every **5.6 ± 2.3 weeks**, lasting **6.4 ± 1.7 days**. Athletes commonly reduced both reps per set and total weekly sets.
 - Bell et al. (2024): 47% of athletes use pre-planned deloads, 13% purely autoregulated, ~39% combination. The combined approach is recommended.
 
-**Complete rest vs. active deload:** Coleman et al. (2024) tested 1-week complete training cessation mid-program and found it **negatively impacted lower body strength** (~6% lower improvement) but had **no effect on hypertrophy, power, or muscular endurance** — confirming that active deloads are preferable to full rest for strength maintenance.
+**Complete rest vs. active deload:** Coleman et al. (2024) tested 1-week complete training cessation mid-program and found it **negatively impacted lower body strength** (~6% lower improvement) but had **no effect on hypertrophy, power, or muscular endurance** — confirming that active deloads are preferable to full rest for strength maintenance. Notably, Coleman et al. also found that **continuous training slightly outperformed a mid-program deload for 1RM gains**, suggesting deloads should not be reflexive calendar events but rather triggered by actual need.
 
 **Schoenfeld et al. (2024)** confirmed that a 1-week deload after 4 weeks of high-volume training resulted in no loss of strength or muscle size.
 
@@ -375,9 +379,16 @@ A deload is a planned period of **reduced training stress (typically 5–7 days)
 
 ### Application rule
 
-- SCHEDULE proactive deloads: default every 4th week for concurrent training athletes (3:1 ratio).
+- PREFER autoregulated deloads over calendar-fixed: Coleman et al. (2024) found continuous training slightly outperformed mid-program deloads, suggesting deloads should be need-driven, not reflexive.
+- SCHEDULE proactive deloads: default every 4th week for concurrent training athletes (3:1 ratio), but allow autoregulation to override.
 - ALLOW autoregulation to override: extend to week 5 if readiness markers remain strong; pull forward to week 3 if markers deteriorate.
 - NEVER go beyond 6 weeks without a deload during progressive loading phases.
+- RECOGNIZE "natural deloads": weeks with 3+ mountain days and only 1 gym session already function as partial deloads — the system should recognize these and not schedule a separate deload week immediately after.
+- AUTOREGULATED DELOAD TRIGGERS (any of the following):
+  - IF e1RM trends downward for ≥ 3 consecutive sessions
+  - IF average session RPE exceeds target by ≥ 1.5 for 2+ weeks
+  - IF trailing 2-week mountain volume exceeds 150% of baseline
+  - IF subjective fatigue scores remain below threshold for 5+ days
 - REACTIVE OVERRIDE TRIGGERS (trigger immediate deload regardless of schedule position):
   - IF RPE creeps >1 point at the same load for 2+ sessions
   - IF wellness scores decline for 2+ consecutive weeks
@@ -1275,14 +1286,18 @@ Hickson's foundational 1980 study showed ~43% reduction in strength gains, but u
 - Ski touring and hiking are weight-bearing, eccentric-heavy activities (closer to running on the interference spectrum), but their typically low-to-moderate sustained intensity means they do not acutely block anabolic signaling the way high-intensity or high-volume endurance work does.
 - **Ski touring and hiking with a pack are concentric-dominant on the ascent** — causing less interference than running, which is a significant advantage for this athlete profile.
 
-**Molecular mechanisms (AMPK-mTOR crosstalk):**
+**Molecular mechanisms — primarily fatigue-driven, not molecular signaling:**
+- The AMPK-mTOR molecular interference is real but overstated in practical terms. Hamilton & Philp (2013) and Coffey & Hawley (2017) demonstrated that the practical interference effect is primarily driven by **residual fatigue and total training volume**, not acute molecular signaling.
 - Endurance exercise activates AMPK, which directly inhibits mTOR via TSC2 phosphorylation. This is dose-dependent.
 - Coffey et al. (2009): **30 minutes of moderate-intensity cycling did not inhibit mTOR activation**, while **10 × 6-second maximal sprints completely abolished mTOR signaling** when performed before strength work.
 - Lundberg et al. (2012): 45 minutes of cycling at 70% VO2max performed 6 hours before resistance exercise caused no inhibition of mTOR.
 - AMPK returns to baseline within **1–3 hours** post-endurance; mTOR remains elevated **~18 hours** post-resistance.
 - **Practical implication: low-to-moderate intensity endurance — the bread and butter of mountain sport — poses minimal molecular interference risk.**
-- Coffey & Hawley (2017): AMPK-mTOR crosstalk alone is an inadequate explanation. Other factors include residual fatigue, glycogen depletion, satellite cell response interference, and fiber-type competition.
 - For untrained/recreational individuals, any exercise creates a "generic molecular footprint" — true phenotype-specific molecular conflict emerges mainly in highly trained athletes.
+
+**Practical magnitude for concurrent mountain athletes:**
+- **Expect ~15–25% slower strength progression** than a dedicated lifter. Lower body gains are most affected; upper body is relatively unaffected by mountain activities.
+- Separate strength and endurance sessions by ≥ 6 hours (ideally 24+). After mountain days with > 1,000m elevation gain, reduce expected gym performance by 5–10% and target RPE by 0.5–1.0.
 
 **Practical magnitude for recreational athletes:**
 - Schumann et al. (2022): training status was not a significant moderator of interference.
@@ -1292,12 +1307,14 @@ Hickson's foundational 1980 study showed ~43% reduction in strength gains, but u
 
 ### Application rule
 
-- DO NOT fear concurrent training for recreational mountain athletes. Program both modalities confidently.
+- DO NOT fear concurrent training for recreational mountain athletes. Program both modalities confidently. Interference is primarily fatigue-driven, not molecular (Hamilton & Philp 2013; Coffey & Hawley 2017).
+- EXPECT ~15–25% slower strength progression than dedicated lifters; lower body most affected; upper body relatively unaffected by mountain activities.
 - IF user has power/explosive goals → separate those sessions from endurance by ≥24 hours.
 - KEEP majority of endurance volume at low-to-moderate intensity to minimize AMPK-mediated interference.
 - ENSURE adequate protein (≥1.6–2.0 g/kg/day) and positive energy balance — these substantially mitigate interference.
 - USE cycling-based or low-impact endurance where possible for cross-training; reserve sport-specific weight-bearing endurance for specificity phases.
 - MONITOR strength performance trends during endurance-heavy phases; IF 1RMs or key rep performances drop >5–10% for several weeks → reduce endurance intensity/volume and prioritize recovery.
+- SESSION DISPLACEMENT STRATEGY: plan **2 guaranteed + 1 bonus** gym sessions per week. When only 1 gym day remains in a week, switch to a full-body maintenance template with compound lifts at ≥ 85% recent loads — Graves et al. (1988) showed strength maintained at 1×/week for 12 weeks.
 
 ### Key sources
 
@@ -1513,6 +1530,14 @@ Bosquet et al. (2013, 103 studies): significant maximal force decline begins at 
 
 **What can be aggressively cut:** total sets (by 67–89%), number of exercises (6–8 → 3–4), all isolation work, session duration (60–90 → 20–40 min). **What must be preserved:** relative load, proximity to failure (RPE ≥7), minimum weekly frequency.
 
+**e1RM tracking rules for monitoring progression:**
+- Use **Epley formula** (e1RM = weight × (1 + 0.0333 × reps)) for sets of ≤ 6 reps (Reynolds et al., 2006; DiStasio 2014 validated Epley within +2.7 kg from 3RM).
+- Use **average of Epley + Brzycki** for 7–10 reps.
+- **Flag sets of > 10 reps** as low-confidence for e1RM purposes (Reynolds: prediction from > 10 reps had > 20% error in some exercises).
+- Normal session-to-session variability is **± 3–5%** — do not react to single-session fluctuations.
+- A genuine plateau requires e1RM trending **flat or declining for ≥ 4 weeks** despite adequate recovery — always cross-reference with mountain activity log before concluding "plateau."
+- Track e1RM from the **best set of each session** (not average) to reduce accumulated in-session fatigue noise.
+
 ### Key sources
 
 - Bickel CS, Cross JM, Bamman MM. "Exercise dosing to retain resistance training adaptations." *Med Sci Sports Exerc*, 2011; 43(7): 1177–1187. DOI: 10.1249/MSS.0b013e318207c15d.
@@ -1563,6 +1588,7 @@ Heart rate variability — specifically the natural log of rMSSD (ln rMSSD) — 
 - CV above 7–10% paired with declining weekly mean → maladaptation risk.
 - Plews et al. (2012): NFOR athlete showed CV declining at −0.65%/week alongside declining ln rMSSD (slope = −0.17 ms/week).
 - **Critical red flag:** declining mean HRV with simultaneously declining CV — "parasympathetic saturation" may indicate NFOR.
+- **Le Meur et al. (2013) caveat:** Overloaded endurance athletes can show *increasing* HRV alongside declining performance — parasympathetic hyperactivation. **Ascent must never use simple "high = good" logic.** Interpret HRV trends in context of training load and subjective state. An unexplained HRV increase during heavy training blocks should be flagged as potentially concerning, not reassuring.
 - HRV-CV is inversely correlated with fitness (r = −0.74, Flatt).
 
 **Individual baselines trump population norms:**
@@ -1703,7 +1729,10 @@ Subjective wellness measures — fatigue, soreness, sleep quality, stress, mood 
 
 ### Evidence summary
 
-**Saw et al. (2016), systematic review of 56 studies:** "Subjective self-reported measures trump commonly used objective measures."
+**Saw et al. (2016), systematic review of 56 studies:** "Subjective self-reported measures trump commonly used objective measures." Nummela et al. (2024) confirmed that subjective markers — readiness to train and leg soreness — were the most sensitive indicators of training load response in recreational runners, with greater magnitude responses in overreached individuals than resting or exercise HR. Critically, psychological symptoms (mood disturbance, motivation loss, sleep disturbance) **precede measurable HRV or performance changes** — making subjective wellness the earliest-available detection system for maladaptation.
+
+**Subjective wellness questionnaire specification:**
+Build a 30-second daily questionnaire (Telegram or Slack): sleep quality, fatigue, muscle soreness, motivation, stress — each 1–5 scale. Normalize to individual **Z-scores against a 14–28 day rolling baseline**. Fatigue, muscle soreness, and stress are inverted (high = bad) so use (6 − value) before computing composite. Flag composite Z < −1.0 SD for two consecutive days. The composite should be auto-calculated: `(sleep_quality + (6 − fatigue) + (6 − muscle_soreness) + motivation + (6 − stress)) / 5.0`. This is the **highest-priority unbuilt feature** in the Ascent system — stronger evidence base than any wearable metric for detecting maladaptation.
 
 **Garmin Body Battery:** Firstbeat Analytics engine, 5–100 score based on rMSSD-derived stress/recovery, activity drain, sleep recharge. Zones: 76–100 high, 26–75 moderate, 5–25 depleted. No independent validation published. de Vries et al. (2025, *JMIR mHealth*): did not consistently align with self-reported recovery in Dutch police. Doherty et al. (2025): no manufacturer disclosed algorithmic weights; none validated against clinical outcomes.
 
@@ -2621,6 +2650,323 @@ Creatine monohydrate reliably increases serum creatinine (spontaneous conversion
 
 -----
 
+# DOMAIN 7: METRIC HIERARCHY & SIGNAL QUALITY
+
+## 7.1 Evidence-based metric hierarchy
+
+### Core principle
+
+Consumer wearable platforms emphasize proprietary composite scores, sleep stage breakdowns, and VO2max estimates from non-running activities — metrics that sit at the bottom of the evidence hierarchy. The tools with the strongest and most replicated support — daily subjective wellness checks and session RPE logging — require no wearable at all. Ascent's coaching logic must weight metrics by evidence strength, not by how prominently Garmin displays them.
+
+### Metric hierarchy table
+
+| Tier | Metric | Evidence strength | Actionability | Key thresholds | Primary citation |
+|------|--------|-------------------|---------------|----------------|------------------|
+| **1** | Subjective wellness composite (5-item) | **Strong** | High | Z < −1.0 SD for 2 consecutive days | Saw et al. 2016 (56 studies) |
+| **1** | HRV (7-day rolling ln(rMSSD) mean + CV) | **Strong** | High | SWC = 0.5 × SD of 7-day rolling; CV > 7–10% with declining mean = maladaptation risk | Plews et al. 2012, 2013, 2014 |
+| **1** | Session RPE (sRPE = CR-10 × duration) | **Strong** | High | Week-to-week increase > 10–15% = spike alert | Foster et al. 2001; Haddad et al. 2017; McLaren et al. 2018 |
+| **2** | Resting heart rate trend | Moderate | Moderate | Sustained elevation > 5 bpm above 7-day baseline, corroborated by declining HRV | Nature Sci Reports 2025 |
+| **2** | Total sleep duration (7-day rolling avg) | **Strong** for duration | Moderate | < 7 hours for ≥ 14 consecutive days → 1.7× injury risk; Garmin TST accuracy ± 20–30 min | Milewski et al. 2014; Chinoy et al. 2021 |
+| **2** | VO2max trend (running-derived only) | Moderate (running); Weak (non-running) | Low–Moderate | Flag single-session changes > 3 ml/kg/min as noise; ± 5% MAPE with chest strap; ± 9.8 ml/kg/min individual error | Molina-Garcia et al. 2022 (INTERLIVE) |
+| **2** | Body weight (7-day rolling average) | Moderate | Moderate | React only to > 0.5 kg shift sustained over 2+ weeks; daily fluctuations of 1–3 kg are noise | — |
+| **3** | Garmin Body Battery | Proprietary-unvalidated | Low | No independent validation; display as qualitative trend only | No peer-reviewed validation exists |
+| **3** | Sleep staging (deep/REM/light %) | Weak | Very low | ~69% epoch accuracy; REM correct only 33% (Schyvens 2025); MAPE > 60% for all stages | Chinoy et al. 2021; Schyvens et al. 2025 |
+| **3** | ACWR (acute:chronic workload ratio) | **Discredited** as ratio | None | Do not implement; use absolute weekly load + spike detection instead | Impellizzeri et al. 2020, 2021 |
+| **3** | Garmin Training Readiness/Status | Proprietary-unvalidated | Low | Composite of composites; can show "Unproductive" from GPS/HR artifacts, not detraining | — |
+| **3** | BIA body fat % (consumer) | Weak | Very low | Under-reads fat mass by ~5 kg vs MRI; ± 7 kg limits of agreement; hydration causes up to 4.2% within-day variation | — |
+
+### The decision hierarchy principle
+
+When signals conflict, weight them in this order: **subjective wellness > HRV (7-day rolling) > sRPE > resting HR > sleep duration > everything else.** This reflects the evidence: Saw et al. (2016, BJSM, 56 studies) demonstrated subjective self-reported measures "trump commonly used objective measures" for monitoring training response; Nummela et al. (2024) confirmed subjective markers — readiness to train and leg soreness — were the most sensitive indicators of training load response, with greater magnitude responses in overreached individuals than resting or exercise HR.
+
+### Consumer app divergences worth flagging
+
+- **Garmin Training Readiness:** Composite of composites — unvalidated proprietary metric layered on unvalidated proprietary metrics. Strength training poorly captured; systematically underestimates neuromuscular fatigue from lifting.
+- **Garmin Training Status:** Can show "Unproductive" due to poor GPS, wrist HR artifacts, heat, or altitude — not actual detraining.
+- **Whoop Recovery / Oura Readiness:** Same limitations — proprietary weighting of partially validated inputs with no published independent validation.
+- **All consumer platforms:** The biggest gap is the absence of subjective wellness capture — the single metric with the strongest evidence base.
+
+### Application rule
+
+- NEVER use Tier 3 metrics as inputs to automated coaching decisions. Display as contextual information only.
+- ALWAYS present Tier 2 metrics alongside Tier 1 for confirmation, never in isolation.
+- WHEN Tier 1 signals conflict with Tier 3 → trust Tier 1 unconditionally.
+- WHEN presenting VO2max → only use running-derived values; ignore non-running estimates; display as "48 ± 5 ml/kg/min" not false-precision single numbers.
+- WHEN presenting sleep data → only reference total sleep duration as reliable; present stages as "~2h deep sleep (±45 min)" with explicit uncertainty.
+- LABEL all metrics as "measured" (HR, accelerometry, GPS) or "estimated" (VO2max, Body Battery, sleep stages) in coaching messages.
+
+-----
+
+## 7.2 Data validation rules
+
+### Core principle
+
+Every metric from a consumer wearable contains measurement error. Before any metric reaches the dashboard or coaching layer, it must pass plausibility checks. The goal is to reject physiologically impossible values (data corruption) and flag values that are physiologically plausible but atypical (warrant human review before acting on them).
+
+### Comprehensive validation rule set
+
+| Metric | Reject if | Flag for review if |
+|--------|-----------|-------------------|
+| rMSSD (ms) | < 5 or > 250 | < 8 or > 200 (outside typical athletic range) |
+| Resting HR (bpm) | < 25 or > 120 | < 30 or > 100 at rest |
+| Exercise HR (bpm) | < 30 or > 230 | > (220 − age + 15) sustained |
+| HR rate of change | > 40 bpm in < 5 sec (non-sprint) | > 25 bpm in < 5 sec |
+| Sleep duration (hours) | < 2 or > 16 | < 3 or > 14 |
+| Daily weight change (kg) | > ± 3.0 in 24h | > ± 2.0 in 24h |
+| Weekly weight change (kg) | > ± 4.0 in 7 days | > ± 3.0 in 7 days |
+| Elevation gain rate | > 300 m/hour (non-climbing) | > 200 m/hour for hiking activities |
+| VO2max change | > 5 ml/kg/min in one session | > 3 ml/kg/min week-over-week |
+
+### Wrist HR during strength training
+
+Optical wrist HR is effectively invalid during resistance training. Zhang et al. (2020 meta-analysis, 44 studies, 738 effect sizes) found wrist optical HR **systematically underestimates by 7.26 bpm** during resistance training (95% CI: −10.46 to −4.07), with error increasing by 3 bpm per 10 bpm increase in true HR. Garmin Instinct showed MAPE of 15.9% at moderate-high intensity RT; inner wrist placement reached 28% MAPE with CCC of 0.17 — functionally useless (Kerwin et al., 2025). Failure modes: grip-induced venous pooling, wrist flexion displacement, isometric contraction artifacts, Valsalva-related HR spikes, and cadence lock (PPG locking onto lifting cadence at ~0.5 Hz).
+
+**Rule:** Flag all HR data during tagged strength activities with an explicit low-confidence warning. Do not use wrist HR zones or TRIMP for strength sessions.
+
+### Wrist HRV reliability
+
+PPG-derived HRV shows excellent agreement with ECG at rest (ICC = 0.955 for RMSSD in supine position; Sensors 2025) but degrades progressively with motion, cold exposure, and exercise intensity (Jamieson et al., 2025). For a mountain athlete frequently operating in cold conditions with variable wrist blood flow, **only nocturnal HRV data should inform coaching decisions**. Garmin's enhanced BBI system includes a confidence score; filter out beats with confidence < 0.5.
+
+### Elevation gain correction
+
+Raw barometric elevation data accumulates noise from pressure fluctuations, weather drift, and GPS auto-calibration interference. Cumulative elevation gain is commonly overestimated by **10–20% without post-processing**. A 4 hPa pressure change (typical approaching storm) creates ~37 meters of false elevation. Apply dead-band filtering (suppress elevation changes below 3–5 meter threshold). Additionally: flag activities where start/end elevation differs > 30 meters at the same location, flag elevation gain > 150 m/hour during non-technical climbing as suspicious, and cross-reference with known route profiles where available. Calibrated barometric accuracy is ± 3–10 meters absolute; GPS-only elevation is ± 120 meters.
+
+### Gap-aware rolling calculations
+
+The critical PostgreSQL implementation detail: `ROWS BETWEEN N PRECEDING AND CURRENT ROW` counts rows, not calendar dates — if dates are missing, the window silently spans more time than intended. Always use a `generate_series()` date spine with LEFT JOIN to daily metrics, then apply window functions over the filled spine with NULL-aware aggregation and minimum-count thresholds: **4 of 7 valid days for weekly averages, 20 of 30 for monthly, 60 of 90 for quarterly.**
+
+### Epoch-aware baselines
+
+Use a multi-window baseline architecture:
+
+| Metric | Short-term window | Long-term baseline |
+|--------|------------------|--------------------|
+| HRV | 7-day rolling | 60-day normal |
+| Resting HR | 7-day rolling | 30-day normal |
+| Sleep | 7-day rolling | 30-day normal |
+| Weight | 7-day rolling | 30-day normal |
+| Performance (VO2max, e1RM) | 30-day rolling | 90-day normal |
+
+When a device change, firmware update, or detected algorithm shift creates a new "epoch," baselines must reset and recalculate from epoch start to prevent spurious drift signals. Maintain a `data_epochs` table recording start date, device model, firmware version, and trigger type. For drift detection, CUSUM (Cumulative Sum) sequential analysis is the gold-standard technique — O(n) complexity, effective for small gradual shifts characteristic of sensor calibration drift.
+
+### Data retention policy
+
+For a single-user system, daily-resolution data volume is trivial (~365 rows/year). **Keep everything at daily granularity forever.** For sub-daily data (minute-level HR, stress scores): full resolution for 90 days → hourly aggregates (min/max/avg/count) for 90 days to 2 years → daily aggregates permanently.
+
+### Application rule
+
+- APPLY reject-level validation in `garmin_sync.py` before writing to Supabase — rejected values should not enter the database.
+- APPLY flag-level validation at the dashboard/coaching query layer — flagged values are stored but marked for human review.
+- NEVER compute rolling averages using row-based windows — always use date-spine pattern with `generate_series()`.
+- TRACK data quality daily via `daily_data_quality` table: wear hours, completeness score, max gap duration, is_valid_day flag (requires ≥ 10h wear time).
+- LOG device changes in `data_epochs` table and reset baselines accordingly.
+- DISTINGUISH "measured" vs. "estimated" metrics in all UI and coaching outputs.
+
+### Key sources
+
+- Zhang M et al. "Wrist-worn optical heart rate monitors: a meta-analysis." *Sports Medicine*, 2020; 50(4): 761–780.
+- Kerwin M et al. Garmin Instinct optical HR during resistance training, 2025.
+- Jamieson A et al. PPG-derived HRV accuracy degradation, 2025.
+- Chinoy ED et al. "Performance of seven consumer sleep-tracking devices." *Sleep*, 2021; 44(5): zsaa291.
+- Schyvens AM et al. "Consumer wearable sleep staging accuracy." 2025.
+- Impellizzeri FM et al. "Acute:chronic workload ratio: conceptual issues and fundamental pitfalls." *Int J Sports Physiol Perform*, 2020; 15(6): 907–913.
+- Impellizzeri FM et al. "Training load and injury: Part 2." *J Sports Sci*, 2021.
+
+### Cross-references
+
+- → Recovery §1 (HRV validation before coaching use)
+- → Recovery §3 (subjective wellness is Tier 1, device composites are Tier 3)
+- → Endurance §3.5 (elevation gain correction)
+- → Integration Rule #13 (multi-signal convergence)
+
+
+-----
+
+# DOMAIN 8: DASHBOARD & COMMUNICATION DESIGN PRINCIPLES
+
+## 8.1 Information density and visual design
+
+### Core principle
+
+Restraint in information density is critical. For a single recreational athlete, the dashboard should feel like a calm, helpful companion — not an ICU monitoring station. Miller's Law (1956) limits working memory to 7 ± 2 chunks, but modern UX refinements suggest 3–7 for dashboards under cognitive load (Sweller, 1988). Fuller et al. (2020) demonstrated well-designed health dashboards *reduce* cognitive burden compared to raw data presentation.
+
+### Dashboard design rules
+
+**Daily morning dashboard (< 30 seconds):**
+- Maximum **5–6 Stat panels**: readiness composite (color-coded), sleep summary (duration + quality), HRV status versus baseline (with trend arrow), today's training guidance (text from AI), current training phase, and any active alerts.
+- Use Grafana's Stat visualization with **background color mode** — the entire panel turns green/amber/red so the screen is predominantly green during normal periods, with red panels immediately drawing the eye.
+- Place most critical metric (readiness composite) in **top-left per F-pattern** reading behavior (Sommer, 2022).
+- **Mobile-first**: single-column, full-width panel layouts. Research shows 80% of patients abandon health apps with poor UX (CapMinds, 2024).
+- Use large stat numbers and sparklines rather than complex multi-axis charts. Avoid pie charts, radar charts, and horizontal scrolling.
+- Use Grafana's row collapse feature for progressive disclosure: daily essentials expanded, deep-dive sections collapsed by default.
+
+**Weekly review (5–10 minutes, Sunday evening):**
+- 7-day training load breakdown, sleep trends, HRV rolling average vs. baseline, weight trend, and AI-generated weekly summary.
+- More detail acceptable — expandable rows, multi-metric charts.
+
+**Quarterly strategic review (20–30 minutes):**
+- 90-day training volume and intensity evolution (stacked area), fitness progression (VO2max, e1RM trajectories), body composition trends, season periodization assessment, and goal progress visualization.
+- This dashboard is for detailed analysis, not phone glance — wider panels, multi-axis charts acceptable.
+
+### RAG indicator rules
+
+Traffic-light systems (Red/Amber/Green) are effective only when applied to **2–3 genuinely actionable composite metrics** with personalized thresholds. Bernard Marr identifies three major RAG pitfalls: overuse (50 RAG icons = noise), ambiguous definitions (what does "amber" mean?), and avoidance of red (people twist metrics to dodge it). Stacey Barr advocates Statistical Process Control over simplistic period-to-period comparisons.
+
+**Rules:**
+- Apply RAG to at most **2–3 composite metrics**, never individual raw values.
+- All thresholds must derive from **personal rolling baselines** (30-day mean ± 1 SD), not population norms.
+- Display personal baseline bands as shaded areas on all trend charts.
+- For inherently noisy metrics (HRV, weight), show **trend direction indicators** ("trending up over 14 days") rather than daily color-coding.
+- **Always pair colors with non-color cues** (↑↓→ arrows, text labels) — 10% of males cannot distinguish red from green.
+
+### Time window recommendations per metric
+
+| Metric | Default view | Smoothing | Rationale |
+|--------|-------------|-----------|-----------|
+| HRV | 30-day | 7-day rolling average overlay | Single-day values are meaningless noise |
+| Sleep duration | 7-day | 7-day rolling average | Night-to-night variation too high for daily interpretation |
+| Weight | 21-day | EWMA trend line | Daily fluctuations of 1–3 kg are not signal |
+| Training load (sRPE) | 28-day | EWMA acute/chronic comparison | 7-day acute, 28-day chronic windows |
+| Performance (VO2max, e1RM) | 90-day or full-season | Multi-week rolling | These move slowly |
+
+Layer raw data points beneath smoothed trend lines. Add annotation markers for key events (race days, illness, travel, altitude changes) to provide the "why" behind metric shifts.
+
+### Application rule
+
+- LIMIT daily dashboard to ≤ 6 panels. Every panel must answer: "Should I train normally today?"
+- EVERY dashboard must be scannable in < 30 seconds on a phone.
+- DEFAULT to collapsed rows on mobile; expand on tap.
+- USE Stat panel background color mode for composite readiness — not small color dots.
+- LABEL sleep architecture panels as "approximate — ± 45 min accuracy per stage" and never color-code individual stages red/green.
+- LAYER raw data beneath smoothed trends on all time-series charts.
+
+-----
+
+## 8.2 Alert architecture
+
+### Core principle
+
+Clinical research shows 85–99% of hospital alarms are false or clinically insignificant, causing dangerous alarm fatigue (PMC review, 2025). Apple Watch's hypertension monitoring deliberately accepts ~40% sensitivity for high specificity, using continuous monitoring to compensate. For a recreational athlete, target **no more than 1–2 genuine alerts per week**.
+
+### Alert design rules
+
+**Compound conditions required:** Alert only when **2+ signals converge** (e.g., HRV drop AND poor sleep, not HRV drop alone). Compound conditions dramatically reduce false positives.
+
+**Time-delay filtering:** Require **2–3 consecutive days** of concerning values before triggering. Single-day anomalies are noise.
+
+**Three-tier alert structure:**
+
+| Tier | Delivery | Urgency | Example |
+|------|----------|---------|---------|
+| **Red** | Push notification (Telegram) | Requires action today | HRV 7-day rolling > 1.5 SD below baseline for 2+ days AND sleep < 6h |
+| **Amber** | Dashboard badge | Visible at next check | Weight 7-day rolling shifted > 0.5 kg over 2 weeks |
+| **Informational** | Weekly summary only | No real-time alert | e1RM plateau detected (4+ weeks flat) |
+
+**Auto-updating thresholds:** Van Rossum et al. (2022, J Clin Monit Comput) demonstrated that adaptive threshold strategies either increase sensitivity or reduce alarm rates compared to fixed thresholds. Implement three tiers: safety alerts (absolute, fixed, manual-only update), anomaly alerts (deviation-based with automatic weekly recalculation from 60-day baseline), and trend alerts (slope-based, continuous).
+
+### Application rule
+
+- NEVER fire single-metric, single-day alerts. Always require compound conditions.
+- TARGET 1–2 genuine alerts per week maximum. If alert volume exceeds this, thresholds are too sensitive.
+- STORE all thresholds with version history, effective dates, and recalculation timestamps.
+- ROUTE alerts through Jarvis so the coach can add context (e.g., "HRV is low AND you had a hard mountain day yesterday, so this is expected").
+
+-----
+
+## 8.3 Coaching communication: SDT-grounded principles
+
+### Core principle
+
+The most robust finding across coaching psychology literature is that **autonomy-supportive communication consistently outperforms directive framing** for adherence and long-term motivation. This is especially true for knowledgeable athletes with strong self-regulation (Mageau & Vallerand, 2003; Amorose & Anderson-Butcher, 2007). Carpentier & Mageau (2013, N=340 athletes) demonstrated that change-oriented feedback quality — not quantity — predicts athlete experience and performance.
+
+### Autonomy-supportive language rules
+
+- Use **"consider," "one option is," "the data supports"** — never "should," "must," "need to."
+- Frame Ascent as a **"second pair of eyes on the data"** not an authority. Research on expert athletes shows they judge their own performances more accurately than their coaches (Millar et al., 2017). The system adds value through pattern detection across multiple simultaneous data streams — not through superior judgment.
+- Every recommendation requires a **rationale**: "Based on your HRV trend (down 12% over 3 days), backing off intensity could support adaptation."
+- Offer **2–3 options with tradeoffs** rather than single prescriptions.
+
+### Presenting negative signals without demotivating
+
+- Lead with **objective data, not judgments**: "HRV dropped 15% this week" rather than "your recovery has been poor."
+- **Normalize variation**: "Recovery fluctuates — this dip is within the range we'd expect given last week's volume increase."
+- Connect findings to the athlete's **goals**: "Given your Chamonix preparation timeline, this recovery trend is worth watching because…"
+- Use **trend language, not snapshot language**: "Over the past 10 days…" rather than "Yesterday your score was…"
+- Never use shame-adjacent framing ("You missed 3 sessions") — reframe as neutral observation ("3 scheduled sessions didn't happen this week — life happens. Here's how the plan could adapt").
+
+### Calibrated confidence tiers
+
+Adapting the BODHI framework (2025, PLOS Digital Health):
+
+| Confidence | Signal quality | Communication style | Example |
+|------------|---------------|--------------------|---------| 
+| **High** | Strong signal, multiple converging data points | Specific recommendation + explicit rationale | "Your HRV, sleep, and subjective scores all point to good recovery. Consider pushing intensity today." |
+| **Moderate** | Emerging pattern, fewer data points | Note with hedging | "Your sleep quality appears to be declining, though the data is limited — worth monitoring." |
+| **Low** | Single data point, ambiguous | Exploratory language | "Today's HRV reading was unusual. This could mean several things — let's see how the next few days look." |
+
+Explicitly label data limitations: "Your watch didn't record sleep data for 2 of the last 7 nights, so this sleep trend has gaps."
+
+### Optimal message structures
+
+**Daily briefing** (Telegram, ~100–200 words, 06:00–07:00 AM):
+- One-sentence readiness assessment
+- 2–3 key metrics with context
+- One autonomy-supportive guidance statement
+- Optional deep-dive link
+
+**Weekly summary** (~500–800 words, Sunday evening):
+- Week overview versus plan
+- 2–3 key metric trends with 4-week context
+- One positive observation
+- One attention area framed as opportunity
+- Coming week preview
+- One reflection prompt
+
+**Quarterly strategic review** (~2,000–3,000 words):
+- Executive summary
+- Goal progress with visual tracking
+- 12-week training load evolution
+- Performance indicator trajectories
+- Periodization assessment
+- Strategic recommendations framed as options
+- Structured athlete self-assessment questions
+
+### SDT needs in digital coaching
+
+Teixeira et al. (2012, 66 studies) confirmed that competence need satisfaction shows the most consistent positive association with exercise behavior, while relatedness is the hardest to satisfy digitally (MAP to Health, JMIR 2024).
+
+- **Autonomy:** Meaningful choices, non-controlling language, customizable notification preferences.
+- **Competence:** Clear progress markers, PB tracking, educational content that builds the athlete's knowledge.
+- **Relatedness:** Personalized communication, "shared journey" language ("we've been building toward…"), acknowledgment of the athlete as a whole person.
+
+### Guarding against automated coaching failure modes
+
+- **Over-alerting:** 50% of Drink Less app users disengaged within 22 days (Maycock et al., 2023). Build signal-to-noise filtering.
+- **False precision:** Presenting wearable data with unknown confidence intervals erodes trust. Always communicate measurement uncertainty.
+- **Context blindness:** A bad training week may stem from a work deadline, not a physiological problem. Build periodic context-gathering check-ins ("Anything unusual this week?").
+- **Quiet mode:** When everything is fine, reduce message frequency. Engagement monitoring should reduce frequency if messages go unread.
+
+### Key sources
+
+- Mageau GA, Vallerand RJ. "The coach-athlete relationship: a motivational model." *J Sports Sci*, 2003; 21(11): 883–904.
+- Amorose AJ, Anderson-Butcher D. "Autonomy-supportive coaching and self-determined motivation." *Psychol Sport Exerc*, 2007; 8(5): 654–670.
+- Carpentier J, Mageau GA. "When change-oriented feedback enhances motivation, well-being and performance." *J Sport Exerc Psychol*, 2013; 35(5): 497–507.
+- Millar SK et al. "Self-assessment accuracy in athletes." *J Sport Behav*, 2017.
+- Teixeira PJ et al. "Exercise, physical activity, and self-determination theory: a systematic review." *Int J Behav Nutr Phys Act*, 2012; 9: 78.
+- Saw AE et al. "Monitoring the athlete training response: subjective self-reported measures trump commonly used objective measures." *BJSM*, 2016; 50(5): 281–291.
+- Fuller R et al. "Health dashboard design reduces cognitive burden." 2020.
+- Maycock KW et al. "Drink Less app user engagement." 2023.
+- Van Rossum T et al. "Adaptive threshold strategies." *J Clin Monit Comput*, 2022.
+
+### Cross-references
+
+- → Domain 7 (metric hierarchy determines what appears on dashboards)
+- → Recovery §3 (subjective readiness is highest-priority signal)
+- → Integration Rule #13 (multi-signal convergence for decisions)
+
+
+-----
+
 # GAPS & FUTURE RESEARCH NEEDED
 
 The following topics received thin or incomplete coverage across all source materials and represent areas where the AI coach should exercise caution, use conservative defaults, or prompt the user for more information.
@@ -2724,8 +3070,9 @@ Fully addressed in v1.1. See §4.7 for Murphy & Koehler (2022) evidence, maximum
 
 -----
 
-*End of Ascent Scientific Knowledge Base v1.1*
-*Total domains: 6 | Integration rules: 24 | Gap areas: 14 (4 fully resolved, 3 partially addressed, 7 remaining)*
+*End of Ascent Scientific Knowledge Base v1.2*
+*Total domains: 8 | Integration rules: 24 | Gap areas: 14 (4 fully resolved, 3 partially addressed, 7 remaining)*
 *All thresholds, ranges, and protocols are population-level starting estimates requiring personalization through the individual's response data over time.*
+*New in v1.2: Domain 7 (Metric Hierarchy & Signal Quality), Domain 8 (Dashboard & Communication Design Principles), autoregulation SUCRA rankings (§1.3), double progression decision logic (§1.1), autoregulated deload triggers and natural deload concept (§1.5), interference mechanism clarification (§3.1), session displacement strategy (§3.1), e1RM tracking rules (§3.4), subjective wellness questionnaire specification (§4.3), Le Meur HRV caveat (§4.1), data validation rule set (§7.2), comprehensive alert architecture (§8.2), SDT-grounded coaching communication (§8.3).*
 *New in v1.1: Schedule disruption management (§5.6), illness protocols (§4.6), multi-day touring (§2.7), caloric deficit interaction (§4.7), Robinson et al. 2024 proximity-to-failure update (§1.3), corrected Schoenfeld volume threshold (§1.2), corrected Roberts snowboarding data (§2.5c), creatine cognitive benefits (§6.4), 2025 ACSM Position Stand context (§1.1, §5.1), and 15+ additional landmark sources from 2023–2025.*
 

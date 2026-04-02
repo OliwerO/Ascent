@@ -10,6 +10,22 @@ import {
   XAxis, YAxis, ResponsiveContainer, Tooltip, Legend,
 } from 'recharts'
 
+function CollapsibleSection({ title, defaultOpen = false, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between py-2 text-xs uppercase tracking-wider text-text-muted font-medium"
+      >
+        {title}
+        <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && <div className="space-y-4">{children}</div>}
+    </div>
+  )
+}
+
 function InfoPanel({ title, children }: { title: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
   return (
@@ -100,16 +116,27 @@ export default function TrendsView() {
     }))
 
   // --- Body Composition ---
-  // Weight + muscle chart (kg scale)
-  const massChartData = (bodyComp.data ?? [])
-    .slice()
-    .reverse()
-    .filter((d: any) => d.weight_kg != null)
-    .map((d: any) => ({
-      date: format(new Date(d.date), 'MMM d'),
-      weight: d.weight_kg ? +d.weight_kg.toFixed(1) : null,
-      muscleMass: d.muscle_mass_grams ? +(d.muscle_mass_grams / 1000).toFixed(1) : null,
-    }))
+  // Weight + muscle chart (kg scale) with EWMA smoothing
+  const massChartData = useMemo(() => {
+    const raw = (bodyComp.data ?? [])
+      .slice()
+      .reverse()
+      .filter((d: any) => d.weight_kg != null)
+      .map((d: any) => ({
+        date: format(new Date(d.date), 'MMM d'),
+        weight: d.weight_kg ? +d.weight_kg.toFixed(1) : null,
+        muscleMass: d.muscle_mass_grams ? +(d.muscle_mass_grams / 1000).toFixed(1) : null,
+      }))
+    // Compute 7-day EWMA for weight
+    const alpha = 0.25
+    let ewma: number | null = null
+    return raw.map(d => {
+      if (d.weight != null) {
+        ewma = ewma == null ? d.weight : +(alpha * d.weight + (1 - alpha) * ewma).toFixed(1)
+      }
+      return { ...d, weightEWMA: ewma }
+    })
+  }, [bodyComp.data])
 
   // Body fat % chart (separate scale)
   const fatChartData = (bodyComp.data ?? [])
@@ -192,7 +219,8 @@ export default function TrendsView() {
 
   return (
     <div className="space-y-4 pb-8">
-      {/* HRV 90-day */}
+      {/* ═══ Recovery & Readiness (expanded by default) ═══ */}
+      <CollapsibleSection title="Recovery & Readiness" defaultOpen>
       <Card title="HRV (90 days)">
         {hrvChartData.length > 0 ? (
           <ResponsiveContainer width="100%" height={220}>
@@ -255,7 +283,10 @@ export default function TrendsView() {
         )}
       </Card>
 
-      {/* Body Composition — Header + Sync */}
+      </CollapsibleSection>
+
+      {/* ═══ Body Composition (expanded by default) ═══ */}
+      <CollapsibleSection title="Body Composition" defaultOpen>
       <Card>
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs uppercase tracking-wider text-text-muted font-medium">Body Composition</span>
@@ -286,9 +317,9 @@ export default function TrendsView() {
                 </div>
               </div>
               <div>
-                <div className="text-[10px] text-text-muted">Body Fat</div>
+                <div className="text-[10px] text-text-muted">Body Fat <span className="text-text-muted/50">(±5%)</span></div>
                 <div className="text-lg font-bold text-accent-purple">
-                  {latestComp.body_fat_pct?.toFixed(1) ?? '--'}
+                  ~{latestComp.body_fat_pct?.toFixed(0) ?? '--'}
                   <span className="text-[10px] text-text-muted ml-0.5">%</span>
                 </div>
               </div>
@@ -318,9 +349,9 @@ export default function TrendsView() {
         )}
       </Card>
 
-      {/* Weight & Muscle Mass trend (kg scale) */}
+      {/* Weight & Muscle Mass trend (kg scale) — EWMA smoothed */}
       {massChartData.length > 1 && (
-        <Card title="Weight & Muscle (90d)">
+        <Card title="Weight & Muscle (90d)" subtitle="Bold line = 7-day smoothed trend. Dots = daily readings (±1-3 kg normal noise).">
           <ResponsiveContainer width="100%" height={180}>
             <LineChart data={massChartData}>
               <XAxis dataKey="date" tick={{ fill: '#555570', fontSize: 10 }} axisLine={{ stroke: '#2a2a4a' }} tickLine={false} interval="preserveStartEnd" />
@@ -328,7 +359,10 @@ export default function TrendsView() {
               <YAxis yAxisId="m" orientation="right" tick={{ fill: '#555570', fontSize: 11 }} axisLine={false} tickLine={false} width={40} unit=" kg" domain={['dataMin - 1', 'dataMax + 1']} />
               <Tooltip contentStyle={darkTooltipStyle} />
               <Legend wrapperStyle={{ color: '#8888a8', fontSize: 11 }} />
-              <Line yAxisId="w" type="monotone" dataKey="weight" stroke="#3b82f6" strokeWidth={2} dot={{ fill: '#3b82f6', r: 3 }} name="Weight" connectNulls />
+              {/* Raw daily weight as faded dots */}
+              <Line yAxisId="w" type="monotone" dataKey="weight" stroke="none" dot={{ fill: '#3b82f6', r: 2, opacity: 0.3 }} name="Daily weight" connectNulls legendType="none" />
+              {/* EWMA smoothed weight as primary bold line */}
+              <Line yAxisId="w" type="monotone" dataKey="weightEWMA" stroke="#3b82f6" strokeWidth={2.5} dot={false} name="Weight (trend)" connectNulls />
               <Line yAxisId="m" type="monotone" dataKey="muscleMass" stroke="#22c55e" strokeWidth={2} dot={{ fill: '#22c55e', r: 3 }} name="Skeletal Muscle" connectNulls />
             </LineChart>
           </ResponsiveContainer>
@@ -337,7 +371,7 @@ export default function TrendsView() {
 
       {/* Body Fat % trend (separate scale) */}
       {fatChartData.length > 1 && (
-        <Card title="Body Fat % (90d)">
+        <Card title="Body Fat % (90d)" subtitle="BIA body fat has ±5-7% error vs. DEXA. Track direction, not absolute value.">
           <ResponsiveContainer width="100%" height={160}>
             <AreaChart data={fatChartData}>
               <defs>
@@ -355,6 +389,10 @@ export default function TrendsView() {
         </Card>
       )}
 
+      </CollapsibleSection>
+
+      {/* ═══ Body Scan Detail (collapsed by default) ═══ */}
+      <CollapsibleSection title="Body Scan Detail">
       {/* Muscle Quality & Balance */}
       {(phaseAngle != null || hasSegmental) && (
         <Card title="Muscle Quality & Balance">
@@ -506,6 +544,10 @@ export default function TrendsView() {
         </Card>
       )}
 
+      </CollapsibleSection>
+
+      {/* ═══ Activity Volume (collapsed by default) ═══ */}
+      <CollapsibleSection title="Activity Volume">
       {/* Weekly Elevation */}
       <Card title="Weekly Elevation (12 weeks)">
         {elevationChartData.length > 0 ? (
@@ -543,8 +585,14 @@ export default function TrendsView() {
         )}
       </Card>
 
-      {/* VO2max Trend */}
-      <Card title="VO2max Trend">
+      {/* Flying / Paragliding — inside Activity Volume */}
+      <FlyingSection activities={activities.data ?? []} />
+      </CollapsibleSection>
+
+      {/* ═══ Performance (collapsed by default) ═══ */}
+      <CollapsibleSection title="Performance">
+      {/* VO2max Trend (running-derived only) */}
+      <Card title="VO2max Trend (running-derived)" subtitle="Estimates from hiking and touring are not validated and are excluded. Values have ±5 ml/kg/min uncertainty.">
         {vo2Deduped.length > 1 ? (
           <ResponsiveContainer width="100%" height={180}>
             <LineChart data={vo2Deduped}>
@@ -582,15 +630,13 @@ export default function TrendsView() {
         )}
       </Card>
 
-      {/* Flying / Paragliding */}
-      <FlyingSection activities={activities.data ?? []} />
-
       {/* e1RM Progression */}
-      <Card title="e1RM Progression">
+      <Card title="e1RM Progression" subtitle="Normal variation: ±3-5% per session. Plateau = flat or declining for ≥4 weeks.">
         <div className="flex items-center justify-center h-32 text-text-muted text-sm">
           e1RM tracking will populate after gym sessions are completed.
         </div>
       </Card>
+      </CollapsibleSection>
     </div>
   )
 }

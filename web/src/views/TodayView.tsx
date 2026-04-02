@@ -1,12 +1,14 @@
 import { Sparkline } from '../components/Sparkline'
 import { LoadingState } from '../components/LoadingState'
-import { useDailySummary, useHRV, useDailyMetrics, useActivities, useTrainingStatus } from '../hooks/useSupabase'
+import { useDailySummary, useHRV, useDailyMetrics, useActivities, useSubjectiveWellness } from '../hooks/useSupabase'
 import {
   getProgramWeek, isDeloadWeek, getSessionForDate, SESSION_NAMES,
   getPlannedWeight,
 } from '../lib/program'
-import { Clock, Flame, ArrowUpRight, Heart, ChevronDown, TrendingUp, Activity } from 'lucide-react'
-import { useState } from 'react'
+import { Clock, Flame, ArrowUpRight, Heart, ChevronDown, TrendingUp, Activity, Info } from 'lucide-react'
+import { useState, useMemo, useCallback } from 'react'
+import { supabase } from '../lib/supabase'
+import { format } from 'date-fns'
 
 // ─── Helpers ──────────────────────────────────────────────────────
 
@@ -37,16 +39,10 @@ function formatActivityType(type: string | null | undefined): string {
   return type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
-// Training status codes from Garmin
-const TRAINING_STATUS_MAP: Record<number, { label: string; color: string; desc: string }> = {
-  0: { label: 'No Status', color: 'text-text-muted', desc: 'Not enough data' },
-  1: { label: 'Detraining', color: 'text-accent-red', desc: 'Training load dropping — fitness declining' },
-  2: { label: 'Recovery', color: 'text-accent-blue', desc: 'Light load — recovering from hard training' },
-  3: { label: 'Overreaching', color: 'text-accent-yellow', desc: 'High load — back off or risk overtraining' },
-  4: { label: 'Productive', color: 'text-accent-green', desc: 'Good balance — fitness improving' },
-  5: { label: 'Peaking', color: 'text-accent-purple', desc: 'Peak race readiness' },
-  6: { label: 'Unproductive', color: 'text-accent-red', desc: 'Training hard but fitness not improving' },
-  7: { label: 'Maintaining', color: 'text-text-secondary', desc: 'Maintaining current fitness level' },
+function pctChangeLabel(current: number, avg: number): string {
+  if (avg === 0) return ''
+  const pct = Math.round(((current - avg) / avg) * 100)
+  return pct >= 0 ? `+${pct}%` : `${pct}%`
 }
 
 // ─── Session exercises ────────────────────────────────────────────
@@ -94,15 +90,211 @@ const SESSION_EXERCISES: Record<SessionType, { name: string; sets: number; reps:
   ],
 }
 
+// ─── Wellness Input Component ────────────────────────────────────
+
+const WELLNESS_ITEMS = [
+  { key: 'sleep_quality', label: 'Sleep quality', low: 'Poor', high: 'Great' },
+  { key: 'energy', label: 'Energy level', low: 'Exhausted', high: 'Fresh' },
+  { key: 'muscle_soreness', label: 'Muscle soreness', low: 'Very sore', high: 'None' },
+  { key: 'motivation', label: 'Motivation', low: 'None', high: 'Fired up' },
+  { key: 'stress', label: 'Stress', low: 'Very high', high: 'Very low' },
+] as const
+
+function WellnessInput({ todayWellness, onSubmit }: {
+  todayWellness: any | null
+  onSubmit: () => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const [values, setValues] = useState<Record<string, number>>({})
+  const [submitting, setSubmitting] = useState(false)
+
+  const composite = todayWellness?.composite_score
+
+  if (todayWellness && !expanded) {
+    return (
+      <button
+        onClick={() => setExpanded(true)}
+        className="w-full bg-bg-card rounded-2xl border border-border-subtle p-3 text-left"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-text-muted uppercase tracking-wider">Wellness</span>
+            <span className={`text-sm font-semibold font-data ${
+              composite >= 3.5 ? 'text-accent-green' : composite >= 2.5 ? 'text-accent-yellow' : 'text-accent-red'
+            }`}>
+              {composite.toFixed(1)}/5
+            </span>
+          </div>
+          <span className="text-[10px] text-text-muted">Tap to view</span>
+        </div>
+      </button>
+    )
+  }
+
+  if (!expanded && !todayWellness) {
+    return (
+      <button
+        onClick={() => setExpanded(true)}
+        className="w-full bg-bg-card rounded-2xl border border-accent-green/20 p-3 text-left animate-pulse-subtle"
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium text-text-primary">How are you feeling?</div>
+            <div className="text-[10px] text-text-muted">30-second daily check-in</div>
+          </div>
+          <ChevronDown size={14} className="text-text-muted" />
+        </div>
+      </button>
+    )
+  }
+
+  const handleSubmit = async () => {
+    const allFilled = WELLNESS_ITEMS.every(item => values[item.key] != null)
+    if (!allFilled) return
+    setSubmitting(true)
+    try {
+      const todayStr = format(new Date(), 'yyyy-MM-dd')
+      await supabase.from('subjective_wellness').upsert({
+        date: todayStr,
+        ...values,
+      }, { onConflict: 'date' })
+      onSubmit()
+      setExpanded(false)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="bg-bg-card rounded-2xl border border-border-subtle p-4">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-medium text-text-primary">How are you feeling?</span>
+        <button onClick={() => setExpanded(false)} className="text-[10px] text-text-muted">Close</button>
+      </div>
+      <div className="space-y-3">
+        {WELLNESS_ITEMS.map(item => (
+          <div key={item.key}>
+            <div className="flex justify-between text-[11px] mb-1">
+              <span className="text-text-secondary">{item.label}</span>
+              <span className="text-text-muted">{item.low} → {item.high}</span>
+            </div>
+            <div className="flex gap-1.5">
+              {[1, 2, 3, 4, 5].map(v => (
+                <button
+                  key={v}
+                  onClick={() => setValues(prev => ({ ...prev, [item.key]: v }))}
+                  className={`flex-1 h-8 rounded-lg text-xs font-semibold transition-all ${
+                    values[item.key] === v
+                      ? v >= 4 ? 'bg-accent-green/20 text-accent-green border border-accent-green/40'
+                        : v === 3 ? 'bg-accent-yellow/20 text-accent-yellow border border-accent-yellow/40'
+                        : 'bg-accent-red/20 text-accent-red border border-accent-red/40'
+                      : 'bg-bg-primary/50 text-text-muted border border-transparent hover:border-border-subtle'
+                  }`}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <button
+        onClick={handleSubmit}
+        disabled={submitting || !WELLNESS_ITEMS.every(item => values[item.key] != null)}
+        className="mt-3 w-full py-2 rounded-lg bg-accent-green/20 text-accent-green text-sm font-medium
+                   disabled:opacity-30 disabled:cursor-not-allowed transition-all hover:bg-accent-green/30"
+      >
+        {submitting ? 'Saving...' : 'Submit'}
+      </button>
+    </div>
+  )
+}
+
+// ─── RPE Prompt Component ─────────────────────────────────────────
+
+const RPE_LABELS: Record<number, string> = {
+  0: 'Rest', 1: 'Very light', 2: 'Light', 3: 'Moderate', 4: 'Somewhat hard',
+  5: 'Hard', 6: '', 7: 'Very hard', 8: '', 9: '', 10: 'Maximal',
+}
+
+function RPEPrompt({ activity }: { activity: any }) {
+  const [rated, setRated] = useState(false)
+  const [selectedRPE, setSelectedRPE] = useState<number | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  if (rated) return null
+
+  const handleSubmit = async () => {
+    if (selectedRPE == null) return
+    setSaving(true)
+    try {
+      // Find the matching training_session and update srpe
+      const dateStr = activity.date
+      const { data: sessions } = await supabase
+        .from('training_sessions')
+        .select('id')
+        .eq('date', dateStr)
+        .limit(1)
+      if (sessions && sessions.length > 0) {
+        await supabase
+          .from('training_sessions')
+          .update({ srpe: selectedRPE })
+          .eq('id', sessions[0].id)
+      }
+      setRated(true)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="bg-bg-card rounded-2xl border border-accent-purple/20 p-4">
+      <div className="text-[10px] text-text-muted uppercase tracking-wider mb-2">Session RPE</div>
+      <div className="text-xs text-text-secondary mb-3">
+        How hard was {activity.activity_name || 'your session'}? (0-10)
+      </div>
+      <div className="flex gap-1">
+        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => (
+          <button
+            key={v}
+            onClick={() => setSelectedRPE(v)}
+            className={`flex-1 h-8 rounded text-[10px] font-semibold transition-all ${
+              selectedRPE === v
+                ? v >= 8 ? 'bg-accent-red/20 text-accent-red border border-accent-red/40'
+                  : v >= 5 ? 'bg-accent-yellow/20 text-accent-yellow border border-accent-yellow/40'
+                  : 'bg-accent-green/20 text-accent-green border border-accent-green/40'
+                : 'bg-bg-primary/50 text-text-muted border border-transparent'
+            }`}
+          >
+            {v}
+          </button>
+        ))}
+      </div>
+      {selectedRPE != null && RPE_LABELS[selectedRPE] && (
+        <div className="text-[10px] text-text-muted mt-1 text-center">{RPE_LABELS[selectedRPE]}</div>
+      )}
+      <button
+        onClick={handleSubmit}
+        disabled={saving || selectedRPE == null}
+        className="mt-2 w-full py-1.5 rounded-lg bg-accent-purple/20 text-accent-purple text-xs font-medium
+                   disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+      >
+        {saving ? 'Saving...' : 'Log RPE'}
+      </button>
+    </div>
+  )
+}
+
 // ═══════════════════════════════════════════════════════════════════
 
 export default function TodayView() {
   const summary = useDailySummary(7)
   const hrv = useHRV(14)
-  const metrics = useDailyMetrics(7)
+  const metrics = useDailyMetrics(14)
   const activities = useActivities(14)
-  const trainingStatus = useTrainingStatus(3)
+  const wellness = useSubjectiveWellness(30)
   const [showExercises, setShowExercises] = useState(false)
+  const [wellnessRefresh, setWellnessRefresh] = useState(0)
 
   const loading = summary.loading || hrv.loading || metrics.loading || activities.loading
   if (loading) return <LoadingState />
@@ -112,6 +304,8 @@ export default function TodayView() {
   const todayMetrics = metrics.data?.[0]
   const recentActivities = activities.data ?? []
   const lastActivity = recentActivities[0]
+  const todayStr = format(new Date(), 'yyyy-MM-dd')
+  const todayWellness = (wellness.data ?? []).find((w: any) => w.date === todayStr)
 
   // ─── Derived values ───
   const sleepHours = today?.total_sleep_seconds
@@ -134,24 +328,88 @@ export default function TodayView() {
   const sleepBelowCount = sleepDays.filter(
     (d: any) => d.total_sleep_seconds != null && d.total_sleep_seconds / 3600 < 6
   ).length
+  const sleep7dAvg = useMemo(() => {
+    const valid = sleepDays.filter((d: any) => d.total_sleep_seconds != null)
+    if (valid.length === 0) return null
+    return valid.reduce((s: number, d: any) => s + d.total_sleep_seconds / 3600, 0) / valid.length
+  }, [sleepDays])
 
-  // ─── Readiness ───
-  const signals = [
-    todayHRV?.status?.toUpperCase() === 'LOW' || todayHRV?.status?.toUpperCase() === 'UNBALANCED',
-    sleepHours != null && sleepHours < 6,
-    (bbHigh ?? 100) < 30,
-    (readiness ?? 100) < 40,
-  ]
-  const degradedCount = signals.filter(Boolean).length
+  // ─── Resting HR context ───
+  const rhrValues = (metrics.data ?? []).slice(0, 7).filter((d: any) => d.resting_hr != null)
+  const rhr7dAvg = rhrValues.length > 0
+    ? rhrValues.reduce((s: number, d: any) => s + d.resting_hr, 0) / rhrValues.length : null
+  const rhr30dValues = (metrics.data ?? []).filter((d: any) => d.resting_hr != null)
+  const rhr30dAvg = rhr30dValues.length > 0
+    ? rhr30dValues.reduce((s: number, d: any) => s + d.resting_hr, 0) / rhr30dValues.length : null
+  const rhrElevated = rhr7dAvg != null && rhr30dAvg != null && rhr7dAvg > rhr30dAvg + 5
+  const rhrTrend = todayMetrics?.resting_hr != null && rhr7dAvg != null
+    ? (todayMetrics.resting_hr > rhr7dAvg + 2 ? '↑ Rising' : todayMetrics.resting_hr < rhr7dAvg - 2 ? '↓ Declining' : '→ Stable')
+    : null
 
-  // ─── Training status from Garmin ───
-  const tsRaw = (trainingStatus.data ?? [])[0]?.raw_json as any
-  const tsDevice = tsRaw?.mostRecentTrainingStatus?.latestTrainingStatusData
-  const tsData = tsDevice ? Object.values(tsDevice)[0] as any : null
-  const garminTrainingStatus = tsData?.trainingStatus as number | undefined
-  const tsInfo = garminTrainingStatus != null ? TRAINING_STATUS_MAP[garminTrainingStatus] : null
-  const acuteLoad = tsData?.acuteTrainingLoadDTO
-  const garminACWR = acuteLoad?.dailyAcuteChronicWorkloadRatio as number | undefined
+  // ─── Weekly load (replaces ACWR) ───
+  const thisWeekActivities = useMemo(() => {
+    const now = new Date()
+    const dayOfWeek = now.getDay()
+    const monday = new Date(now)
+    monday.setDate(now.getDate() - ((dayOfWeek + 6) % 7))
+    monday.setHours(0, 0, 0, 0)
+    return recentActivities.filter((a: any) => new Date(a.date) >= monday)
+  }, [recentActivities])
+
+  const lastWeekActivities = useMemo(() => {
+    const now = new Date()
+    const dayOfWeek = now.getDay()
+    const monday = new Date(now)
+    monday.setDate(now.getDate() - ((dayOfWeek + 6) % 7))
+    const prevMonday = new Date(monday)
+    prevMonday.setDate(monday.getDate() - 7)
+    return recentActivities.filter((a: any) => {
+      const d = new Date(a.date)
+      return d >= prevMonday && d < monday
+    })
+  }, [recentActivities])
+
+  const thisWeekDuration = thisWeekActivities.reduce((s: number, a: any) => s + (a.duration_seconds ?? 0), 0)
+  const lastWeekDuration = lastWeekActivities.reduce((s: number, a: any) => s + (a.duration_seconds ?? 0), 0)
+  const thisWeekElev = thisWeekActivities.reduce((s: number, a: any) => s + (a.elevation_gain ?? 0), 0)
+  const lastWeekElev = lastWeekActivities.reduce((s: number, a: any) => s + (a.elevation_gain ?? 0), 0)
+  const loadChangePct = lastWeekDuration > 0 ? Math.round(((thisWeekDuration - lastWeekDuration) / lastWeekDuration) * 100) : null
+
+  // ─── Coaching card decision tree (evidence-based) ───
+  // Uses only validated signals: HRV, sleep, resting HR, subjective wellness
+  // Body Battery and Readiness are EXCLUDED from this logic
+  const hrvDegraded = todayHRV?.status?.toUpperCase() === 'LOW'
+  const hrvLow = hrvVal != null && hrvWeeklyAvg != null && hrvVal < hrvWeeklyAvg * 0.85
+  const sleepPoor = sleep7dAvg != null && sleep7dAvg < 6.5
+  const sleepBad = sleepHours != null && sleepHours < 6
+  const wellnessLow = todayWellness?.composite_score != null && todayWellness.composite_score < 2.5
+
+  let cardState: 'green' | 'amber' | 'red' = 'green'
+  if (wellnessLow) {
+    cardState = 'red'
+  } else if (hrvDegraded && (sleepPoor || rhrElevated)) {
+    cardState = 'red'
+  } else if (hrvDegraded || hrvLow) {
+    cardState = 'amber'
+  } else if (sleep7dAvg != null && sleep7dAvg < 7) {
+    cardState = 'amber'
+  } else if (rhrElevated) {
+    cardState = 'amber'
+  }
+
+  const verdictLabel = cardState === 'green' ? 'Good to train' : cardState === 'amber' ? 'Train with caution' : 'Consider rest or light session'
+  const verdictColor = cardState === 'green' ? 'text-accent-green' : cardState === 'amber' ? 'text-accent-yellow' : 'text-accent-red'
+  const verdictBg = cardState === 'green' ? 'border-accent-green/20 bg-glow-green' : cardState === 'amber' ? 'border-accent-yellow/20 bg-glow-yellow' : 'border-accent-red/20 bg-glow-red'
+  const rpeRange = deload ? '5-6' : block === 1 ? '6-7' : '7-8'
+
+  // ─── Coaching notes ───
+  const coachingPoints: { icon: string; text: string; color?: string }[] = []
+
+  if (cardState === 'red') {
+    coachingPoints.push({ icon: '🔴', text: 'Multiple recovery signals degraded — rest or mobility only', color: 'text-accent-red' })
+  } else if (cardState === 'amber') {
+    coachingPoints.push({ icon: '🟡', text: 'One or more signals flagged — train if warmup feels good, otherwise swap to mobility', color: 'text-accent-yellow' })
+  }
 
   // ─── Last session context ───
   const lastGymSession = recentActivities.find((a: any) => a.activity_type === 'strength_training')
@@ -159,25 +417,12 @@ export default function TodayView() {
     ? Math.floor((Date.now() - new Date(lastGymSession.date).getTime()) / 86400000)
     : null
 
-  // ─── Coaching note (structured, not wall of text) ───
-  const coachingPoints: { icon: string; text: string; color?: string }[] = []
-
-  if (degradedCount >= 3) {
-    coachingPoints.push({ icon: '🔴', text: 'Multiple recovery signals degraded — rest or mobility only', color: 'text-accent-red' })
-  } else if (degradedCount === 2) {
-    coachingPoints.push({ icon: '🟡', text: 'Two signals flagged — train if warmup feels good, otherwise swap to mobility', color: 'text-accent-yellow' })
-  }
-
   if (isGymDay && todaySession) {
     if (deload) {
       coachingPoints.push({ icon: '📉', text: 'Deload week — same weight, half sets, focus on form' })
     } else if (daysSinceGym != null && daysSinceGym > 7) {
       coachingPoints.push({ icon: '💡', text: `${daysSinceGym} days since last gym session — start conservative, RPE 6 max` })
     }
-  }
-
-  if (tsInfo && garminTrainingStatus === 3) {
-    coachingPoints.push({ icon: '⚠️', text: 'Garmin flags overreaching — consider reducing volume this week', color: 'text-accent-yellow' })
   }
 
   if (sleepBelowCount >= 3) {
@@ -194,11 +439,6 @@ export default function TodayView() {
   if (coachingPoints.length === 0 && isGymDay) {
     coachingPoints.push({ icon: '✅', text: 'All signals green — train as planned' })
   }
-
-  const verdictColor = degradedCount === 0 ? 'text-accent-green' : degradedCount <= 1 ? 'text-accent-yellow' : 'text-accent-red'
-  const verdictBg = degradedCount === 0 ? 'border-accent-green/20 bg-glow-green' : degradedCount <= 1 ? 'border-accent-yellow/20 bg-glow-yellow' : 'border-accent-red/20 bg-glow-red'
-  const verdictLabel = degradedCount === 0 ? 'Good to train' : degradedCount <= 1 ? 'Train with caution' : 'Rest day'
-  const rpeRange = deload ? '5-6' : block === 1 ? '6-7' : '7-8'
 
   return (
     <div className="space-y-3">
@@ -218,7 +458,7 @@ export default function TodayView() {
           </div>
         </div>
 
-        {/* Coaching points — structured, not paragraph */}
+        {/* Coaching points */}
         <div className="space-y-1.5 mt-3">
           {coachingPoints.map((p, i) => (
             <div key={i} className={`text-[13px] leading-snug ${p.color ?? 'text-text-secondary'}`}>
@@ -226,6 +466,15 @@ export default function TodayView() {
             </div>
           ))}
         </div>
+
+        {/* Garmin proprietary signals as info note (never override card color) */}
+        {(bbHigh != null || readiness != null) && cardState === 'green' && (
+          <div className="mt-2 text-[11px] text-text-muted/60 flex items-center gap-1">
+            <Info size={10} />
+            Garmin: BB {bbHigh ?? '—'} · Readiness {readiness ?? '—'}
+            <span className="text-[9px]">(estimates)</span>
+          </div>
+        )}
 
         {/* Expandable workout */}
         {isGymDay && todaySession && SESSION_EXERCISES[todaySession] && (
@@ -260,7 +509,14 @@ export default function TodayView() {
         )}
       </div>
 
-      {/* ═══ 2. RECOVERY SIGNALS (2x2 grid with inline context) ═══ */}
+      {/* ═══ 2. WELLNESS CHECK-IN ═══ */}
+      <WellnessInput
+        todayWellness={todayWellness}
+        onSubmit={() => setWellnessRefresh(r => r + 1)}
+      />
+
+      {/* ═══ 3. RECOVERY SIGNALS — Tiered layout ═══ */}
+      {/* Primary signals (evidence-backed) */}
       <div className="grid grid-cols-2 gap-2">
         {/* HRV */}
         <div className="bg-bg-card rounded-2xl border border-border-subtle p-3">
@@ -291,75 +547,70 @@ export default function TodayView() {
           </div>
           <div className="text-[10px] text-text-muted mt-1">Target 7-8h</div>
         </div>
+      </div>
 
-        {/* Body Battery */}
-        <div className="bg-bg-card rounded-2xl border border-border-subtle p-3">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] text-text-muted uppercase tracking-wider">Body Battery</span>
+      {/* Secondary signals (Garmin estimates — visually demoted) */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="bg-bg-card rounded-2xl border border-border-subtle p-2.5 opacity-70">
+          <div className="flex items-center gap-1 mb-0.5">
+            <span className="text-[9px] text-text-muted uppercase tracking-wider">Body Battery</span>
+            <span className="text-[8px] text-text-muted/50">(est.)</span>
           </div>
-          <div className={`text-2xl font-semibold font-data ${metricColor(bbHigh, 60, 30)}`}>
+          <div className={`text-lg font-semibold font-data ${metricColor(bbHigh, 60, 30)}`}>
             {bbHigh ?? '—'}
           </div>
-          <div className="text-[10px] text-text-muted mt-1">
+          <div className="text-[9px] text-text-muted">
             {todayMetrics?.body_battery_lowest != null
               ? `Low ${todayMetrics.body_battery_lowest} · Range ${(bbHigh ?? 0) - todayMetrics.body_battery_lowest}`
               : ''}
           </div>
         </div>
 
-        {/* Readiness */}
-        <div className="bg-bg-card rounded-2xl border border-border-subtle p-3">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] text-text-muted uppercase tracking-wider">Readiness</span>
+        <div className="bg-bg-card rounded-2xl border border-border-subtle p-2.5 opacity-70">
+          <div className="flex items-center gap-1 mb-0.5">
+            <span className="text-[9px] text-text-muted uppercase tracking-wider">Readiness</span>
+            <span className="text-[8px] text-text-muted/50">(est.)</span>
           </div>
-          <div className={`text-2xl font-semibold font-data ${metricColor(readiness, 60, 40)}`}>
+          <div className={`text-lg font-semibold font-data ${metricColor(readiness, 60, 40)}`}>
             {readiness ?? '—'}
           </div>
-          <div className="text-[10px] text-text-muted mt-1">
+          <div className="text-[9px] text-text-muted">
             {readiness != null && readiness >= 60 ? 'Ready' : readiness != null && readiness >= 40 ? 'Borderline' : readiness != null ? 'Low' : ''}
           </div>
         </div>
       </div>
 
-      {/* ═══ 3. TRAINING STATUS (replaces resting HR) ═══ */}
-      {(tsInfo || garminACWR != null) && (
-        <div className="bg-bg-card rounded-2xl border border-border-subtle p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-accent-purple/10 flex items-center justify-center">
-                <Activity size={16} className="text-accent-purple" />
-              </div>
-              <div>
-                <div className="text-[10px] text-text-muted uppercase tracking-wider">Training Status</div>
-                {tsInfo && (
-                  <div className={`text-base font-semibold ${tsInfo.color}`}>{tsInfo.label}</div>
-                )}
-              </div>
-            </div>
-            {garminACWR != null && (
-              <div className="text-right">
-                <div className="text-[10px] text-text-muted">ACWR</div>
-                <div className={`text-lg font-semibold font-data ${
-                  garminACWR > 1.5 ? 'text-accent-red' : garminACWR > 1.3 ? 'text-accent-yellow' : garminACWR >= 0.8 ? 'text-accent-green' : 'text-accent-yellow'
-                }`}>
-                  {garminACWR.toFixed(1)}
-                </div>
-              </div>
-            )}
+      {/* ═══ 4. WEEKLY LOAD (replaces Training Status / ACWR) ═══ */}
+      <div className="bg-bg-card rounded-2xl border border-border-subtle p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Activity size={14} className="text-accent-purple" />
+          <span className="text-[10px] text-text-muted uppercase tracking-wider">Weekly Load</span>
+        </div>
+        <div className="flex gap-4 text-sm">
+          <div>
+            <span className="text-text-secondary">{formatDuration(thisWeekDuration)}</span>
+            <span className="text-text-muted text-xs ml-1">gym</span>
           </div>
-          {tsInfo && (
-            <div className="text-[11px] text-text-muted mt-2">{tsInfo.desc}</div>
-          )}
-          {acuteLoad && (
-            <div className="flex gap-4 mt-2 text-[11px] text-text-muted">
-              <span>Acute: {Math.round(acuteLoad.dailyTrainingLoadAcute)}</span>
-              <span>Chronic: {Math.round(acuteLoad.dailyTrainingLoadChronic)}</span>
-            </div>
+          <div>
+            <span className="text-text-secondary">{Math.round(thisWeekElev).toLocaleString()}m</span>
+            <span className="text-text-muted text-xs ml-1">elev</span>
+          </div>
+          {loadChangePct != null && (
+            <span className={`text-xs font-medium ${
+              Math.abs(loadChangePct) < 15 ? 'text-accent-green' : Math.abs(loadChangePct) < 25 ? 'text-accent-yellow' : 'text-accent-red'
+            }`}>
+              {loadChangePct >= 0 ? '+' : ''}{loadChangePct}% vs last wk
+            </span>
           )}
         </div>
-      )}
+        {lastWeekDuration > 0 && (
+          <div className="text-[10px] text-text-muted mt-1">
+            Last week: {formatDuration(lastWeekDuration)} · {Math.round(lastWeekElev).toLocaleString()}m
+          </div>
+        )}
+      </div>
 
-      {/* ═══ 4. RESTING HR (compact) ═══ */}
+      {/* ═══ 5. RESTING HR (compact with trend) ═══ */}
       <div className="bg-bg-card rounded-2xl border border-border-subtle px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -368,20 +619,21 @@ export default function TodayView() {
             <span className="text-sm font-semibold font-data text-text-primary">
               {todayMetrics?.resting_hr ?? '--'} bpm
             </span>
-          </div>
-          <div className="w-20">
-            {(metrics.data ?? []).length > 1 && (
-              <Sparkline
-                data={(metrics.data ?? []).slice().reverse().filter((d: any) => d.resting_hr).map((d: any) => ({ value: d.resting_hr }))}
-                color="#f87171"
-                height={24}
-              />
+            {rhrTrend && (
+              <span className={`text-[10px] ${rhrElevated ? 'text-accent-yellow' : 'text-text-muted'}`}>
+                {rhrTrend}
+              </span>
             )}
           </div>
+          {rhr7dAvg != null && (
+            <span className="text-[10px] text-text-muted">
+              7d avg: {Math.round(rhr7dAvg)}bpm
+            </span>
+          )}
         </div>
       </div>
 
-      {/* ═══ 5. LATEST ACTIVITY ═══ */}
+      {/* ═══ 6. LATEST ACTIVITY ═══ */}
       {lastActivity && (
         <div className="bg-bg-card rounded-2xl border border-border-subtle p-4">
           <div className="flex items-center gap-2 mb-2">
@@ -411,7 +663,12 @@ export default function TodayView() {
         </div>
       )}
 
-      {/* ═══ 6. PROGRAM PROGRESS (compact) ═══ */}
+      {/* ═══ 7. SESSION RPE PROMPT ═══ */}
+      {lastActivity && lastActivity.activity_type === 'strength_training' && (
+        <RPEPrompt activity={lastActivity} />
+      )}
+
+      {/* ═══ 8. PROGRAM PROGRESS (compact) ═══ */}
       <div className="bg-bg-card rounded-2xl border border-border-subtle p-4">
         <div className="flex items-center justify-between mb-2">
           <span className="text-[10px] text-text-muted uppercase tracking-wider">

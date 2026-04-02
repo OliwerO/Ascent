@@ -1,6 +1,6 @@
 # Ascent — Status & Next Steps
 
-> Last updated: 2026-04-01
+> Last updated: 2026-04-02
 > Single source of truth for all task status, dependencies, and next actions.
 > CLAUDE.md has architecture/context. This file has what to DO.
 
@@ -45,6 +45,15 @@ See `docs/schema-conflict-resolution.md`. New migration: `sql/006_training_expan
 - MFA is permanently enabled (ECG feature, irreversible). Safari session approach is the long-term solution.
 - Body composition: no Garmin scale. User does gym body comp scans — input via screenshot/Telegram → Claude Vision parsing.
 
+### Research integration (2026-04-02)
+
+- Evidence-based implementation guide integrated across all project files.
+- Knowledge base updated to v1.2: added Domain 7 (Metric Hierarchy & Signal Quality), Domain 8 (Dashboard & Communication Design), updated Domains 1, 3, 4.
+- Health coach skill updated with communication principles, data trust hierarchy, expanded what-not-to-do.
+- Grafana dashboard spec updated: Dashboard 1/2 design notes, new Dashboard 3 (Quarterly Strategic Review), alerts rewritten with compound conditions.
+- CLAUDE.md updated with data validation rules and new critical decisions.
+- Migration `009_research_integration.sql` created: `subjective_wellness`, `daily_data_quality`, `data_epochs` tables + `srpe`/`srpe_load` columns on `training_sessions`.
+
 ### eGym body scan sync (2026-04-01)
 
 - `egym_sync.py` pulls body composition from eGym via `egym-exporter` (Go binary, Prometheus metrics).
@@ -61,7 +70,11 @@ See `docs/schema-conflict-resolution.md`. New migration: `sql/006_training_expan
 Things that can happen NOW (parallel):
   ├── Complete Garmin first login (rate limit cooldown, then garmin_login_once.py)
   ├── Grafana Cloud: fix Supabase connection (get pooler details from dashboard)
-  └── Backfill historical Garmin data (once login works)
+  ├── Backfill historical Garmin data (once login works)
+  ├── Run migration 009_research_integration.sql
+  ├── Implement subjective wellness questionnaire (highest-evidence unbuilt feature)
+  ├── Add data validation to garmin_sync.py
+  └── Add sRPE capture to training workflow
 
 After Garmin Spike completes:
   └── Phase 7b: implement garmin_workout_push.py
@@ -71,6 +84,11 @@ After KB + 4-6 weeks of Garmin data:
       └── Phase 8: implement workout_generator.py
           └── Phase 9: Google Calendar integration
               └── Phase 10: Full orchestration
+
+After Grafana connected:
+  ├── Build Dashboard 1 (Daily Overview) + Dashboard 2 (Training Detail)
+  ├── Implement compound alert conditions
+  └── Build Dashboard 3 (Quarterly Strategic Review)
 ```
 
 -----
@@ -131,6 +149,20 @@ After KB + 4-6 weeks of Garmin data:
 - [ ] Write `weekly_analysis.py` (Phase 5) — compliance scoring
 - [ ] Generate first week of workouts as validation
 
+### Research Integration (2026-04-02)
+
+**High priority:**
+- [ ] **Implement daily subjective wellness questionnaire via Slack/Telegram** — 5 items (sleep quality, fatigue, muscle soreness, motivation, stress), 1–5 scale, stored in `subjective_wellness` table (migration 009), Z-score normalized against 14–28 day rolling baseline. Highest-evidence unbuilt feature.
+
+**Medium priority:**
+- [ ] **Add data validation layer to garmin_sync.py** — apply reject/flag rules from the validation table before writing to Supabase (see CLAUDE.md "Data Integrity" section)
+- [ ] **Create data_quality tracking** — populate `daily_data_quality` table (migration 009) with wear hours, completeness score, max gap duration, is_valid_day flag
+- [ ] **Create data_epochs tracking** — populate `data_epochs` table (migration 009) with device changes, firmware updates for baseline reset triggers
+- [ ] **Implement date-spine pattern for gap-aware rolling calculations** — update Grafana queries and weekly analysis to use `generate_series()` with minimum valid-day thresholds (4/7 weekly, 20/30 monthly)
+- [ ] **Add sRPE capture to training workflow** — CR-10 × duration for every session, stored in `training_sessions.srpe` and `.srpe_load` columns (migration 009)
+- [ ] **Update Grafana alert conditions** to compound multi-signal rules with 2-day time-delay filtering (see updated `docs/grafana-dashboard-spec.md`)
+- [ ] **Add Quarterly Strategic Review dashboard to Grafana** per new Dashboard 3 spec
+
 ### After Phases 7b + 8 working:
 - [ ] Phase 9: Google Calendar integration
 - [ ] Phase 10: Wire up OpenClaw cron jobs, Telegram interaction patterns
@@ -157,6 +189,7 @@ After KB + 4-6 weeks of Garmin data:
 | `sql/005_additional_garmin_tables.sql` | Phase 2 additional tables (5 tables) |
 | `sql/006_training_expansion.sql` | Phase 8 tables (planned_workouts, exercise_progression) |
 | `sql/008_body_comp_source_unique.sql` | Unique constraint on (date, source) for multi-source body comp |
+| `sql/009_research_integration.sql` | subjective_wellness, daily_data_quality, data_epochs tables + sRPE columns |
 | **Docs** | |
 | `docs/training-expansion-brief.md` | Full Phase 7-10 specification |
 | `docs/schema-conflict-resolution.md` | Why 3 tables were dropped |
