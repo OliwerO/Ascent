@@ -163,6 +163,12 @@ After Grafana connected:
 - [ ] **Update Grafana alert conditions** to compound multi-signal rules with 2-day time-delay filtering (see updated `docs/grafana-dashboard-spec.md`)
 - [ ] **Add Quarterly Strategic Review dashboard to Grafana** per new Dashboard 3 spec
 
+### Coaching & Infrastructure
+- [ ] **Fix Slack channel messaging** — bot responds to DMs but not #ascent-daily. Needs `message.channels` event subscription on api.slack.com (user action)
+- [ ] **Test on-demand Garmin sync button** — verify watch icon in app triggers sync_watcher → garmin_sync.py pipeline
+- [ ] **Add data validation to garmin_sync.py** — reject/flag rules from CLAUDE.md "Data Integrity" section before writing to Supabase
+- [ ] **Verify readiness_composite view** works end-to-end with new tables from migration 009
+
 ### After Phases 7b + 8 working:
 - [ ] Phase 9: Google Calendar integration
 - [ ] Phase 10: Wire up OpenClaw cron jobs, Telegram interaction patterns
