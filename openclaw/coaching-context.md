@@ -19,7 +19,7 @@
 
 - **Upper body & core strength** — Maintain and build pressing/pulling strength and core stability, especially relevant for splitboard touring and paraglider handling.
 - **Leg strength** — Supplemental to mountain days. Not a standalone priority when touring volume is high.
-- **Mobility** — Structured stretching and yoga. Currently does some ad-hoc work but wants a more consistent routine integrated into the weekly plan.
+- **Mobility** — Evidence-based mobility system (Domain 9 in KB). Protocol A: 12-min daily maintenance (ankle DF, hip flexors, thoracic rotation, hip ER). Protocol B: session-specific dynamic warm-ups built into every Garmin workout (B1 squat day, B2 hinge day, B3 upper body). Protocol C: 40-45 min dedicated session (Thursday slot or deload weeks). Full-ROM lifting counts as loaded stretching — deep squats, RDLs, split squats already cover major flexibility needs.
 
 ### Metrics to Track
 
@@ -163,6 +163,7 @@ below for any date-specific overrides.
 |2026-03-31|Slack channels created|#ascent-daily (briefing + alerts) and #ascent-training (plans + analysis). Interactive — user chats directly with coach in channels.|
 |2026-03-31|Program reviewed interactively|Day swap (Mon=Upper, Wed/Fri=Full Body) to protect legs after weekend mountain days. KB exercises integrated (swings, TGU, clean&press, halos, farmer carry). Week 1 starts Wed Apr 1 (shortened). Block 2 consolidated 2x template added. Subjective + body battery + training readiness added to decision matrix. Sleep coaching set to friendly reminders. Opus reviews to be calendar-triggered.|
 |2026-04-02|Strength C templates restored + Session Exceptions system added|Coach had incorrectly rewritten the Strength C template (permanent change) instead of logging a one-day exception. Templates restored to Opus-authored originals. New Session Exceptions section added for day-specific overrides. SKILL.md updated with explicit guardrails.|
+|2026-04-02|Domain 9 (Mobility) integrated into system|Evidence-based mobility protocols added to KB. Protocol B warm-ups built into all Garmin workouts (session-specific: B1 squat, B2 hinge, B3 upper). Protocol A (12-min daily) and Protocol C (Thursday dedicated) documented in coaching context. Seasonal adjustments: shift to thoracic/shoulder emphasis for hike-and-fly season (May+).|
 
 -----
 
@@ -258,6 +259,6 @@ below for any date-specific overrides.
 - [ ] Blood test results — in Obsidian vault, needs linking to goals. Feb 26 panel in Supabase.
 - [ ] Nutrition plan — not in scope for this block. Focus on protein target (1.8-2.0 g/kg). Opus session for full nutrition plan after Block 1.
 - [x] Exercise selection — completed (see program above)
-- [x] Mobility routine — structured (see Tuesday routine above)
+- [x] Mobility routine — structured. Domain 9 research integrated. Protocol A (12-min daily), Protocol B warm-ups (built into Garmin workouts), Protocol C (40-45 min Thursday dedicated session).
 - [ ] Food logging setup — Phase 4b React app. For now, rough tracking is fine.
 - [ ] Training set logging — Garmin records strength activities with exercises, sets, reps, and weight. Sync pulls this into activities table. Coaching agent uses this for progression tracking from day 1.

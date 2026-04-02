@@ -136,6 +136,19 @@ GARMIN_EXERCISE_MAP = {
     "Bulgarian Split Squat":    ("LUNGE",           "DUMBBELL_BULGARIAN_SPLIT_SQUAT"),  # FIT SDK: LUNGE category
     "Lateral Raises":           ("LATERAL_RAISE",   "DUMBBELL_LATERAL_RAISE"),   # FIT SDK: LATERAL_RAISE category
     "KB Farmer Carry":          ("CARRY",           "FARMERS_WALK"),
+
+    # Warm-up exercises (Protocol B from Domain 9: Mobility)
+    "Foam Roll T-Spine":        ("WARM_UP",         "FOAM_ROLLING"),             # Segmental extension on roller
+    "Ankle Mobilization":       ("WARM_UP",         "ANKLE_CIRCLES"),            # Half-kneeling wall ankle mob
+    "Goblet Squat Hold":        ("SQUAT",           "GOBLET_SQUAT"),             # Prying goblet squat
+    "World's Greatest Stretch":  ("STRETCH",        "LUNGE_WITH_TWIST"),         # Closest FIT SDK match
+    "Bodyweight Squat":         ("SQUAT",           "BODY_WEIGHT_WALL_SQUAT"),   # Pause squat groove
+    "90/90 Hip Switch":         ("WARM_UP",         "HIP_CIRCLES"),              # Dynamic hip transitions
+    "Single-Leg RDL":           ("DEADLIFT",        "SINGLE_LEG_DEADLIFT"),      # BW hamstring lengthening
+    "Inchworm":                 ("WARM_UP",         "INCHWORM"),                 # Inchworm to downward dog
+    "Wall Slides":              ("WARM_UP",         "ARM_CIRCLES"),              # Scapular wall slides
+    "Band Pull-Aparts":        ("WARM_UP",          "BAND_PULL_APART"),
+    "Thread the Needle":        ("STRETCH",         "LUNGE_WITH_TWIST"),         # Quadruped thoracic rotation
 }
 
 # Garmin benchmark e1RMs (from user's Garmin Connect, as of Feb 2026)
@@ -384,6 +397,81 @@ def make_step_order() -> int:
     return STEP_ORDER_COUNTER
 
 
+def build_warmup_step(
+    exercise_name: str,
+    reps: int | None = None,
+    duration_s: int | None = None,
+    step_order: int = 0,
+) -> dict:
+    """Build a Garmin warmup step (stepTypeId: 1) for pre-session mobility."""
+    garmin_mapping = GARMIN_EXERCISE_MAP.get(exercise_name, ("WARM_UP", "OTHER"))
+    category = garmin_mapping[0]
+    garmin_exercise_name = garmin_mapping[1]
+
+    step = {
+        "type": "ExecutableStepDTO",
+        "stepOrder": step_order,
+        "stepType": {
+            "stepTypeId": 1,
+            "stepTypeKey": "warmup",
+            "displayOrder": 1,
+        },
+        "category": category,
+        "exerciseName": garmin_exercise_name,
+        "description": exercise_name,
+    }
+
+    if duration_s:
+        step["endCondition"] = {
+            "conditionTypeId": 2,
+            "conditionTypeKey": "time",
+            "displayOrder": 2,
+            "displayable": True,
+        }
+        step["endConditionValue"] = float(duration_s)
+    elif reps:
+        step["endCondition"] = {
+            "conditionTypeId": 10,
+            "conditionTypeKey": "reps",
+            "displayOrder": 10,
+            "displayable": True,
+        }
+        step["endConditionValue"] = float(reps)
+
+    return step
+
+
+# Warm-up protocols per session type (from Domain 9: Mobility, Protocol B)
+WARMUP_PROTOCOLS = {
+    # B1 — Squat day (ankle, hip, thoracic focus)
+    "A": [
+        ("Foam Roll T-Spine", None, 120),        # 2 min segmental extension
+        ("Ankle Mobilization", 10, None),         # 10 reps each side (shown as 10)
+        ("Goblet Squat Hold", None, 15),          # 15s hold at bottom, prying
+        ("World's Greatest Stretch", 6, None),    # 3 reps each side
+        ("Bodyweight Squat", 5, None),            # 5 reps with 3s pause
+    ],
+    # B2 — Hinge day (hamstring, hip, posterior chain focus)
+    "C": [
+        ("Foam Roll T-Spine", None, 60),          # 1 min foam roll
+        ("90/90 Hip Switch", 10, None),            # 5 transitions each direction
+        ("Single-Leg RDL", 6, None),               # 6 reps each side, BW
+        ("Inchworm", 5, None),                     # 5 reps inchworm to downdog
+        ("World's Greatest Stretch", 6, None),     # 3 each side
+    ],
+    # B3 — Upper body day (thoracic, shoulder, scapular focus)
+    "B": [
+        ("Foam Roll T-Spine", None, 120),         # 2 min T-spine + lats
+        ("Wall Slides", 8, None),                  # 8 reps
+        ("Band Pull-Aparts", 10, None),            # 10 reps
+        ("Thread the Needle", 8, None),            # 8 reps each side
+    ],
+}
+# Consolidated sessions use the same warm-ups
+WARMUP_PROTOCOLS["A2"] = WARMUP_PROTOCOLS["A"]
+WARMUP_PROTOCOLS["B2"] = WARMUP_PROTOCOLS["C"]
+
+
 def build_exercise_step(
     exercise_name: str,
     weight_kg: float | None,
@@ -534,8 +622,18 @@ def build_garmin_workout(
     session = SESSIONS[session_key]
     exercises = session["exercises"]
 
-    # Build workout steps
+    # Build workout steps — start with warm-up protocol
     workout_steps = []
+    warmup_exercises = WARMUP_PROTOCOLS.get(session_key, [])
+    for wu_name, wu_reps, wu_duration in warmup_exercises:
+        wu_step = build_warmup_step(
+            exercise_name=wu_name,
+            reps=wu_reps,
+            duration_s=wu_duration,
+            step_order=make_step_order(),
+        )
+        workout_steps.append(wu_step)
+
     progression_notes = []  # Collect progression decisions for summary
 
     for ex in exercises:

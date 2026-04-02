@@ -256,7 +256,10 @@ After Grafana connected:
 | `sql/006_training_expansion.sql` | Phase 8 tables (planned_workouts, exercise_progression) |
 | `sql/008_body_comp_source_unique.sql` | Unique constraint on (date, source) for multi-source body comp |
 | `sql/009_research_integration.sql` | subjective_wellness, daily_data_quality, data_epochs tables + sRPE columns |
+| `sql/011_daily_summary_multi_source.sql` | daily_summary view updated for multi-source weight + RLS for 009 tables |
+| `sql/012_exercise_seeds_and_wellness_fix.sql` | Missing exercise seeds + composite_score NULL fix |
 | **Docs** | |
+| `docs/knowledge-base/domain-9-mobility.md` | Mobility & flexibility evidence base (7 sections, 3 protocols) |
 | `docs/training-expansion-brief.md` | Full Phase 7-10 specification |
 | `docs/schema-conflict-resolution.md` | Why 3 tables were dropped |
 | `docs/grafana-dashboard-spec.md` | Dashboard & alert specifications |
