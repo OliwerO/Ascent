@@ -424,7 +424,7 @@ function WeekGrid({
 
               {/* Expanded detail — inline */}
               {isExpanded && (
-                <div className="ml-8 mr-2 mb-2 mt-1 space-y-3">
+                <div className="ml-2 mr-1 mb-2 mt-1 space-y-3">
                   {/* Gym sessions from planned_workouts */}
                   {weekPlanned.map((pw) => {
                     const def = pw.workout_definition as WorkoutDefinition | null
@@ -439,9 +439,9 @@ function WeekGrid({
 
                     return (
                       <div key={pw.id} className="bg-bg-primary/50 rounded-lg px-3 py-2">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Dumbbell size={13} className="text-gym shrink-0" />
-                          <span className="text-sm font-medium text-white/90">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <Dumbbell size={15} className="text-gym shrink-0" />
+                          <span className="text-[15px] font-medium text-white/95">
                             {sessionLabel}
                           </span>
                           {pw.status === 'completed' && (
@@ -460,7 +460,7 @@ function WeekGrid({
                             </span>
                           )}
                         </div>
-                        <div className="text-xs text-white/60 mb-2">
+                        <div className="text-[13px] text-white/50 mb-2">
                           {pw.scheduled_date} &middot; {rpeLabel}
                           {def?.estimated_duration_minutes && (
                             <span> &middot; ~{def.estimated_duration_minutes} min</span>
@@ -469,7 +469,7 @@ function WeekGrid({
 
                         {/* Adjustment reason */}
                         {pw.status === 'adjusted' && pw.adjustment_reason && (
-                          <div className="text-xs text-accent-yellow bg-accent-yellow/10 rounded px-2 py-1 mb-2">
+                          <div className="text-[13px] text-accent-yellow bg-accent-yellow/10 rounded px-2.5 py-1.5 mb-2.5">
                             {pw.adjustment_reason}
                           </div>
                         )}
@@ -480,12 +480,12 @@ function WeekGrid({
                         )}
 
                         {/* Exercises — table layout */}
-                        <table className="w-full text-xs">
+                        <table className="w-full text-[13px]">
                           <thead>
-                            <tr className="text-white/40 border-b border-white/10">
-                              <th className="text-left py-1 font-medium pr-2">Exercise</th>
-                              <th className="text-right py-1 font-medium px-2 whitespace-nowrap">Sets{'\u00D7'}Reps</th>
-                              <th className="text-right py-1 font-medium pl-2">Weight</th>
+                            <tr className="text-white/50 border-b border-white/10">
+                              <th className="text-left py-1.5 font-medium pr-2">Exercise</th>
+                              <th className="text-right py-1.5 font-medium px-2 whitespace-nowrap">Sets{'\u00D7'}Reps</th>
+                              <th className="text-right py-1.5 font-medium pl-2 w-20">Weight</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -495,12 +495,12 @@ function WeekGrid({
                                 : `${ex.sets}\u00D7${ex.reps}`
                               return (
                                 <tr key={ex.name} className="border-b border-white/5">
-                                  <td className="py-1 pr-2 text-white/90">
+                                  <td className="py-1.5 pr-2 text-white/90">
                                     {ex.name}
-                                    {ex.note && <span className="text-white/40 ml-1 text-[10px]">({ex.note})</span>}
+                                    {ex.note && <span className="text-white/40 ml-1.5 text-[11px]">({ex.note})</span>}
                                   </td>
-                                  <td className="py-1 px-2 text-right font-mono text-white/70">{setsReps}</td>
-                                  <td className="py-1 pl-2 text-right font-mono text-white/70">
+                                  <td className="py-1.5 px-2 text-right font-mono text-white/70 whitespace-nowrap">{setsReps}</td>
+                                  <td className="py-1.5 pl-2 text-right font-mono text-white/80 w-20">
                                     {ex.weight_kg != null && ex.weight_kg > 0 ? `${ex.weight_kg}kg` : '\u2014'}
                                   </td>
                                 </tr>

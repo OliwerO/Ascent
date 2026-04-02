@@ -469,22 +469,22 @@ export default function TodayView() {
                     ))}
                   </div>
                 )}
-                <table className="w-full text-[12px]">
+                <table className="w-full text-[14px]">
                   <tbody>
                     {todayPlanned.workout_definition.exercises.map((ex: any, i: number) => (
                       <tr key={i} className="border-b border-white/5 last:border-0">
-                        <td className="py-1 text-white/90">{ex.name}</td>
-                        <td className="py-1 text-right text-white/60 font-mono text-[11px]">
+                        <td className="py-1.5 text-white/90">{ex.name}</td>
+                        <td className="py-1.5 text-right text-white/60 font-mono text-[13px] whitespace-nowrap">
                           {ex.sets}×{ex.reps}
                         </td>
-                        <td className="py-1 text-right text-white/70 font-mono text-[11px] w-16">
+                        <td className="py-1.5 text-right text-white/80 font-mono text-[13px] w-20">
                           {ex.weight_kg != null ? `${ex.weight_kg}kg` : '—'}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                <div className="text-[11px] text-white/40 mt-2">
+                <div className="text-[12px] text-white/40 mt-2">
                   ~{todayPlanned.workout_definition.estimated_duration_minutes ?? (deload ? 30 : 50)} min
                   {' · '}RPE {todayPlanned.workout_definition.rpe_range?.join('-') ?? '6-7'}
                 </div>
