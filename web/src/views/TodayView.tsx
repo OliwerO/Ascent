@@ -296,13 +296,44 @@ export default function TodayView() {
   const [showExercises, setShowExercises] = useState(false)
   const [, setWellnessRefresh] = useState(0)
 
+  // All hooks must be called before any early return (React 19 enforces this)
+  const recentActivities = activities.data ?? []
+
+  const sleep7dAvg = useMemo(() => {
+    const sleepDays = (summary.data ?? []).slice(0, 7)
+    const valid = sleepDays.filter((d: any) => d.total_sleep_seconds != null)
+    if (valid.length === 0) return null
+    return valid.reduce((s: number, d: any) => s + d.total_sleep_seconds / 3600, 0) / valid.length
+  }, [summary.data])
+
+  const thisWeekActivities = useMemo(() => {
+    const now = new Date()
+    const dayOfWeek = now.getDay()
+    const monday = new Date(now)
+    monday.setDate(now.getDate() - ((dayOfWeek + 6) % 7))
+    monday.setHours(0, 0, 0, 0)
+    return recentActivities.filter((a: any) => new Date(a.date) >= monday)
+  }, [recentActivities])
+
+  const lastWeekActivities = useMemo(() => {
+    const now = new Date()
+    const dayOfWeek = now.getDay()
+    const monday = new Date(now)
+    monday.setDate(now.getDate() - ((dayOfWeek + 6) % 7))
+    const prevMonday = new Date(monday)
+    prevMonday.setDate(monday.getDate() - 7)
+    return recentActivities.filter((a: any) => {
+      const d = new Date(a.date)
+      return d >= prevMonday && d < monday
+    })
+  }, [recentActivities])
+
   const loading = summary.loading || hrv.loading || metrics.loading || activities.loading
   if (loading) return <LoadingState />
 
   const today = summary.data?.[0]
   const todayHRV = hrv.data?.[0]
   const todayMetrics = metrics.data?.[0]
-  const recentActivities = activities.data ?? []
   const lastActivity = recentActivities[0]
   const todayStr = format(new Date(), 'yyyy-MM-dd')
   const todayWellness = (wellness.data ?? []).find((w: any) => w.date === todayStr)
@@ -328,11 +359,6 @@ export default function TodayView() {
   const sleepBelowCount = sleepDays.filter(
     (d: any) => d.total_sleep_seconds != null && d.total_sleep_seconds / 3600 < 6
   ).length
-  const sleep7dAvg = useMemo(() => {
-    const valid = sleepDays.filter((d: any) => d.total_sleep_seconds != null)
-    if (valid.length === 0) return null
-    return valid.reduce((s: number, d: any) => s + d.total_sleep_seconds / 3600, 0) / valid.length
-  }, [sleepDays])
 
   // ─── Resting HR context ───
   const rhrValues = (metrics.data ?? []).slice(0, 7).filter((d: any) => d.resting_hr != null)
@@ -345,29 +371,6 @@ export default function TodayView() {
   const rhrTrend = todayMetrics?.resting_hr != null && rhr7dAvg != null
     ? (todayMetrics.resting_hr > rhr7dAvg + 2 ? '↑ Rising' : todayMetrics.resting_hr < rhr7dAvg - 2 ? '↓ Declining' : '→ Stable')
     : null
-
-  // ─── Weekly load (replaces ACWR) ───
-  const thisWeekActivities = useMemo(() => {
-    const now = new Date()
-    const dayOfWeek = now.getDay()
-    const monday = new Date(now)
-    monday.setDate(now.getDate() - ((dayOfWeek + 6) % 7))
-    monday.setHours(0, 0, 0, 0)
-    return recentActivities.filter((a: any) => new Date(a.date) >= monday)
-  }, [recentActivities])
-
-  const lastWeekActivities = useMemo(() => {
-    const now = new Date()
-    const dayOfWeek = now.getDay()
-    const monday = new Date(now)
-    monday.setDate(now.getDate() - ((dayOfWeek + 6) % 7))
-    const prevMonday = new Date(monday)
-    prevMonday.setDate(monday.getDate() - 7)
-    return recentActivities.filter((a: any) => {
-      const d = new Date(a.date)
-      return d >= prevMonday && d < monday
-    })
-  }, [recentActivities])
 
   const thisWeekDuration = thisWeekActivities.reduce((s: number, a: any) => s + (a.duration_seconds ?? 0), 0)
   const lastWeekDuration = lastWeekActivities.reduce((s: number, a: any) => s + (a.duration_seconds ?? 0), 0)
