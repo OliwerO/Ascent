@@ -115,6 +115,9 @@ def parse_export(csv_path: Path) -> list[dict]:
                  MuscleMass,PhysiqueRating,ProteinMass,VisceralFat,
                  BasalMetabolism,HeartRate,SkeletalMuscleMass,User,Source
 
+    Only weight is written to Supabase. BIA body comp estimates from a home
+    scale are too inaccurate — those come from eGym scans instead.
+
     Deduplicates by date — keeps the earliest reading per day (fasted weight).
     """
     if not csv_path.exists():
@@ -160,20 +163,12 @@ def parse_export(csv_path: Path) -> list[dict]:
 
             weight_grams = int(round(weight_kg * 1000))
 
-            # Convert bone/muscle mass from kg to grams (scaleconnect outputs kg)
-            bone_mass_kg = _safe_float(line.get("BoneMass"))
-            muscle_mass_kg = _safe_float(line.get("MuscleMass"))
-
+            # Only write weight from Xiaomi scale — body fat, muscle mass,
+            # and other BIA estimates are inaccurate from a home scale.
+            # Those metrics come from eGym body scans (egym_sync.py).
             row = {
                 "date": day_key,
                 "weight_grams": weight_grams,
-                "bmi": _safe_float(line.get("BMI")),
-                "body_fat_pct": _safe_float(line.get("BodyFat")),
-                "body_water_pct": _safe_float(line.get("BodyWater")),
-                "bone_mass_grams": int(round(bone_mass_kg * 1000)) if bone_mass_kg else None,
-                "muscle_mass_grams": int(round(muscle_mass_kg * 1000)) if muscle_mass_kg else None,
-                "visceral_fat_rating": _safe_float(line.get("VisceralFat")),
-                "metabolic_age": _safe_int(line.get("MetabolicAge")),
                 "source": "xiaomi",
                 "raw_json": {k: v for k, v in line.items() if v},
             }
