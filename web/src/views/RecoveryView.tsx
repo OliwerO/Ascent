@@ -298,7 +298,7 @@ export default function RecoveryView() {
                 </linearGradient>
               </defs>
               <XAxis dataKey="date" tick={axisTickStyle} axisLine={axisLineStyle} tickLine={false} />
-              <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={35} />
+              <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={35} domain={['dataMin - 10', 'dataMax + 10']} />
               <Tooltip contentStyle={darkTooltipStyle} />
               <Area type="monotone" dataKey="baselineHigh" stroke="none" fill="url(#baselineGrad)" fillOpacity={1} stackId="baseline" connectNulls />
               <Area type="monotone" dataKey="baselineLow" stroke="none" fill="#0a0a0f" fillOpacity={1} stackId="baseline" connectNulls />

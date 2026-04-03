@@ -31,23 +31,6 @@ export default function GoalsView() {
   const weekStart = startOfWeek(now, { weekStartsOn: 1 })
   const weekEnd = endOfWeek(now, { weekStartsOn: 1 })
 
-  const weekActivities = useMemo(() => {
-    if (!activitiesHook.data) return []
-    return activitiesHook.data.filter((a: any) =>
-      isWithinInterval(new Date(a.date), { start: weekStart, end: weekEnd })
-    )
-  }, [activitiesHook.data, weekStart.getTime(), weekEnd.getTime()])
-
-  const gymThisWeek = useMemo(
-    () => weekActivities.filter((a: any) => a.activity_type === 'strength_training').length,
-    [weekActivities]
-  )
-  const mountainDaysThisWeek = useMemo(
-    () => weekActivities.filter((a: any) =>
-      ['resort_snowboarding', 'backcountry_snowboarding', 'resort_skiing', 'backcountry_skiing', 'hiking', 'ski_touring', 'splitboarding'].includes(a.activity_type)
-    ).length,
-    [weekActivities]
-  )
   const weeklyElevation = useMemo(
     () => Math.round((activitiesHook.data ?? [])
       .filter((a: any) => {
@@ -61,7 +44,11 @@ export default function GoalsView() {
   if (loading) return <LoadingState />
   if (error) return <div className="text-accent-red p-4">{error}</div>
 
-  const latestWeight = bodyComp.data?.find((d: any) => d.weight_kg != null)
+  // Prefer xiaomi (home scale) for weight — more accurate than gym weigh-in (clothes, food)
+  const latestWeight = bodyComp.data?.find((d: any) => d.weight_kg != null && d.source === 'xiaomi')
+    ?? bodyComp.data?.find((d: any) => d.weight_kg != null)
+  // Muscle mass comes from egym body scans (xiaomi only has weight)
+  const latestMuscle = bodyComp.data?.find((d: any) => d.muscle_mass_grams != null)
   const latestBodyFat = bodyComp.data?.find((d: any) => d.body_fat_pct != null)
   const latestVO2 = metrics.data?.find((d: any) => d.vo2max != null)
   const bodyCompGoals = (goalsHook.data ?? []).filter((g: any) => g.category === 'body_composition')
@@ -88,8 +75,8 @@ export default function GoalsView() {
                   {bodyCompGoals.map((goal: any) => {
                     const current = goal.metric === 'weight_kg' ? latestWeight?.weight_kg
                       : goal.metric === 'body_fat_pct' ? latestBodyFat?.body_fat_pct
-                      : goal.metric === 'muscle_mass_kg' && latestWeight?.muscle_mass_grams
-                        ? latestWeight.muscle_mass_grams / 1000 : null
+                      : goal.metric === 'muscle_mass_kg' && latestMuscle?.muscle_mass_grams
+                        ? latestMuscle.muscle_mass_grams / 1000 : null
                     const target = goal.target_value
                     const start = goal.current_value
                     const isLowerBetter = goal.metric === 'weight_kg' || goal.metric === 'body_fat_pct'
@@ -226,26 +213,6 @@ export default function GoalsView() {
           </Card>
         )}
       </div>
-
-      {/* This Week */}
-      <Card title="This Week">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex items-center gap-3">
-            <Dumbbell size={16} className="text-accent-blue shrink-0" />
-            <div>
-              <div className="text-lg font-bold text-text-primary">{gymThisWeek}<span className="text-[14px] text-text-muted font-normal">/3</span></div>
-              <div className="text-[12px] text-text-muted">Strength sessions</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <Mountain size={16} className="text-mountain shrink-0" />
-            <div>
-              <div className="text-lg font-bold text-text-primary">{mountainDaysThisWeek}</div>
-              <div className="text-[12px] text-text-muted">Mountain days</div>
-            </div>
-          </div>
-        </div>
-      </Card>
 
       {/* Season Context */}
       <Card title="Season Context">
