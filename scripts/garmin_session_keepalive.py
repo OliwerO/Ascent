@@ -267,10 +267,13 @@ def main():
         failures = _get_failure_count() + 1
         cache_cookies({}, session_alive=False)
 
-        if failures >= 3:  # 3 consecutive failures = ~12 hours without cookies
+        # Only alert at milestones, not every run (runs every 30 min)
+        hours_dead = failures * 0.5  # 30-min interval
+        alert_at = {6, 24, 48, 96}  # Alert at 3h, 12h, 24h, 48h
+        if failures in {6, 48, 96, 192}:
             alert_slack(
                 f":warning: *Garmin Safari cookies unavailable* for "
-                f"{failures} consecutive checks (~{failures * 4}h).\n"
+                f"{failures} consecutive checks (~{int(hours_dead)}h).\n"
                 f"Log into connect.garmin.com in Safari to restore the session."
             )
         sys.exit(1)
@@ -287,10 +290,12 @@ def main():
         failures = _get_failure_count()
         log.warning("Session appears dead (%d consecutive failures)", failures)
 
-        if failures >= 2:  # 2 failures = ~8 hours dead
+        # Only alert at milestones (runs every 30 min)
+        hours_dead = failures * 0.5
+        if failures in {6, 48, 96, 192}:
             alert_slack(
                 f":warning: *Garmin session dead* for {failures} consecutive "
-                f"checks (~{failures * 4}h).\n"
+                f"checks (~{int(hours_dead)}h).\n"
                 f"Log into connect.garmin.com in Safari to restore."
             )
         sys.exit(1)
