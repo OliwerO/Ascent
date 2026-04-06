@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useId } from 'react'
 import { supabase } from '../lib/supabase'
 import { format, subDays } from 'date-fns'
 import type {
@@ -36,16 +36,20 @@ function useFetch<T>(
 function useRealtimeRefresh(table: string): number {
   const [tick, setTick] = useState(0)
   const tickRef = useRef(0)
+  const id = useId()
 
   useEffect(() => {
-    const channel = supabase.channel(`${table}_realtime`)
+    const channelName = `${table}_rt_${id.replace(/:/g, '_')}`
+    const channel = supabase.channel(channelName)
       .on('postgres_changes', { event: '*', schema: 'public', table }, () => {
         tickRef.current += 1
         setTick(tickRef.current)
       })
-      .subscribe()
+      .subscribe((_status: string, err?: Error) => {
+        if (err) console.warn(`Realtime subscription error for ${table}:`, err.message)
+      })
     return () => { supabase.removeChannel(channel) }
-  }, [table])
+  }, [table, id])
 
   return tick
 }
