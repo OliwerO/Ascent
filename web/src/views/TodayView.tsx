@@ -618,6 +618,23 @@ export default function TodayView() {
     })
   }, [recentActivities])
 
+  // ─── Mountain load in last 72h (interference context) ───
+  const mountainLoad72h = useMemo(() => {
+    const threeDaysAgo = new Date()
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
+    threeDaysAgo.setHours(0, 0, 0, 0)
+    const mountainActivities = recentActivities.filter(
+      (a) => MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type) && new Date(a.date) >= threeDaysAgo
+    )
+    if (mountainActivities.length === 0) return null
+    const elevation = mountainActivities
+      .filter((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type))
+      .reduce((s: number, a) => s + (a.elevation_gain ?? 0), 0)
+    const hours = mountainActivities.reduce((s: number, a) => s + (a.duration_seconds ?? 0), 0) / 3600
+    const category = elevation >= 2000 || hours >= 5 ? 'heavy' : elevation >= 1000 || hours >= 3 ? 'moderate' : 'light'
+    return { days: mountainActivities.length, elevation: Math.round(elevation), hours: Math.round(hours * 10) / 10, category }
+  }, [recentActivities])
+
   const loading = summary.loading || hrv.loading || metrics.loading || activities.loading
   if (loading) return <LoadingState />
 
@@ -682,25 +699,6 @@ export default function TodayView() {
   const thisWeekElev = thisWeekActivities.reduce((s: number, a) => s + (a.elevation_gain ?? 0), 0)
   const lastWeekElev = lastWeekActivities.reduce((s: number, a) => s + (a.elevation_gain ?? 0), 0)
   const loadChangePct = lastWeekDuration > 0 ? Math.round(((thisWeekDuration - lastWeekDuration) / lastWeekDuration) * 100) : null
-
-  // ─── Mountain load in last 72h (interference context) ───
-  // Use shared constants from lib/activityTypes
-  const threeDaysAgo = new Date()
-  threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
-  threeDaysAgo.setHours(0, 0, 0, 0)
-
-  const mountainLoad72h = useMemo(() => {
-    const mountainActivities = recentActivities.filter(
-      (a) => MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type) && new Date(a.date) >= threeDaysAgo
-    )
-    if (mountainActivities.length === 0) return null
-    const elevation = mountainActivities
-      .filter((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type))
-      .reduce((s: number, a) => s + (a.elevation_gain ?? 0), 0)
-    const hours = mountainActivities.reduce((s: number, a) => s + (a.duration_seconds ?? 0), 0) / 3600
-    const category = elevation >= 2000 || hours >= 5 ? 'heavy' : elevation >= 1000 || hours >= 3 ? 'moderate' : 'light'
-    return { days: mountainActivities.length, elevation: Math.round(elevation), hours: Math.round(hours * 10) / 10, category }
-  }, [recentActivities])
 
   // ─── Coaching card decision tree (aligned with coaching-context.md) ───
   const hrvStatusLow = todayHRV?.status?.toUpperCase() === 'LOW'
