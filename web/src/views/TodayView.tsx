@@ -1,5 +1,5 @@
 import { LoadingState } from '../components/LoadingState'
-import { useDailySummary, useHRV, useDailyMetrics, useActivities, useSubjectiveWellness, usePlannedWorkouts } from '../hooks/useSupabase'
+import { useDailySummary, useHRV, useDailyMetrics, useActivities, useSubjectiveWellness, usePlannedWorkouts, useCoachingLog } from '../hooks/useSupabase'
 import type { Activity, SubjectiveWellness, WarmupExercise, PlannedExercise, ExerciseFeedback } from '../lib/types'
 import {
   getProgramWeek, isDeloadWeek, getSessionForDate, SESSION_NAMES,
@@ -206,26 +206,24 @@ function RPEPrompt({ activity }: { activity: Activity }) {
     if (selectedRPE == null) return
     setSaving(true)
     try {
-      const dateStr = activity.date
-      try {
-        const { data: sessions } = await supabase
+      const { data: sessions } = await supabase
+        .from('training_sessions')
+        .select('id')
+        .eq('date', activity.date)
+        .limit(1)
+      if (sessions && sessions.length > 0) {
+        const { error } = await supabase
           .from('training_sessions')
-          .select('id')
-          .eq('date', dateStr)
-          .limit(1)
-        if (sessions && sessions.length > 0) {
-          await supabase
-            .from('training_sessions')
-            .update({ srpe: selectedRPE })
-            .eq('id', sessions[0].id)
-          setRpeMsg('RPE logged')
-          setTimeout(() => setRpeMsg(null), 2000)
-        }
-      } catch {
-        setRpeMsg('Save failed')
-        setTimeout(() => setRpeMsg(null), 3000)
+          .update({ srpe: selectedRPE })
+          .eq('id', sessions[0].id)
+        if (error) throw error
+        setRpeMsg('RPE logged')
+        setTimeout(() => setRpeMsg(null), 2000)
+        setRated(true)
       }
-      setRated(true)
+    } catch {
+      setRpeMsg('Save failed')
+      setTimeout(() => setRpeMsg(null), 3000)
     } finally {
       setSaving(false)
     }
@@ -585,6 +583,7 @@ export default function TodayView() {
   const activities = useActivities(14)
   const wellness = useSubjectiveWellness(30)
   const planned = usePlannedWorkouts()
+  const coachingLog = useCoachingLog(7)
   const [showExercises, setShowExercises] = useState(false)
   const [, setWellnessRefresh] = useState(0)
 
@@ -635,10 +634,22 @@ export default function TodayView() {
   const { block, week, ended: programEnded } = getProgramWeek(new Date())
   const deload = isDeloadWeek(week)
   const todayPlanned = planned.data?.find((pw) => pw.scheduled_date === todayStr) ?? null
-  const todaySession = todayPlanned ? todayPlanned.workout_definition?.session_label : getSessionForDate(new Date())
-  const isGymDay = todayPlanned != null || getSessionForDate(new Date()) != null
-  const todaySessionName = todayPlanned?.workout_definition?.session_name ?? (todaySession ? SESSION_NAMES[todaySession as keyof typeof SESSION_NAMES] : null)
-  const isAdjusted = todayPlanned?.status === 'adjusted'
+
+  // Check coaching log for today's adjustment entries
+  const todayAdjustment = (coachingLog.data ?? []).find(
+    (entry) => entry.date === todayStr &&
+      (entry.type === 'adjustment' || entry.type === 'daily_adjustment')
+  )
+  const adjustedSessionName = todayAdjustment?.data_context?.session_name as string | undefined
+
+  const todaySession = todayPlanned
+    ? todayPlanned.workout_definition?.session_label
+    : (adjustedSessionName ? null : getSessionForDate(new Date()))
+  const isGymDay = todayPlanned != null || todayAdjustment != null || getSessionForDate(new Date()) != null
+  const todaySessionName = todayPlanned?.workout_definition?.session_name
+    ?? adjustedSessionName
+    ?? (todaySession ? SESSION_NAMES[todaySession as keyof typeof SESSION_NAMES] : null)
+  const isAdjusted = todayPlanned?.status === 'adjusted' || todayAdjustment != null
   const bbHigh = todayMetrics?.body_battery_highest ?? null
   const readiness = todayMetrics?.training_readiness_score != null
     ? Math.round(todayMetrics.training_readiness_score) : null
@@ -691,18 +702,28 @@ export default function TodayView() {
     return { days: mountainActivities.length, elevation: Math.round(elevation), hours: Math.round(hours * 10) / 10, category }
   }, [recentActivities])
 
-  // ──��� Coaching card decision tree (evidence-based) ───
-  const hrvDegraded = todayHRV?.status?.toUpperCase() === 'LOW'
-  const hrvLow = hrvVal != null && hrvWeeklyAvg != null && hrvVal < hrvWeeklyAvg * 0.85
-  const sleepPoor = sleep7dAvg != null && sleep7dAvg < 6.5
+  // ─── Coaching card decision tree (aligned with coaching-context.md) ───
+  const hrvStatusLow = todayHRV?.status?.toUpperCase() === 'LOW'
+  const hrvUnbalanced = todayHRV?.status?.toUpperCase() === 'UNBALANCED'
+  const hrvBelowBaseline = hrvVal != null && hrvWeeklyAvg != null && hrvVal < hrvWeeklyAvg * 0.85
+  const sleepShort = sleepHours != null && sleepHours < 6
   const wellnessLow = todayWellness?.composite_score != null && todayWellness.composite_score < 2.5
+  const bbLow = bbHigh != null && bbHigh < 30
+  const readinessLow = readiness != null && readiness < 40
 
   let cardState: 'green' | 'amber' | 'red' = 'green'
-  if (wellnessLow) {
+  // Multi-signal override (KB rule #13)
+  if (wellnessLow || bbLow || readinessLow) {
     cardState = 'red'
-  } else if (hrvDegraded && (sleepPoor || rhrElevated)) {
+  } else if (hrvStatusLow) {
     cardState = 'red'
-  } else if (hrvDegraded || hrvLow) {
+  } else if (hrvUnbalanced && sleepShort) {
+    cardState = 'red'
+  } else if (hrvUnbalanced) {
+    cardState = 'amber'
+  } else if (hrvBelowBaseline) {
+    cardState = 'amber'
+  } else if (sleepShort) {
     cardState = 'amber'
   } else if (sleep7dAvg != null && sleep7dAvg < 7) {
     cardState = 'amber'
@@ -713,7 +734,9 @@ export default function TodayView() {
   const verdictLabel = cardState === 'green' ? 'Good to train' : cardState === 'amber' ? 'Train with caution' : 'Consider rest or light session'
   const verdictColor = cardState === 'green' ? 'text-accent-green' : cardState === 'amber' ? 'text-accent-yellow' : 'text-accent-red'
   const verdictBg = cardState === 'green' ? 'border-accent-green/20 bg-glow-green' : cardState === 'amber' ? 'border-accent-yellow/20 bg-glow-yellow' : 'border-accent-red/20 bg-glow-red'
-  const rpeRange = deload ? '5-6' : block === 1 ? '6-7' : '7-8'
+  const rpeRange = todayPlanned?.workout_definition?.rpe_range
+    ? `${todayPlanned.workout_definition.rpe_range[0]}-${todayPlanned.workout_definition.rpe_range[1]}`
+    : deload ? '5-6' : block === 1 ? '6-7' : '7-8'
 
   // ─── Coaching notes ───
   const coachingPoints: { icon: string; text: string; color?: string }[] = []
@@ -754,6 +777,10 @@ export default function TodayView() {
     if (dayName === 'Tuesday') coachingPoints.push({ icon: '🧘', text: 'Mobility day — foam roll, hip flexors, thoracic rotation' })
     else if (dayName === 'Saturday' || dayName === 'Sunday') coachingPoints.push({ icon: '🏔', text: 'Mountain day — your call based on conditions' })
     else coachingPoints.push({ icon: '🔋', text: 'Rest day — recover for the next session' })
+  }
+
+  if (!todayWellness && cardState === 'green') {
+    coachingPoints.push({ icon: 'ℹ️', text: 'Complete wellness check-in for full assessment', color: 'text-text-muted' })
   }
 
   if (coachingPoints.length === 0 && isGymDay) {
@@ -800,11 +827,17 @@ export default function TodayView() {
         )}
 
         {/* Expandable workout */}
+        {isAdjusted && !todayPlanned && todayAdjustment && (
+          <div className="mt-3 text-[13px] text-accent-yellow">
+            Coach: {todayAdjustment.message}
+          </div>
+        )}
+
         {isGymDay && todayPlanned?.workout_definition && (
           <div className="mt-4 pt-3 border-t border-text-primary/5">
-            {isAdjusted && todayPlanned.adjustment_reason && (
+            {isAdjusted && (todayPlanned?.adjustment_reason || todayAdjustment?.message) && (
               <div className="text-[12px] text-accent-yellow mb-2">
-                Coach: {todayPlanned.adjustment_reason}
+                Coach: {todayPlanned?.adjustment_reason ?? todayAdjustment?.message}
               </div>
             )}
             <button
