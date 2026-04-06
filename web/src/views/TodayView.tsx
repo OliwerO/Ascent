@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabase'
 import { format } from 'date-fns'
 
 import { formatDuration, formatActivityType } from '../lib/format'
+import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES } from '../lib/activityTypes'
 
 // ─── Helpers ──────────────────────────────────────────────────────
 
@@ -672,19 +673,18 @@ export default function TodayView() {
   const loadChangePct = lastWeekDuration > 0 ? Math.round(((thisWeekDuration - lastWeekDuration) / lastWeekDuration) * 100) : null
 
   // ─── Mountain load in last 72h (interference context) ───
-  const MOUNTAIN_TYPES = ['backcountry_skiing', 'backcountry_snowboarding', 'hiking', 'mountaineering', 'splitboarding', 'resort_skiing', 'resort_snowboarding']
-  const SELF_POWERED_TYPES = ['backcountry_skiing', 'backcountry_snowboarding', 'hiking', 'mountaineering', 'splitboarding']
+  // Use shared constants from lib/activityTypes
   const threeDaysAgo = new Date()
   threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
   threeDaysAgo.setHours(0, 0, 0, 0)
 
   const mountainLoad72h = useMemo(() => {
     const mountainActivities = recentActivities.filter(
-      (a) => MOUNTAIN_TYPES.includes(a.activity_type) && new Date(a.date) >= threeDaysAgo
+      (a) => MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type) && new Date(a.date) >= threeDaysAgo
     )
     if (mountainActivities.length === 0) return null
     const elevation = mountainActivities
-      .filter((a) => SELF_POWERED_TYPES.includes(a.activity_type))
+      .filter((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type))
       .reduce((s: number, a) => s + (a.elevation_gain ?? 0), 0)
     const hours = mountainActivities.reduce((s: number, a) => s + (a.duration_seconds ?? 0), 0) / 3600
     const category = elevation >= 2000 || hours >= 5 ? 'heavy' : elevation >= 1000 || hours >= 3 ? 'moderate' : 'light'
