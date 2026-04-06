@@ -9,6 +9,8 @@ import { useState, useMemo, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { format } from 'date-fns'
 
+import { formatDuration, formatActivityType } from '../lib/format'
+
 // ─── Helpers ──────────────────────────────────────────────────────
 
 function hrvStatusInfo(status: string | null | undefined): { color: string; label: string } {
@@ -24,18 +26,6 @@ function metricColor(value: number | null, green: number, yellow: number): strin
   if (value >= green) return 'text-accent-green'
   if (value >= yellow) return 'text-accent-yellow'
   return 'text-accent-red'
-}
-
-function formatDuration(seconds: number | null | undefined): string {
-  if (!seconds) return '--'
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  return h > 0 ? `${h}h ${m}m` : `${m}m`
-}
-
-function formatActivityType(type: string | null | undefined): string {
-  if (!type) return ''
-  return type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
 // ─── Wellness Input Component ────────────────────────────────────
@@ -56,6 +46,18 @@ function WellnessInput({ todayWellness, onSubmit }: {
   const [values, setValues] = useState<Record<string, number>>({})
   const [submitting, setSubmitting] = useState(false)
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
+
+  // Pre-populate values when expanding an existing wellness entry
+  useEffect(() => {
+    if (expanded && todayWellness) {
+      const existing: Record<string, number> = {}
+      for (const item of WELLNESS_ITEMS) {
+        const v = todayWellness[item.key as keyof SubjectiveWellness]
+        if (typeof v === 'number') existing[item.key] = v
+      }
+      setValues(existing)
+    }
+  }, [expanded, todayWellness])
 
   const composite = todayWellness?.composite_score ?? null
 
@@ -327,7 +329,7 @@ export default function TodayView() {
   // ─── Derived values ───
   const sleepHours = today?.total_sleep_seconds
     ? Number((today.total_sleep_seconds / 3600).toFixed(1)) : null
-  const { block, week } = getProgramWeek(new Date())
+  const { block, week, ended: programEnded } = getProgramWeek(new Date())
   const deload = isDeloadWeek(week)
   const todayPlanned = planned.data?.find((pw) => pw.scheduled_date === todayStr) ?? null
   const todaySession = todayPlanned ? todayPlanned.workout_definition?.session_label : getSessionForDate(new Date())
@@ -367,7 +369,27 @@ export default function TodayView() {
   const lastWeekElev = lastWeekActivities.reduce((s: number, a) => s + (a.elevation_gain ?? 0), 0)
   const loadChangePct = lastWeekDuration > 0 ? Math.round(((thisWeekDuration - lastWeekDuration) / lastWeekDuration) * 100) : null
 
-  // ─── Coaching card decision tree (evidence-based) ───
+  // ─── Mountain load in last 72h (interference context) ───
+  const MOUNTAIN_TYPES = ['backcountry_skiing', 'backcountry_snowboarding', 'hiking', 'mountaineering', 'splitboarding', 'resort_skiing', 'resort_snowboarding']
+  const SELF_POWERED_TYPES = ['backcountry_skiing', 'backcountry_snowboarding', 'hiking', 'mountaineering', 'splitboarding']
+  const threeDaysAgo = new Date()
+  threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
+  threeDaysAgo.setHours(0, 0, 0, 0)
+
+  const mountainLoad72h = useMemo(() => {
+    const mountainActivities = recentActivities.filter(
+      (a) => MOUNTAIN_TYPES.includes(a.activity_type) && new Date(a.date) >= threeDaysAgo
+    )
+    if (mountainActivities.length === 0) return null
+    const elevation = mountainActivities
+      .filter((a) => SELF_POWERED_TYPES.includes(a.activity_type))
+      .reduce((s: number, a) => s + (a.elevation_gain ?? 0), 0)
+    const hours = mountainActivities.reduce((s: number, a) => s + (a.duration_seconds ?? 0), 0) / 3600
+    const category = elevation >= 2000 || hours >= 5 ? 'heavy' : elevation >= 1000 || hours >= 3 ? 'moderate' : 'light'
+    return { days: mountainActivities.length, elevation: Math.round(elevation), hours: Math.round(hours * 10) / 10, category }
+  }, [recentActivities])
+
+  // ──��� Coaching card decision tree (evidence-based) ───
   const hrvDegraded = todayHRV?.status?.toUpperCase() === 'LOW'
   const hrvLow = hrvVal != null && hrvWeeklyAvg != null && hrvVal < hrvWeeklyAvg * 0.85
   const sleepPoor = sleep7dAvg != null && sleep7dAvg < 6.5
@@ -410,6 +432,14 @@ export default function TodayView() {
       coachingPoints.push({ icon: '📉', text: 'Deload week — same weight, half sets, focus on form' })
     } else if (daysSinceGym != null && daysSinceGym > 7) {
       coachingPoints.push({ icon: '💡', text: `${daysSinceGym} days since last gym session — start conservative, RPE 6 max` })
+    }
+  }
+
+  if (mountainLoad72h && isGymDay) {
+    if (mountainLoad72h.category === 'heavy') {
+      coachingPoints.push({ icon: '🏔', text: `Heavy mountain load: ${mountainLoad72h.elevation}m / ${mountainLoad72h.hours}h in last 72h — expect reduced performance`, color: 'text-accent-yellow' })
+    } else if (mountainLoad72h.category === 'moderate') {
+      coachingPoints.push({ icon: '🏔', text: `Mountain load: ${mountainLoad72h.elevation}m in last 72h — monitor how warmup feels` })
     }
   }
 
@@ -682,16 +712,16 @@ export default function TodayView() {
       <div className="bg-bg-card rounded-2xl border border-border-subtle p-4">
         <div className="flex items-center justify-between mb-2">
           <span className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold">
-            {block === 1 ? 'Base Rebuild' : 'Progression'} · Block {block}
+            {programEnded ? 'Program Complete' : `${block === 1 ? 'Base Rebuild' : 'Progression'} · Block ${block}`}
           </span>
           <span className="text-[15px] font-bold font-data text-accent-green">
-            {week}<span className="text-text-muted font-normal">/8</span>
+            {programEnded ? '8/8' : <>{week}<span className="text-text-muted font-normal">/8</span></>}
           </span>
         </div>
         <div className="w-full bg-bg-elevated rounded-full h-1.5">
           <div
             className="bg-accent-green rounded-full h-1.5 transition-all duration-500"
-            style={{ width: `${(week / 8) * 100}%` }}
+            style={{ width: `${programEnded ? 100 : (week / 8) * 100}%` }}
           />
         </div>
       </div>
