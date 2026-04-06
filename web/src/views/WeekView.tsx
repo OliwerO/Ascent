@@ -7,18 +7,8 @@ import { pairHikeAndFly, formatAirtime, formatDistance } from '../lib/flying'
 import { startOfWeek, endOfWeek, format, isWithinInterval } from 'date-fns'
 import { Wind } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts'
-
-function formatDuration(seconds: number | null | undefined): string {
-  if (!seconds) return '--'
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  return h > 0 ? `${h}h ${m}m` : `${m}m`
-}
-
-function formatActivityType(type: string | null | undefined): string {
-  if (!type) return ''
-  return type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-}
+import { formatDuration, formatActivityType } from '../lib/format'
+import { MOUNTAIN_ACTIVITY_TYPES } from '../lib/activityTypes'
 
 function sleepBarColor(hours: number): string {
   if (hours >= 7) return '#4ade80'
@@ -104,7 +94,7 @@ export default function WeekView() {
   const weeklySummary = useMemo(() => {
     const strength = weekActivities.filter((a: Activity) => a.activity_type === 'strength_training').length
     const mountain = weekActivities.filter((a: Activity) =>
-      ['resort_snowboarding', 'backcountry_snowboarding', 'resort_skiing', 'backcountry_skiing', 'hiking', 'ski_touring', 'splitboarding'].includes(a.activity_type)
+      MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type)
     ).length
     const other = weekActivities.length - strength - mountain
 

@@ -1,17 +1,20 @@
-import { differenceInDays, addDays } from 'date-fns'
+import { differenceInDays, addDays, startOfWeek } from 'date-fns'
 
-export const BLOCK_1_START = new Date(2026, 3, 1) // Apr 1
-export const BLOCK_2_START = new Date(2026, 3, 29) // Apr 29
-export const BLOCK_2_END = new Date(2026, 4, 26) // May 26
+// Program started Apr 1 (Wed), but weeks are Monday-aligned for training
+// Week 1 = Mon Mar 30 – Sun Apr 5, Week 2 = Mon Apr 6 – Sun Apr 12, etc.
+export const BLOCK_1_START = new Date(2026, 2, 30) // Mon Mar 30 (week containing Apr 1)
+export const BLOCK_2_START = new Date(2026, 3, 27) // Mon Apr 27
+export const BLOCK_2_END = new Date(2026, 4, 24) // Sun May 24
 
 export const DELOAD_WEEKS = new Set([4, 8])
 
-export function getProgramWeek(date: Date): { block: number; week: number } {
-  const days = differenceInDays(date, BLOCK_1_START)
-  if (days < 0) return { block: 1, week: 1 }
+export function getProgramWeek(date: Date): { block: number; week: number; ended: boolean } {
+  const dateMonday = startOfWeek(date, { weekStartsOn: 1 })
+  const days = differenceInDays(dateMonday, BLOCK_1_START)
+  if (days < 0) return { block: 1, week: 1, ended: false }
   const week = Math.floor(days / 7) + 1
-  if (week > 8) return { block: 2, week: 8 }
-  return { block: week <= 4 ? 1 : 2, week }
+  if (week > 8) return { block: 2, week: 8, ended: true }
+  return { block: week <= 4 ? 1 : 2, week, ended: false }
 }
 
 export function isDeloadWeek(week: number): boolean {
@@ -55,9 +58,8 @@ export interface WeekSchedule {
 export function getWeekSchedule(weekNum: number): WeekSchedule {
   const block = weekNum <= 4 ? 1 : 2
   const deload = isDeloadWeek(weekNum)
-  const weekStart = addDays(BLOCK_1_START, (weekNum - 1) * 7)
-  // BLOCK_1_START is Wednesday, so we need Monday of that week
-  const monday = addDays(weekStart, -2) // Wed - 2 = Mon
+  // BLOCK_1_START is already Monday-aligned
+  const monday = addDays(BLOCK_1_START, (weekNum - 1) * 7)
 
   const dayTypes: ('gym' | 'rest' | 'mobility' | 'mountain' | 'cardio' | 'intervals')[] =
     block === 1
@@ -77,4 +79,3 @@ export function getWeekSchedule(weekNum: number): WeekSchedule {
 
   return { weekNum, block, deload, days }
 }
-

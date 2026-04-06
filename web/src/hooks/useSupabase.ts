@@ -68,6 +68,7 @@ export function useDailySummary(days = 7) {
 }
 
 export function useHRV(days = 14) {
+  const rt = useRealtimeRefresh('hrv')
   return useFetch<HRVRow[]>('hrv', async () => {
     const { data, error } = await supabase
       .from('hrv')
@@ -76,10 +77,11 @@ export function useHRV(days = 14) {
       .order('date', { ascending: false })
     if (error) throw error
     return data ?? []
-  }, [days])
+  }, [days, rt])
 }
 
 export function useSleep(days = 14) {
+  const rt = useRealtimeRefresh('sleep')
   return useFetch<SleepRow[]>('sleep', async () => {
     const { data, error } = await supabase
       .from('sleep')
@@ -88,10 +90,11 @@ export function useSleep(days = 14) {
       .order('date', { ascending: false })
     if (error) throw error
     return data ?? []
-  }, [days])
+  }, [days, rt])
 }
 
 export function useActivities(days = 14) {
+  const rt = useRealtimeRefresh('activities')
   return useFetch<Activity[]>('activities', async () => {
     const { data, error } = await supabase
       .from('activities')
@@ -100,7 +103,7 @@ export function useActivities(days = 14) {
       .order('date', { ascending: false })
     if (error) throw error
     return data ?? []
-  }, [days])
+  }, [days, rt])
 }
 
 export function useDailyMetrics(days = 7) {
@@ -117,6 +120,7 @@ export function useDailyMetrics(days = 7) {
 }
 
 export function useBodyComposition(days = 90) {
+  const rt = useRealtimeRefresh('body_composition')
   return useFetch<BodyComposition[]>('body_composition', async () => {
     const { data, error } = await supabase
       .from('body_composition')
@@ -125,10 +129,11 @@ export function useBodyComposition(days = 90) {
       .order('date', { ascending: false })
     if (error) throw error
     return data ?? []
-  }, [days])
+  }, [days, rt])
 }
 
 export function useTrainingSessions(days = 60) {
+  const rt = useRealtimeRefresh('training_sessions')
   return useFetch<TrainingSession[]>('training_sessions', async () => {
     const { data, error } = await supabase
       .from('training_sessions')
@@ -137,7 +142,7 @@ export function useTrainingSessions(days = 60) {
       .order('date', { ascending: false })
     if (error) throw error
     return data ?? []
-  }, [days])
+  }, [days, rt])
 }
 
 export function useTrainingSets(sessionIds: number[]) {
@@ -154,15 +159,20 @@ export function useTrainingSets(sessionIds: number[]) {
 }
 
 export function useSubjectiveWellness(days = 30) {
+  const rt = useRealtimeRefresh('subjective_wellness')
   return useFetch<SubjectiveWellness[]>('subjective_wellness', async () => {
     const { data, error } = await supabase
       .from('subjective_wellness')
       .select('date,sleep_quality,energy,muscle_soreness,motivation,stress,composite_score,notes')
       .gte('date', fmt(daysAgo(days)))
       .order('date', { ascending: false })
-    if (error) return [] // table may not exist yet
+    // Graceful degradation if table doesn't exist yet
+    if (error) {
+      if (error.message?.includes('relation') || error.message?.includes('does not exist')) return []
+      throw error
+    }
     return data ?? []
-  }, [days])
+  }, [days, rt])
 }
 
 export function useGoals() {
@@ -172,12 +182,13 @@ export function useGoals() {
       .select('*')
       .eq('status', 'active')
       .order('category')
-    if (error) return []
+    if (error) throw error
     return data ?? []
   }, [])
 }
 
 export function useCoachingLog(days = 7) {
+  const rt = useRealtimeRefresh('coaching_log')
   return useFetch<CoachingLogEntry[]>('coaching_log', async () => {
     const { data, error } = await supabase
       .from('coaching_log')
@@ -186,7 +197,7 @@ export function useCoachingLog(days = 7) {
       .order('date', { ascending: false })
     if (error) throw error
     return data ?? []
-  }, [days])
+  }, [days, rt])
 }
 
 export function usePlannedWorkouts(weeksBehind = 2, weeksAhead = 4) {
@@ -200,7 +211,7 @@ export function usePlannedWorkouts(weeksBehind = 2, weeksAhead = 4) {
       .gte('scheduled_date', from)
       .lte('scheduled_date', to)
       .order('scheduled_date', { ascending: true })
-    if (error) return []
+    if (error) throw error
     return data ?? []
   }, [weeksBehind, weeksAhead, rt])
 }

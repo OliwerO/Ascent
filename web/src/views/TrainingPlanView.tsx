@@ -27,14 +27,8 @@ import {
   Cell,
 } from 'recharts'
 import { ChevronDown, ChevronRight, Mountain, Dumbbell } from 'lucide-react'
-
-const MOUNTAIN_ACTIVITY_TYPES = new Set([
-  'backcountry_snowboarding',
-  'resort_snowboarding',
-  'hiking',
-  'mountaineering',
-  'hang_gliding',
-])
+import { formatDuration, formatActivityType } from '../lib/format'
+import { MOUNTAIN_ACTIVITY_TYPES } from '../lib/activityTypes'
 
 const darkTooltipStyle = {
   background: '#16161e',
@@ -45,17 +39,6 @@ const darkTooltipStyle = {
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────
-function formatDuration(seconds: number | null | undefined): string {
-  if (!seconds) return '--'
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  return h > 0 ? `${h}h ${m}m` : `${m}m`
-}
-
-function formatActivityType(type: string): string {
-  return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-}
-
 function loadChangeColor(pct: number): string {
   if (Math.abs(pct) <= 15) return 'text-accent-green'
   if (Math.abs(pct) <= 25) return 'text-accent-yellow'
