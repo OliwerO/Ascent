@@ -656,6 +656,10 @@ def main():
         "--range", nargs=2, metavar=("START", "END"),
         help="Sync a date range (YYYY-MM-DD YYYY-MM-DD)",
     )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Bypass the auth lockfile cooldown and try anyway",
+    )
     args = parser.parse_args()
 
     # Determine dates to sync
@@ -675,6 +679,11 @@ def main():
         dates = [date.today() - timedelta(days=1)]
 
     log.info("Syncing %d date(s): %s → %s", len(dates), dates[0], dates[-1])
+
+    # Clear lockfile if --force
+    if args.force and AUTH_LOCKFILE.exists():
+        AUTH_LOCKFILE.unlink()
+        log.info("--force: cleared auth lockfile")
 
     # Connect
     client = get_garmin_client()

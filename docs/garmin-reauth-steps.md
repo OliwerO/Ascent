@@ -14,15 +14,10 @@ After the garth → DI OAuth upgrade, follow these steps to re-authenticate.
 launchctl unload ~/Library/LaunchAgents/com.ascent.garmin-sync.plist
 ```
 
-### 2. Delete the auth lockfile (if it exists)
-```bash
-rm -f ~/projects/ascent/.garmin_auth_failed
-```
-
-### 3. Run the sync interactively
+### 2. Run the sync interactively (--force clears any lockfile automatically)
 ```bash
 cd ~/projects/ascent && source venv/bin/activate
-python scripts/garmin_sync.py --date 2026-04-05
+python scripts/garmin_sync.py --date 2026-04-05 --force
 ```
 You'll be prompted for your Garmin MFA code — check your email or authenticator app.
 
