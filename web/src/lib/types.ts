@@ -221,3 +221,11 @@ export interface PlannedExercise {
   duration_s?: number
   distance_m?: number
 }
+
+export interface ExerciseFeedback {
+  id?: number
+  session_date: string
+  exercise_name: string
+  feel: 'light' | 'right' | 'heavy'
+  notes: string | null
+}
