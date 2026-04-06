@@ -1,5 +1,9 @@
 # Garmin Auth Spike — Test Plan
 
+> **Status (2026-04-06):** Auth side RESOLVED. garth is deprecated (March 28, 2026).
+> `garminconnect>=0.3.0` now uses DI OAuth Bearer tokens (Android app mobile SSO).
+> The auth upgrade is in `garmin_sync.py`. Only the **write/push tests** below remain.
+
 ## Objective
 
 Validate that we can reliably authenticate with Garmin Connect and perform both read (pull activities) and write (push workouts) operations from a Python script. This is the critical dependency for Phases 7-10.
@@ -10,9 +14,10 @@ Validate that we can reliably authenticate with Garmin Connect and perform both 
 
 Test in order of preference. Stop at the first one that works reliably for both read AND write.
 
-### Option A: `garth` (OAuth-based, recommended)
+### ~~Option A: `garth` (OAuth-based)~~ — DEPRECATED
 
-More modern library that uses Garmin's OAuth flow and stores tokens that can be refreshed.
+**Dead as of March 28, 2026.** Garmin deployed Cloudflare TLS fingerprinting that blocks
+garth's mobile User-Agent. The library is no longer maintained. Do not use.
 
 ```bash
 pip install garth
@@ -67,9 +72,12 @@ except Exception as e:
     print(f"❌ Sleep failed: {e}")
 ```
 
-### Option B: `garminconnect` (session-based)
+### Option B: `garminconnect` (DI OAuth — WINNER for auth)
 
-More established library, but relies on session cookies that expire.
+As of v0.3.0+ (April 2026), uses DI OAuth Bearer tokens via `diauth.garmin.com`.
+Same auth flow as the official Garmin Connect Android app. Supports MFA via
+`prompt_mfa` callback. Tokens auto-refresh indefinitely. Already integrated
+into `garmin_sync.py`.
 
 ```bash
 pip install garminconnect
@@ -271,32 +279,41 @@ After a successful upload:
 
 Rate each option:
 
-|Criteria                           |Option A (garth)|Option B (garminconnect)|Option C (FIT hybrid)|
-|-----------------------------------|----------------|------------------------|---------------------|
-|Auth succeeds                      |✅/❌             |✅/❌                     |✅/❌                  |
-|Token persists across sessions     |✅/❌             |✅/❌                     |✅/❌                  |
-|Pull activities                    |✅/❌             |✅/❌                     |✅/❌                  |
-|Pull HRV/body battery/sleep        |✅/❌             |✅/❌                     |✅/❌                  |
-|Push structured workout            |✅/❌             |✅/❌                     |✅/❌                  |
-|Workout shows on watch with weights|✅/❌             |✅/❌                     |✅/❌                  |
-|Completed activity links back      |✅/❌             |✅/❌                     |✅/❌                  |
-|Custom exercise names supported    |✅/❌             |✅/❌                     |✅/❌                  |
+|Criteria                           |Option A (garth)|Option B (garminconnect 0.3+)|Option C (FIT hybrid)|
+|-----------------------------------|----------------|------------------------------|---------------------|
+|Auth succeeds                      |❌ DEPRECATED    |✅ DI OAuth (tested)           |✅/❌                  |
+|Token persists across sessions     |❌ DEPRECATED    |✅ auto-refresh                |✅/❌                  |
+|Pull activities                    |❌ DEPRECATED    |✅ (garmin_sync.py)            |✅/❌                  |
+|Pull HRV/body battery/sleep        |❌ DEPRECATED    |✅ (garmin_sync.py)            |✅/❌                  |
+|Push structured workout            |❌ DEPRECATED    |❌ NOT YET TESTED              |❌ NOT YET TESTED     |
+|Workout shows on watch with weights|❌ DEPRECATED    |❌ NOT YET TESTED              |❌ NOT YET TESTED     |
+|Completed activity links back      |❌ DEPRECATED    |❌ NOT YET TESTED              |❌ NOT YET TESTED     |
+|Custom exercise names supported    |❌ DEPRECATED    |❌ NOT YET TESTED              |❌ NOT YET TESTED     |
 
-**Winner goes into Phase 7 implementation.**
+**Auth winner: Option B (garminconnect 0.3+ DI OAuth). Push tests still pending.**
 
 -----
 
 ## Troubleshooting
 
+**429 Too Many Requests (rate limiting):**
+
+- Garmin rate-limits failed login attempts. The limit is IP-based.
+- **Stop the cron job first** (`launchctl unload ...`) to prevent it from resetting the cooldown.
+- Wait 24-48h, or try from a different IP (mobile hotspot, VPN).
+- `garmin_sync.py` has a circuit breaker (lockfile) to prevent 429 loops.
+
 **CAPTCHA / 403 errors on login:**
 
-- Garmin sometimes triggers CAPTCHA after repeated logins. Wait 30 min, try again.
-- Try from a different IP / disable VPN
-- garth's OAuth flow may bypass this
+- Garmin uses Cloudflare TLS fingerprinting. Standard Python HTTP clients are blocked.
+- garminconnect 0.3+ uses mobile SSO (Android app emulation) which bypasses this.
+- If still blocked, wait 30 min and try again.
 
-**MFA / 2FA issues:**
+**MFA / 2FA:**
 
-- If you have MFA enabled on Garmin, `garminconnect` may not handle it. `garth` has better MFA support.
+- garminconnect 0.3+ supports MFA via `prompt_mfa` callback.
+- First run must be interactive (terminal, not cron) to enter the MFA code.
+- After initial login, tokens auto-refresh without MFA.
 
 **"Workout uploaded but doesn't show on watch":**
 
@@ -304,18 +321,18 @@ Rate each option:
 - Force sync the watch via Garmin Connect app
 - Some workout formats need to be "scheduled" for a date to appear on the watch calendar
 
-**Session expiry:**
+**Token expiry:**
 
-- garth tokens: should auto-refresh, test after 24h+ gap
-- garminconnect sessions: may expire in hours, test resume after overnight gap
+- DI OAuth tokens auto-refresh indefinitely as long as the refresh token is valid.
+- If the refresh token expires (months), re-run `garmin_sync.py` interactively for MFA.
 
 -----
 
 ## Notes for Ascent Integration
 
-Once we know which library works, the integration pattern will be:
+Auth tokens are stored at `~/.garminconnect/garmin_tokens.json` (mode 0600, gitignored).
+The library auto-refreshes before each API request. If refresh fails:
 
-1. Store auth tokens at `~/projects/ascent/.garmin/` (gitignored)
-2. Auto-refresh on every cron run, re-auth on failure
-3. If re-auth fails → Telegram alert: "Garmin auth expired, please re-authenticate"
-4. Re-auth command via Telegram: `/garmin_reauth` triggers interactive flow
+1. `garmin_sync.py` creates a lockfile and skips sync for 48h (prevents 429 loops)
+2. TODO: Telegram alert on auth failure
+3. Recovery: run `garmin_sync.py` interactively, enter MFA, tokens refresh, cron resumes

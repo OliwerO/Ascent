@@ -502,18 +502,18 @@ LEFT JOIN body_composition bc ON dm.date = bc.date AND bc.source = 'garmin';
 
 **File:** `~/projects/ascent/scripts/garmin_sync.py`
 
-**Dependencies:** `garminconnect>=0.2.40`, `garth>=0.4`, `supabase` (Python client), `python-dotenv`
+**Dependencies:** `garminconnect>=0.3.0`, `supabase` (Python client), `python-dotenv`
 
 **Requirements file:** `~/projects/ascent/scripts/requirements.txt`
 
 **Authentication flow:**
 
 ```python
-# Use garth for persistent auth (~1 year token lifetime)
-# Token storage: ~/.garth/
-# On first run: login with email/password from env vars
-# Subsequent runs: garth.resume() to reuse tokens
-# If resume fails: re-login automatically
+# Uses DI OAuth Bearer tokens (same as official Garmin Connect Android app)
+# Token storage: ~/.garminconnect/garmin_tokens.json
+# On first run: login with email/password + MFA code (interactive)
+# Subsequent runs: auto-refreshes from saved DI tokens (unattended)
+# Circuit breaker: lockfile prevents 429 loops on repeated auth failures
 ```
 
 **What to sync (all endpoints):**
@@ -596,7 +596,7 @@ Create a launchd plist at `~/Library/LaunchAgents/com.ascent.garmin-sync.plist` 
 
 **Task:** Install and configure a Garmin MCP server so Jarvis can query health data conversationally via Telegram.
 
-**MCP Server:** Use `garmin-connect-mcp` by Nicolasvegam (61 tools, most comprehensive) as primary. The garth-mcp-server as fallback option.
+**MCP Server:** Use `garmin-connect-mcp` by Nicolasvegam (61 tools, most comprehensive) as primary.
 
 **Installation:**
 
@@ -708,7 +708,7 @@ Ascent is being expanded from a coaching analysis system into a fully autonomous
 
 ### Key Context for All Phases
 
-- **Garmin integration** uses unofficial Python libraries (`garth` preferred, `garminconnect` fallback). No official developer API access.
+- **Garmin integration** uses `garminconnect` library with DI OAuth (Android app mobile SSO). No official developer API access. `garth` is deprecated (March 2026).
 - **Workout generation** reads `coaching-context.md` (Opus-authored) and applies progressive overload rules against Garmin performance data.
 - **Google Calendar** events are created automatically for every training session.
 - **Telegram** is the only user interaction channel — no manual computer interaction required.
@@ -720,7 +720,7 @@ Ascent is being expanded from a coaching analysis system into a fully autonomous
 were dropped as redundant — see `docs/schema-conflict-resolution.md` for full rationale.
 
 Dropped (already covered by Phase 1-2):
-- ~~`garmin_auth`~~ — auth handled by garth tokens on filesystem (`~/.garth/`)
+- ~~`garmin_auth`~~ — auth handled by DI OAuth tokens on filesystem (`~/.garminconnect/`)
 - ~~`garmin_activities`~~ — covered by `activities` + `activity_details`
 - ~~`garmin_daily_metrics`~~ — covered by `daily_metrics` + `sleep` + `hrv`
 

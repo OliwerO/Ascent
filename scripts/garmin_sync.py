@@ -34,7 +34,9 @@ GARMIN_PASSWORD = os.environ["GARMIN_PASSWORD"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 
-GARTH_HOME = Path.home() / ".garth"
+TOKEN_DIR = Path.home() / ".garminconnect"
+AUTH_LOCKFILE = PROJECT_ROOT / ".garmin_auth_failed"
+AUTH_COOLDOWN_HOURS = 48  # skip sync for this long after auth failure
 API_DELAY = 1  # seconds between Garmin API calls
 
 logging.basicConfig(
@@ -49,19 +51,58 @@ log = logging.getLogger("garmin_sync")
 # ---------------------------------------------------------------------------
 
 
+def _prompt_mfa() -> str:
+    """Prompt for MFA code during interactive login."""
+    return input("Enter Garmin MFA code: ")
+
+
+def _check_auth_lockfile():
+    """Skip sync if a recent auth failure lockfile exists (prevents 429 loops)."""
+    if not AUTH_LOCKFILE.exists():
+        return
+    age_hours = (time.time() - AUTH_LOCKFILE.stat().st_mtime) / 3600
+    if age_hours < AUTH_COOLDOWN_HOURS:
+        log.warning(
+            "Auth failed %.0fh ago — skipping sync (cooldown %dh). "
+            "Delete %s to force retry.",
+            age_hours, AUTH_COOLDOWN_HOURS, AUTH_LOCKFILE,
+        )
+        sys.exit(0)
+    # Cooldown expired — remove lockfile and retry
+    AUTH_LOCKFILE.unlink()
+    log.info("Auth cooldown expired — retrying login")
+
+
 def get_garmin_client() -> Garmin:
-    """Authenticate with Garmin Connect, reusing stored tokens when possible."""
-    client = Garmin()
+    """Authenticate with Garmin Connect using DI OAuth tokens.
+
+    Uses the mobile SSO flow (same as official Garmin Connect Android app).
+    On first run: requires email/password + MFA code (interactive).
+    Subsequent runs: auto-refreshes from saved tokens at ~/.garminconnect/.
+
+    A lockfile circuit breaker prevents repeated failed logins from
+    perpetuating Garmin's 429 rate limit during cron runs.
+    """
+    _check_auth_lockfile()
     try:
-        client.login(str(GARTH_HOME))
-        log.info("Resumed Garmin session from stored tokens")
-    except Exception:
-        log.info("Stored tokens expired or missing — logging in with credentials")
-        client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
-        client.login()
-        client.garth.dump(str(GARTH_HOME))
-        log.info("Login successful, tokens saved to %s", GARTH_HOME)
-    return client
+        client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD, prompt_mfa=_prompt_mfa)
+        client.login(str(TOKEN_DIR))
+        log.info("Garmin login successful (tokens at %s)", TOKEN_DIR)
+        # Clear lockfile on success (in case we're recovering)
+        if AUTH_LOCKFILE.exists():
+            AUTH_LOCKFILE.unlink()
+        return client
+    except Exception as exc:
+        log.error("Garmin login failed: %s", exc)
+        AUTH_LOCKFILE.write_text(
+            f"Auth failed at {datetime.now().isoformat()}: {exc}\n"
+        )
+        log.error(
+            "Created lockfile — cron will skip for %dh. "
+            "Delete %s to force retry, or run interactively to re-authenticate.",
+            AUTH_COOLDOWN_HOURS, AUTH_LOCKFILE,
+        )
+        raise
 
 
 # ---------------------------------------------------------------------------
