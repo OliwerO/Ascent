@@ -9,8 +9,8 @@
 ### `garmin_auth` → Not needed
 
 The expansion brief proposed storing Garmin credentials in Supabase. However:
-- `garmin_sync.py` already handles auth via `garth` token persistence at `~/.garth/`
-- Tokens auto-refresh with ~1 year lifetime
+- `garmin_sync.py` handles auth via DI OAuth token persistence at `~/.garminconnect/`
+- Tokens auto-refresh indefinitely (garth deprecated March 2026, replaced by garminconnect 0.3+)
 - Storing passwords in a database (even "encrypted at rest") adds attack surface for no benefit
 - Re-auth failure already triggers a logged warning; Phase 10 will add Telegram alerting
 

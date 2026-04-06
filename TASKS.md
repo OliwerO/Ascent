@@ -16,7 +16,7 @@
 | 4 | Grafana Dashboards | Spec done, not built | `docs/grafana-dashboard-spec.md` |
 | 5 | Weekly Analysis Script | Not started | Blocked on data in Supabase |
 | KB | Scientific Knowledge Base | **Exists in Obsidian** | Needs sync to repo |
-| GS | Garmin Auth Spike | Not started | **Critical blocker** for push side |
+| GS | Garmin Auth Spike | **Auth fixed** | garth→DI OAuth upgrade done; push spike still needed |
 | 6 | First Opus Planning Session | Not started | Blocked on KB + data accumulation |
 | 7a | Garmin Data Pull | **Effectively done** | `garmin_sync.py` already covers this |
 | 7b | Garmin Workout Push | Scaffolded | `garmin_workout_push.py` — blocked on spike |
@@ -79,11 +79,28 @@ After KB + 4-6 weeks of Garmin data:
   python scripts/garmin_sync.py --range 2026-01-01 2026-03-29
   ```
 
-- [ ] **Run Garmin Auth Spike** — critical blocker for workout push:
+- [ ] **Stop the cron job** — it perpetuates 429 rate limits on auth failure:
   ```bash
-  # Follow spikes/garmin-auth-spike.md step by step
-  # Tests: auth persistence, activity pull, workout push, watch sync
-  # Record results in the evaluation matrix
+  launchctl unload ~/Library/LaunchAgents/com.ascent.garmin-sync.plist
+  ```
+
+- [ ] **Upgrade garminconnect and test auth** (after 429 cooldown, ~24-48h):
+  ```bash
+  cd ~/projects/ascent && source venv/bin/activate
+  pip install --upgrade garminconnect
+  # First run is interactive (MFA prompt)
+  python scripts/garmin_sync.py --date 2026-04-05
+  ```
+
+- [ ] **Re-enable cron** (only after auth test passes):
+  ```bash
+  launchctl load ~/Library/LaunchAgents/com.ascent.garmin-sync.plist
+  ```
+
+- [ ] **Run Garmin Push Spike** — still needed for workout upload:
+  ```bash
+  # Follow spikes/garmin-auth-spike.md write tests
+  # Tests: workout push, watch sync, per-set data
   ```
 
 - [ ] **Sync knowledge base** from Obsidian to repo:
@@ -120,7 +137,7 @@ After KB + 4-6 weeks of Garmin data:
 ## Claude's Next Actions (autonomous, when unblocked)
 
 ### After Garmin Spike results are documented:
-- [ ] Implement `garmin_workout_push.py` using spike winner (garth/garminconnect/FIT)
+- [ ] Implement `garmin_workout_push.py` using garminconnect 0.3+ (DI OAuth)
 - [ ] Add exercise mapping table if custom exercises not supported
 - [ ] Test end-to-end: generate workout JSON → push to Garmin → verify on watch
 

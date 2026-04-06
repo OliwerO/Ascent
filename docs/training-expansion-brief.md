@@ -145,16 +145,12 @@ Phase 5 ───►────────────────────
 
 **Context:** No official Garmin developer API access (enterprise only). Using unofficial Python libraries.
 
-**Test three options in priority order:**
+**Auth resolved (2026-04-06):** `garth` deprecated. Using `garminconnect>=0.3.0` with DI OAuth
+(Android app mobile SSO). Auth + read confirmed. Push tests still pending.
 
-1. **`garth`** — OAuth-based, best token persistence. Primary candidate.
-2. **`garminconnect`** — session-based, more established but sessions expire.
-3. **FIT file hybrid** — generate FIT files + upload via whichever auth works.
+**Remaining spike deliverable** (see `spikes/garmin-auth-spike.md`):
 
-**Spike deliverable:** Completed evaluation matrix (see spike document at `~/projects/ascent/spikes/garmin-auth-spike.md`) resolving these open items:
-
-- Which library works reliably for auth + read + write
-- Whether tokens persist across 24h+ gaps
+- Push tests: can we upload structured workouts via garminconnect?
 - Whether target weights can be pre-filled per set on pushed workouts
 - Whether custom exercise names are supported or limited to Garmin's library
 - What per-set data Garmin returns after a completed strength workout
@@ -552,7 +548,7 @@ All decisions locked across planning conversations.
 |D3|`coaching-context.md` is the central state file                                 |
 |D4|Micro-adjustments (≤10-15% volume) at Claude Code tier without Opus replanning  |
 |D5|Garmin integration via unofficial Python library (no developer API access)      |
-|D6|`garth` primary, `garminconnect` fallback, FIT hybrid last resort               |
+|D6|`garminconnect>=0.3.0` with DI OAuth (garth deprecated March 2026)              |
 |D7|Bidirectional Garmin: pull activities/readiness, push structured workouts       |
 |D8|Workout-activity matching: primary by Garmin workout ID, fallback by date + type|
 
