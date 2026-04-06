@@ -283,6 +283,17 @@ def calculate_next_weight(
             note=f"deload week — holding at {last_weight}kg, 50% volume",
         )
 
+    # Check exercise feedback — hold weight if rated "heavy" 2+ consecutive sessions
+    heavy_streak = _count_heavy_streak(sb, exercise_name)
+    if heavy_streak >= 2 and all(r >= target_reps for r in last_reps_list):
+        return ProgressionResult(
+            weight_kg=last_weight,
+            reps=target_reps,
+            sets=target_sets,
+            applied="hold",
+            note=f"rated 'heavy' {heavy_streak} sessions in a row — holding at {last_weight}kg until it feels easier",
+        )
+
     # Double progression check
     all_hit_target = all(r >= target_reps for r in last_reps_list)
 
@@ -389,6 +400,31 @@ def _group_by_session(history: list[dict]) -> list[dict]:
             sessions[d] = {"date": d, "sets": []}
         sessions[d]["sets"].append(row)
     return list(sessions.values())
+
+
+def _count_heavy_streak(sb, exercise_name: str) -> int:
+    """Count consecutive recent sessions where exercise was rated 'heavy'."""
+    try:
+        result = sb.table("exercise_feedback").select(
+            "session_date, feel"
+        ).eq(
+            "exercise_name", exercise_name
+        ).order(
+            "session_date", desc=True
+        ).limit(5).execute()
+
+        if not result.data:
+            return 0
+
+        streak = 0
+        for row in result.data:
+            if row["feel"] == "heavy":
+                streak += 1
+            else:
+                break
+        return streak
+    except Exception:
+        return 0
 
 
 def _count_stall_weeks(sessions: list[dict], current_weight: float) -> int:

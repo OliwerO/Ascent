@@ -363,6 +363,21 @@ def build_message(target_date: date) -> dict:
                     + " | ".join(w_parts)}
             })
 
+    # RPE follow-up: check if yesterday has a training session with no sRPE
+    yesterday_sessions = supabase_get("training_sessions", {
+        "date": f"eq.{yesterday.isoformat()}",
+        "select": "id,name,srpe",
+        "limit": "1",
+    })
+    if yesterday_sessions and yesterday_sessions[0].get("srpe") is None:
+        session_name = yesterday_sessions[0].get("name") or "yesterday's session"
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text":
+                f":memo: *RPE missing* — {session_name} has no RPE logged. "
+                "Open the app or reply with a number (1-10)."}
+        })
+
     blocks.append({"type": "divider"})
 
     # Recommendation
