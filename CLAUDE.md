@@ -823,6 +823,16 @@ Phase 5 (weekly analysis) ──────────►      │
 
 -----
 
+## Development Practices
+
+Detailed coding standards, testing strategy, and deployment practices are in `docs/development-practices.md`. Follow those practices for all code changes. Key rules:
+
+- **Always run `cd web && npm run build`** before committing frontend changes
+- **SQL migrations** in numbered files (`sql/NNN_description.sql`) — never modify applied migrations
+- **Secrets** in `.env` only — never in code or commits
+- **Python scripts** log to stdout, exit 0/1, rate-limit external APIs
+- **TypeScript strict mode** — no `any` types, fix errors don't suppress them
+
 ## Working Rules (for Claude Code sessions)
 
 - **Prioritize quality over speed.** Always test before calling something done. Only stop when everything passes strict testing or when user input is needed.

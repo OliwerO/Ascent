@@ -107,16 +107,15 @@ def get_session_for_date(target_date: date) -> str | None:
 # Maps (category, exerciseName) for Garmin workout JSON
 GARMIN_EXERCISE_MAP = {
     # Format: "exercise_name": ("GARMIN_CATEGORY", "GARMIN_EXERCISE_NAME")
-    # Based on Garmin FIT SDK Profile v21.195.0 (see docs/knowledge-base/garmin-exercise-categories.md)
-    # Where exact match doesn't exist, closest movement pattern is used with a note.
+    # Verified against connect.garmin.com/web-data/exercises/Exercises.json (2026-04-03)
 
     # Strength A (Wednesday)
     "Barbell Back Squat":       ("SQUAT",          "BARBELL_BACK_SQUAT"),
     "Dumbbell Bench Press":     ("BENCH_PRESS",    "DUMBBELL_BENCH_PRESS"),
     "Barbell Row":              ("ROW",            "BARBELL_ROW"),
-    "Kettlebell Swing":         ("HIP_RAISE",      "KETTLEBELL_SWING"),          # FIT SDK: HIP_RAISE category
-    "Kettlebell Halo":          ("WARM_UP",        "ARM_CIRCLES"),               # No exact match — use Arm Circles. Actual: KB Halo
-    "Turkish Get-Up":           ("CORE",           "TURKISH_GET_UP"),            # FIT SDK: CORE category
+    "Kettlebell Swing":         ("HIP_RAISE",      "KETTLEBELL_SWING"),
+    "Kettlebell Halo":          ("WARM_UP",        "ARM_CIRCLES"),               # No exact match
+    "Turkish Get-Up":           ("CORE",           "TURKISH_GET_UP"),
 
     # Strength B (Monday)
     "Overhead Press":           ("SHOULDER_PRESS",  "OVERHEAD_BARBELL_PRESS"),
@@ -125,30 +124,38 @@ GARMIN_EXERCISE_MAP = {
     "Lat Pulldown":             ("PULL_UP",         "LAT_PULLDOWN"),
     "Dumbbell Incline Press":   ("BENCH_PRESS",     "INCLINE_DUMBBELL_BENCH_PRESS"),
     "Cable Row":                ("ROW",             "SEATED_CABLE_ROW"),
-    "Dead Bugs":                ("HIP_STABILITY",   "DEAD_BUG"),                 # FIT SDK: HIP_STABILITY category
-    "Copenhagen Plank":         ("PLANK",           "SIDE_PLANK"),               # No exact match — use Side Plank. Actual: Copenhagen Plank
-    "Pallof Walkouts":          ("CORE",            "CABLE_CORE_PRESS"),         # FIT SDK: closest to Pallof press
+    "Dead Bugs":                ("HIP_STABILITY",   "DEAD_BUG"),
+    "Copenhagen Plank":         ("SUSPENSION",      "SIDE_PLANK"),               # No exact match
+    "Pallof Walkouts":          ("CORE",            "CABLE_CORE_PRESS"),
 
     # Strength C (Friday)
     "Trap Bar Deadlift":        ("DEADLIFT",        "TRAP_BAR_DEADLIFT"),
-    "KB Clean & Press":         ("OLYMPIC_LIFT",    "CLEAN_AND_PRESS"),          # FIT SDK: OLYMPIC_LIFT category
-    "Single-Arm DB Row":        ("ROW",             "ONE_ARM_DUMBBELL_ROW"),
-    "Bulgarian Split Squat":    ("LUNGE",           "DUMBBELL_BULGARIAN_SPLIT_SQUAT"),  # FIT SDK: LUNGE category
-    "Lateral Raise":            ("LATERAL_RAISE",   "DUMBBELL_LATERAL_RAISE"),   # FIT SDK: LATERAL_RAISE category
+    "KB Clean & Press":         ("SANDBAG",         "CLEAN_AND_PRESS"),
+    "Single-Arm DB Row":        ("ROW",             "ONE_ARM_BENT_OVER_ROW"),
+    "Bulgarian Split Squat":    ("LUNGE",           "DUMBBELL_BULGARIAN_SPLIT_SQUAT"),
+    "Lateral Raise":            ("LATERAL_RAISE",   "DUMBBELL_LATERAL_RAISE"),
     "KB Farmer Carry":          ("CARRY",           "FARMERS_WALK"),
 
-    # Warm-up exercises (Protocol B from Domain 9: Mobility)
-    "Foam Roll T-Spine":        ("WARM_UP",         "FOAM_ROLLING"),             # Segmental extension on roller
-    "Ankle Mobilization":       ("WARM_UP",         "ANKLE_CIRCLES"),            # Half-kneeling wall ankle mob
-    "Goblet Squat Hold":        ("SQUAT",           "GOBLET_SQUAT"),             # Prying goblet squat
-    "World's Greatest Stretch":  ("STRETCH",        "LUNGE_WITH_TWIST"),         # Closest FIT SDK match
-    "Bodyweight Squat":         ("SQUAT",           "BODY_WEIGHT_WALL_SQUAT"),   # Pause squat groove
-    "90/90 Hip Switch":         ("WARM_UP",         "HIP_CIRCLES"),              # Dynamic hip transitions
-    "Single-Leg RDL":           ("DEADLIFT",        "SINGLE_LEG_DEADLIFT"),      # BW hamstring lengthening
-    "Inchworm":                 ("WARM_UP",         "INCHWORM"),                 # Inchworm to downward dog
-    "Wall Slides":              ("WARM_UP",         "ARM_CIRCLES"),              # Scapular wall slides
-    "Band Pull-Aparts":        ("WARM_UP",          "BAND_PULL_APART"),
-    "Thread the Needle":        ("STRETCH",         "LUNGE_WITH_TWIST"),         # Quadruped thoracic rotation
+    # Exception / adjusted workout exercises
+    "Incline DB Press":         ("BENCH_PRESS",     "INCLINE_DUMBBELL_BENCH_PRESS"),
+    "Chest-Supported Row":      ("ROW",             "CHEST_SUPPORTED_DUMBBELL_ROW"),
+    "Landmine Press":           ("SHOULDER_PRESS",  "SINGLE_ARM_DUMBBELL_SHOULDER_PRESS"),  # No exact match
+    "Ab Wheel Rollout":         ("CORE",            "KNEELING_AB_WHEEL"),
+    "Bird Dogs":                ("HIP_STABILITY",   "QUADRUPED_WITH_LEG_LIFT"),
+    "Suitcase Carry":           ("CARRY",           "FARMERS_WALK"),
+
+    # Warm-up exercises
+    "Foam Roll T-Spine":        ("WARM_UP",         "ARM_CIRCLES"),              # No foam rolling in Garmin DB
+    "Ankle Mobilization":       ("WARM_UP",         "ANKLE_CIRCLES"),
+    "Goblet Squat Hold":        ("SQUAT",           "GOBLET_SQUAT"),
+    "World's Greatest Stretch":  ("WARM_UP",        "ARM_CIRCLES"),              # No exact match
+    "Bodyweight Squat":         ("SQUAT",           "BODY_WEIGHT_WALL_SQUAT"),
+    "90/90 Hip Switch":         ("HIP_STABILITY",   "HIP_CIRCLES"),
+    "Single-Leg RDL":           ("DEADLIFT",        "SINGLE_LEG_DEADLIFT"),
+    "Inchworm":                 ("CORE",            "INCHWORM"),
+    "Wall Slides":              ("WARM_UP",         "ARM_CIRCLES"),
+    "Band Pull-Aparts":        ("WARM_UP",          "ARM_CIRCLES"),              # No band pull-apart in Garmin DB
+    "Thread the Needle":        ("WARM_UP",         "ARM_CIRCLES"),              # No exact match
 }
 
 # Garmin benchmark e1RMs (from user's Garmin Connect, as of Feb 2026)
@@ -301,6 +308,69 @@ SESSIONS = {
         ],
     },
 }
+
+
+def load_sessions_from_db(sb, block_number: int = 1) -> dict | None:
+    """Load session definitions from program_sessions table (canonical source).
+
+    Returns a dict in the same format as SESSIONS, or None if DB is unavailable.
+    Only loads strength sessions (A, B, C, A2, B2).
+    """
+    try:
+        result = sb.table("program_sessions").select(
+            "session_key, name, estimated_duration_minutes, exercises"
+        ).eq("block_id", block_number).execute()
+        if not result.data:
+            return None
+
+        sessions = {}
+        # Map session_key to day (matches DAY_TO_SESSION)
+        key_to_day = {"A": "Wednesday", "B": "Monday", "C": "Friday",
+                      "A2": "Wednesday", "B2": "Friday"}
+
+        for row in result.data:
+            key = row["session_key"]
+            if key not in key_to_day:
+                continue  # Skip mobility, rest, etc.
+
+            exercises = []
+            for ex in row["exercises"]:
+                exercises.append({
+                    "name": ex["name"],
+                    "sets": ex.get("sets", 0),
+                    "reps": ex.get("reps", 0),
+                    "rpe_low": ex.get("rpe_low", 6),
+                    "rpe_high": ex.get("rpe_high", 7),
+                    "rest_s": ex.get("rest_s", 60),
+                    "start_kg": ex.get("start_kg"),
+                    **({"duration_s": ex["duration_s"]} if "duration_s" in ex else {}),
+                    **({"distance_m": ex["distance_m"]} if "distance_m" in ex else {}),
+                    **({"note": ex["notes"]} if "notes" in ex else {}),
+                })
+
+            sessions[key] = {
+                "name": row["name"],
+                "day": key_to_day[key],
+                "estimated_duration_minutes": row["estimated_duration_minutes"] or 50,
+                "exercises": exercises,
+            }
+
+        if sessions:
+            log.info("Loaded %d session templates from DB (block %d)", len(sessions), block_number)
+            return sessions
+        return None
+    except Exception as exc:
+        log.warning("Could not load sessions from DB, using hardcoded: %s", exc)
+        return None
+
+
+def get_sessions(sb=None, block_number: int = 1) -> dict:
+    """Get session definitions: DB first (canonical), hardcoded fallback."""
+    if sb:
+        db_sessions = load_sessions_from_db(sb, block_number)
+        if db_sessions:
+            return db_sessions
+    return SESSIONS
 
 
 # ---------------------------------------------------------------------------
@@ -538,13 +608,10 @@ def build_exercise_step(
         }
         step["endConditionValue"] = float(reps)
 
-    # Weight: use benchmarkPercentage if a Garmin benchmark exists for this exercise
-    benchmark_e1rm = GARMIN_BENCHMARKS.get(garmin_exercise_name)
-    if weight_kg is not None and weight_kg > 0 and benchmark_e1rm:
-        pct = round((weight_kg / benchmark_e1rm) * 100)
-        pct = max(1, min(100, pct))  # clamp 1-100
-        step["benchmarkPercentage"] = pct
-        step["benchmarkKey"] = garmin_exercise_name
+    # Weight: set directly via weightValue (benchmarkPercentage causes 400 errors)
+    if weight_kg is not None and weight_kg > 0:
+        step["weightValue"] = weight_kg
+        step["weightUnit"] = {"unitId": 8, "unitKey": "kilogram", "factor": 1000.0}
 
     return step
 
@@ -619,7 +686,8 @@ def build_garmin_workout(
     global STEP_ORDER_COUNTER
     STEP_ORDER_COUNTER = 0
 
-    session = SESSIONS[session_key]
+    sessions = get_sessions(sb, block)
+    session = sessions[session_key]
     exercises = session["exercises"]
 
     # Build workout steps — start with warm-up protocol
@@ -694,7 +762,7 @@ def build_garmin_workout(
     if rpe_cap is not None:
         adj_tags.append(f"RPE≤{rpe_cap}")
     adj_suffix = f" [{', '.join(adj_tags)}]" if adj_tags else ""
-    workout_name = f"Block {block} Wk{week} — {session['name']}{deload_tag}{adj_suffix}"
+    workout_name = f"{session['name']}{deload_tag} | Block {block} Wk{week}{adj_suffix}"
 
     rpe_display_low = min(exercises[0]["rpe_low"], rpe_cap) if rpe_cap else exercises[0]["rpe_low"]
     rpe_display_high = min(exercises[0]["rpe_high"], rpe_cap) if rpe_cap else exercises[0]["rpe_high"]
@@ -730,7 +798,8 @@ def build_garmin_workout(
 def format_weight_summary(session_key: str, block: int, week: int,
                           progression_notes: list | None = None, sb=None) -> str:
     """Return a human-readable summary of target weights for logging."""
-    session = SESSIONS[session_key]
+    sessions = get_sessions(sb, block)
+    session = sessions[session_key]
     lines = [f"\n{session['name']} — Block {block}, Week {week}"]
     if is_deload_week(week):
         lines.append("  ** DELOAD WEEK — 50% volume, same weight **")
@@ -997,7 +1066,7 @@ def build_exception_workout(
     label = label_match.group(1).strip() if label_match else "Exception Workout"
 
     deload_tag = " (Deload)" if is_deload_week(week) else ""
-    workout_name = f"Block {block} Wk{week} — {label} (Exception){deload_tag}"
+    workout_name = f"{exception_info['original_session']}{deload_tag} (Adjusted) | Block {block} Wk{week}"
 
     workout = {
         "workoutName": workout_name,
@@ -1251,6 +1320,21 @@ def main():
             "You may need to schedule it manually in Garmin Connect.",
             workout_id,
         )
+
+    # Link Garmin workout ID to planned_workouts so the React app can track it
+    try:
+        link_sb = sb if sb else create_client(SUPABASE_URL, SUPABASE_KEY)
+        date_str = target_date.isoformat()
+        result = link_sb.table("planned_workouts").update({
+            "garmin_workout_id": workout_id,
+            "status": "pushed",
+        }).eq("scheduled_date", date_str).in_("status", ["planned", "adjusted"]).execute()
+        if result.data:
+            log.info("Linked garmin_workout_id=%s to planned_workout (date=%s)", workout_id, date_str)
+        else:
+            log.info("No matching planned_workout found for %s to link", date_str)
+    except Exception as exc:
+        log.warning("Failed to link workout ID to planned_workouts: %s", exc)
 
 
 if __name__ == "__main__":

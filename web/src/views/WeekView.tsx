@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
 import { useActivities, useSleep, useBodyComposition } from '../hooks/useSupabase'
+import type { Activity, SleepRow, BodyComposition } from '../lib/types'
 import { pairHikeAndFly, formatAirtime, formatDistance } from '../lib/flying'
 import { startOfWeek, endOfWeek, format, isWithinInterval } from 'date-fns'
 import { Wind } from 'lucide-react'
@@ -44,36 +45,36 @@ export default function WeekView() {
 
   const weekActivities = useMemo(() => {
     if (!activitiesHook.data) return []
-    return activitiesHook.data.filter((a: any) =>
+    return activitiesHook.data.filter((a: Activity) =>
       isWithinInterval(new Date(a.date), { start: weekStart, end: weekEnd })
     )
   }, [activitiesHook.data, weekStart.getTime(), weekEnd.getTime()])
 
   const prevWeekActivities = useMemo(() => {
     if (!activitiesHook.data) return []
-    return activitiesHook.data.filter((a: any) =>
+    return activitiesHook.data.filter((a: Activity) =>
       isWithinInterval(new Date(a.date), { start: prevWeekStart, end: prevWeekEnd })
     )
   }, [activitiesHook.data, prevWeekStart.getTime(), prevWeekEnd.getTime()])
 
   const totalElevation = useMemo(
     () => weekActivities
-      .filter((a: any) => a.activity_type !== 'hang_gliding')
-      .reduce((sum: number, a: any) => sum + (a.elevation_gain || 0), 0),
+      .filter((a: Activity) => a.activity_type !== 'hang_gliding')
+      .reduce((sum: number, a: Activity) => sum + (a.elevation_gain || 0), 0),
     [weekActivities]
   )
   const gymSessions = useMemo(
-    () => weekActivities.filter((a: any) => a.activity_type === 'strength_training').length,
+    () => weekActivities.filter((a: Activity) => a.activity_type === 'strength_training').length,
     [weekActivities]
   )
   const bodyComp = useMemo(() => {
     if (!bodyCompHook.data || bodyCompHook.data.length === 0) return null
-    const withWeight = bodyCompHook.data.filter((d: any) => d.weight_kg != null)
-    const withFat = bodyCompHook.data.filter((d: any) => d.body_fat_pct != null)
-    const withMuscle = bodyCompHook.data.filter((d: any) => d.muscle_mass_grams != null)
-    const latest = withWeight[0] as any ?? withFat[0] as any
+    const withWeight = bodyCompHook.data.filter((d: BodyComposition) => d.weight_kg != null)
+    const withFat = bodyCompHook.data.filter((d: BodyComposition) => d.body_fat_pct != null)
+    const withMuscle = bodyCompHook.data.filter((d: BodyComposition) => d.muscle_mass_grams != null)
+    const latest = withWeight[0] ?? withFat[0]
     if (!latest) return null
-    const prev = withWeight.length > 1 ? withWeight[1] as any : null
+    const prev = withWeight.length > 1 ? withWeight[1] : null
     return {
       weight: latest.weight_kg,
       bodyFat: withFat[0]?.body_fat_pct ?? null,
@@ -86,12 +87,12 @@ export default function WeekView() {
 
   const prevElevation = useMemo(
     () => prevWeekActivities
-      .filter((a: any) => a.activity_type !== 'hang_gliding')
-      .reduce((sum: number, a: any) => sum + (a.elevation_gain || 0), 0),
+      .filter((a: Activity) => a.activity_type !== 'hang_gliding')
+      .reduce((sum: number, a: Activity) => sum + (a.elevation_gain || 0), 0),
     [prevWeekActivities]
   )
   const prevGymSessions = useMemo(
-    () => prevWeekActivities.filter((a: any) => a.activity_type === 'strength_training').length,
+    () => prevWeekActivities.filter((a: Activity) => a.activity_type === 'strength_training').length,
     [prevWeekActivities]
   )
 
@@ -101,8 +102,8 @@ export default function WeekView() {
   }
 
   const weeklySummary = useMemo(() => {
-    const strength = weekActivities.filter((a: any) => a.activity_type === 'strength_training').length
-    const mountain = weekActivities.filter((a: any) =>
+    const strength = weekActivities.filter((a: Activity) => a.activity_type === 'strength_training').length
+    const mountain = weekActivities.filter((a: Activity) =>
       ['resort_snowboarding', 'backcountry_snowboarding', 'resort_skiing', 'backcountry_skiing', 'hiking', 'ski_touring', 'splitboarding'].includes(a.activity_type)
     ).length
     const other = weekActivities.length - strength - mountain
@@ -124,7 +125,7 @@ export default function WeekView() {
     return sleepHook.data
       .slice()
       .reverse()
-      .map((d: any) => {
+      .map((d: SleepRow) => {
         const hours = d.total_sleep_seconds ? d.total_sleep_seconds / 3600 : 0
         return {
           date: format(new Date(d.date), 'MM/dd'),
@@ -221,7 +222,7 @@ export default function WeekView() {
         )}
         {weekActivities.length > 0 ? (
           <div className="space-y-0">
-            {weekActivities.map((a: any, i: number) => (
+            {weekActivities.map((a: Activity, i: number) => (
               <div
                 key={a.garmin_activity_id || i}
                 className="flex items-center justify-between border-b border-border-subtle last:border-0 py-2.5"
@@ -319,9 +320,9 @@ export default function WeekView() {
   )
 }
 
-function WeekFlights({ activities }: { activities: any[] }) {
+function WeekFlights({ activities }: { activities: Activity[] }) {
   const flights = useMemo(() => {
-    const flyActivities = activities.filter((a: any) => a.activity_type === 'hang_gliding')
+    const flyActivities = activities.filter((a: Activity) => a.activity_type === 'hang_gliding')
     if (!flyActivities.length) return []
     return pairHikeAndFly(flyActivities, activities)
   }, [activities])

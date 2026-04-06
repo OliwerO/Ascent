@@ -173,7 +173,8 @@ below for any date-specific overrides.
 
 | Date | Original Session | Exception | Reason | Pushed to Garmin |
 |------|-----------------|-----------|--------|-----------------|
-| 2026-04-04 | Strength C: Full Body Variant | Upper Body + Core (incline DB press 3×10, chest-supported row 3×10, landmine press 3×8/side, chin-ups 3×6-8, core circuit: ab wheel + bird dogs + suitcase carry) | Snowboarding morning + residual fatigue from Norway trip. Lower body already taxed — swap to upper + core to avoid compounding leg fatigue. | Pending |
+| 2026-04-03 | Strength C: Full Body Variant | **Reduced volume:** Incline DB press 2×8, chest-supported row 2×8, landmine press 2×6/side, chin-ups 2×6, core circuit (ab wheel + bird dogs + suitcase carry). RPE 6 (conservative). Afternoon session. | Snowboarding morning + big tour Saturday. Back-to-back high-intensity mountain days. Reduce gym fatigue to preserve recovery for Saturday. Full upper + core volume would compound mountain stress. | No |
+| 2026-04-07 | Strength B: Upper + Core (Monday) | **Rescheduled to Tuesday Apr 8.** Strength A to Thursday Apr 10, Strength C to Friday Apr 11. All 3 sessions kept. | Big backcountry tour on Monday Apr 7 (4am start). Tue=B (upper only, no leg conflict with tour). Wed=rest. Thu=A (squats, legs have 3 days recovery). Fri=C (deadlift-focused, different movers from Thu). | Pending |
 
 -----
 

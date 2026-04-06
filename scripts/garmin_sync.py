@@ -35,7 +35,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_KEY"]
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ["SUPABASE_KEY"]
 
 API_DELAY = 1  # seconds between Garmin API calls
 
@@ -87,6 +87,16 @@ def _ms_to_iso(ts):
         from datetime import timezone
         return datetime.fromtimestamp(ts / 1000, tz=timezone.utc).isoformat()
     return ts
+
+
+def _safe_int(v):
+    """Coerce to int, handling float strings like '88700.0'."""
+    if v is None:
+        return None
+    try:
+        return int(float(v))
+    except (ValueError, TypeError):
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -295,15 +305,15 @@ def sync_body_composition(client: Garmin, sb, d: date) -> bool:
             continue
         row = {
             "date": ds,
-            "weight_grams": weight_grams,
+            "weight_grams": _safe_int(weight_grams),
             "bmi": entry.get("bmi"),
             "body_fat_pct": entry.get("bodyFat"),
             "body_water_pct": entry.get("bodyWater"),
-            "bone_mass_grams": entry.get("boneMass"),
-            "muscle_mass_grams": entry.get("muscleMass"),
+            "bone_mass_grams": _safe_int(entry.get("boneMass")),
+            "muscle_mass_grams": _safe_int(entry.get("muscleMass")),
             "visceral_fat_rating": entry.get("visceralFat"),
             "metabolic_age": entry.get("metabolicAge"),
-            "lean_body_mass_grams": entry.get("leanBodyMass"),
+            "lean_body_mass_grams": _safe_int(entry.get("leanBodyMass")),
             "source": "garmin",
             "raw_json": safe_json(entry),
         }
@@ -408,6 +418,13 @@ def sync_activities(client: Garmin, sb, d: date) -> bool:
 
         # Enrich with detailed per-activity data
         _sync_activity_details(client, sb, garmin_id)
+
+        # Sync per-set exercise data for strength activities
+        try:
+            _sync_training_session(client, sb, act, garmin_id)
+        except Exception as exc:
+            log.warning("Training session sync failed for %s: %s", garmin_id, exc)
+
         count += 1
 
     log.info("activities: %d upserted for %s", count, ds)
@@ -433,6 +450,234 @@ def _sync_activity_details(client: Garmin, sb, garmin_id: str):
     }
     sb.table("activity_details").upsert(row, on_conflict="garmin_activity_id").execute()
     log.info("  activity_details upserted for activity %s", garmin_id)
+
+
+# ---------------------------------------------------------------------------
+# Garmin exercise name → exercises table mapping
+# Maps Garmin's CATEGORY/NAME to our exercises.name
+# ---------------------------------------------------------------------------
+
+GARMIN_EXERCISE_MAP = {
+    # Garmin (category, name) → exercises table name
+    ("BENCH_PRESS", "INCLINE_DUMBBELL_BENCH_PRESS"): "Dumbbell Incline Press",
+    ("BENCH_PRESS", "DUMBBELL_BENCH_PRESS"): "Dumbbell Bench Press",
+    ("BENCH_PRESS", "BARBELL_BENCH_PRESS"): "Barbell Bench Press",
+    ("BENCH_PRESS", "INCLINE_BARBELL_BENCH_PRESS"): "Incline Barbell Bench Press",
+    ("ROW", "CHEST_SUPPORTED_DUMBBELL_ROW"): "Chest-Supported Row",
+    ("ROW", "BARBELL_ROW"): "Barbell Row",
+    ("ROW", "SINGLE_ARM_DUMBBELL_ROW"): "Single-Arm DB Row",
+    ("ROW", "SEATED_CABLE_ROW"): "Seated Cable Row",
+    ("ROW", "CABLE_ROW"): "Cable Row",
+    ("SHOULDER_PRESS", "SINGLE_ARM_DUMBBELL_SHOULDER_PRESS"): "Landmine Press",
+    ("SHOULDER_PRESS", "OVERHEAD_PRESS"): "Overhead Press",
+    ("SHOULDER_PRESS", "BARBELL_OVERHEAD_PRESS"): "Overhead Press",
+    ("SHOULDER_PRESS", "DUMBBELL_SHOULDER_PRESS"): "Overhead Press",
+    ("PULL_UP", "CHIN_UP"): "Chin-Up",
+    ("PULL_UP", "PULL_UP"): "Pull-Up",
+    ("SQUAT", "BARBELL_BACK_SQUAT"): "Barbell Back Squat",
+    ("SQUAT", "BARBELL_FRONT_SQUAT"): "Barbell Front Squat",
+    ("SQUAT", "SPLIT_SQUAT"): "Bulgarian Split Squat",
+    ("DEADLIFT", "CONVENTIONAL_DEADLIFT"): "Conventional Deadlift",
+    ("DEADLIFT", "ROMANIAN_DEADLIFT"): "Romanian Deadlift",
+    ("DEADLIFT", "TRAP_BAR_DEADLIFT"): "Trap Bar Deadlift",
+    ("DEADLIFT", "SUMO_DEADLIFT"): "Sumo Deadlift",
+    ("CORE", "KNEELING_AB_WHEEL"): "Ab Wheel Rollout",
+    ("CORE", "DEAD_BUG"): "Dead Bugs",
+    ("HIP_STABILITY", "QUADRUPED_WITH_LEG_LIFT"): "Bird Dogs",
+    ("PLANK", "PLANK"): "Plank",
+    ("PLANK", "COPENHAGEN_PLANK"): "Copenhagen Plank",
+    ("CARRY", "FARMERS_WALK"): "Suitcase Carry",
+    ("CARRY", "SUITCASE_CARRY"): "Suitcase Carry",
+    ("TOTAL_BODY", "KETTLEBELL_SWING"): "Kettlebell Swing",
+    ("TOTAL_BODY", "TURKISH_GET_UP"): "Turkish Get-Up",
+    ("TOTAL_BODY", "KETTLEBELL_CLEAN_AND_PRESS"): "KB Clean & Press",
+    ("SHOULDER_STABILITY", "KETTLEBELL_HALO"): "Kettlebell Halo",
+    ("LATERAL_RAISE", "LATERAL_RAISE"): "Lateral Raise",
+    ("CURL", "BARBELL_CURL"): "Barbell Curl",
+    ("CURL", "DUMBBELL_CURL"): "Dumbbell Curl",
+    ("CURL", "HAMMER_CURL"): "Hammer Curl",
+    ("TRICEPS_EXTENSION", "TRICEP_PUSHDOWN"): "Tricep Pushdown",
+    ("TRICEPS_EXTENSION", "SKULL_CRUSHER"): "Skull Crusher",
+    ("LAT_PULL", "LAT_PULLDOWN"): "Lat Pulldown",
+    ("HIP_RAISE", "HIP_THRUST"): "Hip Thrust",
+    ("LEG_CURL", "LEG_CURL"): "Leg Curl",
+    ("LEG_EXTENSION", "LEG_EXTENSION"): "Leg Extension",
+    ("CALF_RAISE", "CALF_RAISE"): "Calf Raise",
+    ("LUNGE", "WALKING_LUNGE"): "Walking Lunge",
+    ("FLY", "CABLE_FLY"): "Cable Fly",
+    ("DIP", "DIP"): "Dip",
+    ("SQUAT", "GOBLET_SQUAT"): "Barbell Front Squat",
+    ("LEG_PRESS", "LEG_PRESS"): "Leg Press",
+    ("ROW", "T_BAR_ROW"): "Barbell Row",
+    ("ROW", "INVERTED_ROW"): "Barbell Row",
+    ("BENCH_PRESS", "CLOSE_GRIP_BENCH_PRESS"): "Barbell Bench Press",
+    ("BENCH_PRESS", "PUSH_UP"): "Push-Up",
+    ("SHOULDER_PRESS", "ARNOLD_PRESS"): "Overhead Press",
+    ("LATERAL_RAISE", "DUMBBELL_LATERAL_RAISE"): "Lateral Raise",
+    ("CURL", "CABLE_CURL"): "Barbell Curl",
+    ("TRICEPS_EXTENSION", "OVERHEAD_TRICEP_EXTENSION"): "Overhead Tricep Extension",
+    ("CORE", "PLANK"): "Plank",
+    ("CORE", "PALLOF_PRESS"): "Pallof Walkouts",
+    ("CORE", "COPENHAGEN_PLANK"): "Copenhagen Plank",
+    ("CORE", "HANGING_LEG_RAISE"): "Hanging Leg Raise",
+    ("HIP_RAISE", "GLUTE_BRIDGE"): "Hip Thrust",
+    ("TOTAL_BODY", "CLEAN_AND_JERK"): "KB Clean & Press",
+    ("SHRUG", "BARBELL_SHRUG"): "Barbell Row",
+    ("FACE_PULL", "FACE_PULL"): "Face Pull",
+}
+
+# Cache: exercises.name → exercises.id (populated once per sync run)
+_exercise_id_cache: dict[str, int] = {}
+
+
+def _get_exercise_id(sb, exercise_name: str) -> int | None:
+    """Look up exercise ID by name, with caching."""
+    if exercise_name in _exercise_id_cache:
+        return _exercise_id_cache[exercise_name]
+
+    if not _exercise_id_cache:
+        # Load all exercises once
+        resp = sb.table("exercises").select("id, name").execute()
+        for row in resp.data:
+            _exercise_id_cache[row["name"]] = row["id"]
+
+    return _exercise_id_cache.get(exercise_name)
+
+
+def _resolve_garmin_exercise(category: str, name: str) -> str | None:
+    """Map a Garmin exercise (category, name) to our exercises table name."""
+    # Direct mapping
+    mapped = GARMIN_EXERCISE_MAP.get((category, name))
+    if mapped:
+        return mapped
+
+    # Try category-only fallback (less specific)
+    for (cat, _), ex_name in GARMIN_EXERCISE_MAP.items():
+        if cat == category:
+            return ex_name
+
+    return None
+
+
+def _sync_training_session(client: Garmin, sb, act: dict, garmin_id: str):
+    """Create training_sessions + training_sets from a strength activity's exercise sets."""
+    activity_type = (
+        act.get("activityType", {}).get("typeKey", "")
+        if isinstance(act.get("activityType"), dict)
+        else str(act.get("activityType", ""))
+    )
+    if activity_type != "strength_training":
+        return
+
+    act_date = act.get("startTimeLocal", "")[:10]
+    if not act_date:
+        return
+
+    # Fetch per-set exercise data from Garmin
+    try:
+        exercise_data = api_call(client.get_activity_exercise_sets, int(garmin_id))
+    except (ValueError, TypeError):
+        log.warning("Invalid garmin_id for exercise sets: %s", garmin_id)
+        return
+    if not exercise_data:
+        log.warning("No exercise sets data for activity %s", garmin_id)
+        return
+
+    exercise_sets = exercise_data.get("exerciseSets", [])
+    if not exercise_sets:
+        return
+
+    # Calculate totals from the set data
+    working_sets = [s for s in exercise_sets if s.get("setType") != "REST"
+                    and s.get("exercises") and s["exercises"][0].get("category") != "WARM_UP"]
+    total_volume = sum(
+        (s.get("weight", 0) or 0) / 1000.0 * (s.get("repetitionCount", 0) or 0)
+        for s in working_sets
+    )
+    duration_sec = act.get("duration")
+    duration_min = int(duration_sec / 60) if duration_sec else None
+
+    # Upsert training_sessions (deduplicate on garmin_activity_id)
+    # First check if one already exists
+    existing = sb.table("training_sessions").select("id").eq(
+        "garmin_activity_id", garmin_id
+    ).execute()
+
+    if existing.data:
+        session_id = existing.data[0]["id"]
+        sb.table("training_sessions").update({
+            "name": act.get("activityName"),
+            "duration_minutes": duration_min,
+            "total_volume_kg": round(total_volume, 1) if total_volume else None,
+            "total_sets": len(working_sets),
+        }).eq("id", session_id).execute()
+    else:
+        resp = sb.table("training_sessions").insert({
+            "date": act_date,
+            "garmin_activity_id": garmin_id,
+            "name": act.get("activityName"),
+            "duration_minutes": duration_min,
+            "total_volume_kg": round(total_volume, 1) if total_volume else None,
+            "total_sets": len(working_sets),
+        }).execute()
+        session_id = resp.data[0]["id"]
+
+    # Delete existing training_sets for this session (idempotent re-sync)
+    sb.table("training_sets").delete().eq("session_id", session_id).execute()
+
+    # Insert training_sets from Garmin exercise data
+    set_number = 0
+    for garmin_set in exercise_sets:
+        if garmin_set.get("setType") == "REST":
+            continue
+
+        exercises = garmin_set.get("exercises", [])
+        if not exercises:
+            continue
+
+        garmin_cat = exercises[0].get("category", "")
+        garmin_name = exercises[0].get("name", "")
+        is_warmup = garmin_cat == "WARM_UP"
+
+        exercise_name = _resolve_garmin_exercise(garmin_cat, garmin_name)
+        if not exercise_name:
+            log.warning("Unmapped Garmin exercise: %s/%s", garmin_cat, garmin_name)
+            continue
+
+        exercise_id = _get_exercise_id(sb, exercise_name)
+        if not exercise_id:
+            log.warning("Exercise not in DB: %s (from %s/%s)", exercise_name, garmin_cat, garmin_name)
+            continue
+
+        set_number += 1
+        weight_grams = garmin_set.get("weight")
+        weight_kg = weight_grams / 1000.0 if weight_grams and weight_grams > 0 else None
+        reps = garmin_set.get("repetitionCount")
+
+        sb.table("training_sets").insert({
+            "session_id": session_id,
+            "exercise_id": exercise_id,
+            "set_number": set_number,
+            "set_type": "warmup" if is_warmup else "working",
+            "weight_kg": weight_kg,
+            "reps": reps,
+        }).execute()
+
+    # Mark matching planned_workout as completed and link the activity ID
+    planned = sb.table("planned_workouts").select("id, status").eq(
+        "scheduled_date", act_date
+    ).in_("status", ["planned", "pushed", "adjusted"]).execute()
+    if planned.data:
+        sb.table("planned_workouts").update({
+            "status": "completed",
+            "actual_garmin_activity_id": garmin_id,
+        }).eq(
+            "id", planned.data[0]["id"]
+        ).execute()
+        log.info("  planned_workout %d marked completed (activity %s)", planned.data[0]["id"], garmin_id)
+
+    log.info("  training_session upserted (id=%d, %d sets) for activity %s",
+             session_id, set_number, garmin_id)
 
 
 def sync_training_status(client: Garmin, sb, d: date) -> bool:

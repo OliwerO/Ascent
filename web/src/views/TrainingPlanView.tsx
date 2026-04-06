@@ -691,7 +691,7 @@ function LiftProgressionTracker({
       const def = pw.workout_definition as WorkoutDefinition | null
       if (!def) return
       def.exercises.forEach((ex) => {
-        if (ex.equipment === 'barbell') names.add(ex.name)
+        if (ex.weight_kg != null && ex.weight_kg > 0) names.add(ex.name)
       })
     })
     return Array.from(names)
@@ -700,7 +700,7 @@ function LiftProgressionTracker({
   const exercisesWithData = useMemo(() => {
     const names = new Set<string>()
     sets.forEach((s) => {
-      if (s.exercises?.name && s.set_type === 'working' && s.weight_kg != null) {
+      if (s.exercises?.name && s.set_type === 'working' && s.weight_kg != null && s.weight_kg > 0) {
         names.add(s.exercises.name)
       }
     })

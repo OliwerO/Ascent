@@ -261,6 +261,42 @@ def main():
     log.info("%sSync complete: %d new entries written, %d total in CSV",
              prefix, written, len(rows))
 
+    # Step 4: Push latest weight to Garmin Connect
+    if not args.dry_run and rows:
+        push_weight_to_garmin(rows)
+
+
+def push_weight_to_garmin(rows: list[dict]):
+    """Push the most recent weight reading to Garmin Connect."""
+    try:
+        from garmin_auth import get_safe_client, AuthExpiredError, RateLimitCooldownError
+    except ImportError:
+        log.warning("garmin_auth not available — skipping Garmin weight push")
+        return
+
+    # Get the most recent reading
+    latest = max(rows, key=lambda r: r.get("date", ""))
+    weight_grams = latest.get("weight_grams")
+    weight_kg = weight_grams / 1000.0 if weight_grams else None
+    date_str = latest.get("date", "")
+
+    if not weight_kg:
+        log.warning("No weight value in latest row — skipping Garmin push")
+        return
+
+    try:
+        client = get_safe_client(require_garminconnect=True)
+        # Use the date's timestamp if available, otherwise now
+        timestamp = f"{date_str}T06:00:00" if date_str else ""
+        result = client.add_weigh_in(weight=float(weight_kg), unitKey="kg", timestamp=timestamp)
+        log.info("Weight %.1f kg pushed to Garmin Connect for %s", weight_kg, date_str)
+    except RateLimitCooldownError:
+        log.warning("Garmin rate limit cooldown — skipping weight push")
+    except AuthExpiredError:
+        log.warning("Garmin auth expired — skipping weight push")
+    except Exception as e:
+        log.warning("Garmin weight push failed: %s", e)
+
 
 if __name__ == "__main__":
     main()

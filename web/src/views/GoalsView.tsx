@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
 import { useBodyComposition, useDailyMetrics, useActivities, useGoals } from '../hooks/useSupabase'
+import type { BodyComposition, DailyMetrics, Activity, Goal } from '../lib/types'
 import { getProgramWeek } from '../lib/program'
 import { startOfWeek, endOfWeek, isWithinInterval, differenceInDays } from 'date-fns'
 import { Target, Mountain, Dumbbell, Calendar, TrendingDown, TrendingUp, Minus } from 'lucide-react'
@@ -33,11 +34,11 @@ export default function GoalsView() {
 
   const weeklyElevation = useMemo(
     () => Math.round((activitiesHook.data ?? [])
-      .filter((a: any) => {
+      .filter((a: Activity) => {
         const d = new Date(a.date)
         return isWithinInterval(d, { start: weekStart, end: weekEnd }) && a.activity_type !== 'hang_gliding'
       })
-      .reduce((sum: number, a: any) => sum + (a.elevation_gain || 0), 0)),
+      .reduce((sum: number, a: Activity) => sum + (a.elevation_gain || 0), 0)),
     [activitiesHook.data, weekStart.getTime(), weekEnd.getTime()]
   )
 
@@ -45,13 +46,13 @@ export default function GoalsView() {
   if (error) return <div className="text-accent-red p-4">{error}</div>
 
   // Prefer xiaomi (home scale) for weight — more accurate than gym weigh-in (clothes, food)
-  const latestWeight = bodyComp.data?.find((d: any) => d.weight_kg != null && d.source === 'xiaomi')
-    ?? bodyComp.data?.find((d: any) => d.weight_kg != null)
+  const latestWeight = bodyComp.data?.find((d: BodyComposition) => d.weight_kg != null && d.source === 'xiaomi')
+    ?? bodyComp.data?.find((d: BodyComposition) => d.weight_kg != null)
   // Muscle mass comes from egym body scans (xiaomi only has weight)
-  const latestMuscle = bodyComp.data?.find((d: any) => d.muscle_mass_grams != null)
-  const latestBodyFat = bodyComp.data?.find((d: any) => d.body_fat_pct != null)
-  const latestVO2 = metrics.data?.find((d: any) => d.vo2max != null)
-  const bodyCompGoals = (goalsHook.data ?? []).filter((g: any) => g.category === 'body_composition')
+  const latestMuscle = bodyComp.data?.find((d: BodyComposition) => d.muscle_mass_grams != null)
+  const latestBodyFat = bodyComp.data?.find((d: BodyComposition) => d.body_fat_pct != null)
+  const latestVO2 = metrics.data?.find((d: DailyMetrics) => d.vo2max != null)
+  const bodyCompGoals = (goalsHook.data ?? []).filter((g: Goal) => g.category === 'body_composition')
 
   const { week } = getProgramWeek(new Date())
 
@@ -72,13 +73,13 @@ export default function GoalsView() {
               <h3 className="text-[15px] font-bold text-text-primary">Body Recomposition</h3>
               {bodyCompGoals.length > 0 ? (
                 <div className="mt-3 space-y-4">
-                  {bodyCompGoals.map((goal: any) => {
+                  {bodyCompGoals.map((goal: Goal) => {
                     const current = goal.metric === 'weight_kg' ? latestWeight?.weight_kg
                       : goal.metric === 'body_fat_pct' ? latestBodyFat?.body_fat_pct
                       : goal.metric === 'muscle_mass_kg' && latestMuscle?.muscle_mass_grams
                         ? latestMuscle.muscle_mass_grams / 1000 : null
                     const target = goal.target_value
-                    const start = goal.current_value
+                    const start = goal.current_value ?? 0
                     const isLowerBetter = goal.metric === 'weight_kg' || goal.metric === 'body_fat_pct'
                     const totalChange = Math.abs(target - start)
                     const currentChange = current != null ? Math.abs(current - start) : 0

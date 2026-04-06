@@ -139,13 +139,13 @@ def main():
     args = parser.parse_args()
 
     if args.daemon:
-        log.info("Starting sync watcher daemon (poll interval: 5 min)")
+        log.info("Starting sync watcher daemon (poll interval: 30s)")
         while True:
             try:
                 check_and_run()
             except Exception as e:
                 log.error("Error: %s", e)
-            time.sleep(300)
+            time.sleep(30)
     else:
         try:
             check_and_run()

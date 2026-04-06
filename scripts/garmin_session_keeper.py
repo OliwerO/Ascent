@@ -48,6 +48,9 @@ def extract_tokens(page, context) -> dict | None:
     if not csrf:
         try:
             content = page.content()
+            from garmin_auth import extract_csrf_token
+            csrf = extract_csrf_token(content)
+        except ImportError:
             match = re.search(r'<meta[^>]*csrf[^>]*content="([^"]+)"', content, re.IGNORECASE)
             if match:
                 csrf = match.group(1)

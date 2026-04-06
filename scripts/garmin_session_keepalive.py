@@ -126,31 +126,41 @@ def _set_cooldown(reason: str):
 # ---------------------------------------------------------------------------
 
 
-def extract_safari_cookies() -> dict | None:
-    """Extract Garmin cookies from Safari's cookie store."""
+def extract_browser_cookies() -> dict | None:
+    """Extract Garmin cookies from Firefox (primary) or Safari (fallback)."""
     try:
         import browser_cookie3
     except ImportError:
         log.error("browser_cookie3 not installed: pip install browser-cookie3")
         return None
 
-    try:
-        jar = browser_cookie3.safari(domain_name=".garmin.com")
-        cookies = {}
-        for c in jar:
-            if c.domain and "garmin" in c.domain:
-                cookies[c.name] = c.value
+    # Try Firefox first (more reliable with Cloudflare)
+    for browser_name, browser_fn in [("Firefox", browser_cookie3.firefox), ("Safari", browser_cookie3.safari)]:
+        try:
+            jar = browser_fn(domain_name=".garmin.com")
+            cookies = {}
+            for c in jar:
+                if c.domain and "garmin" in c.domain:
+                    cookies[c.name] = c.value
 
-        if not cookies:
-            log.warning("No Garmin cookies in Safari")
-            return None
+            if not cookies:
+                log.debug("No Garmin cookies in %s", browser_name)
+                continue
 
-        log.info("Extracted %d cookies from Safari", len(cookies))
-        return cookies
+            # Must have session cookies, not just analytics
+            if "JWT_WEB" not in cookies and "session" not in cookies:
+                log.debug("%s has %d cookies but no session cookies", browser_name, len(cookies))
+                continue
 
-    except Exception as e:
-        log.error("Safari cookie extraction failed: %s", e)
-        return None
+            log.info("Extracted %d cookies from %s", len(cookies), browser_name)
+            return cookies
+
+        except Exception as e:
+            log.debug("%s cookie extraction failed: %s", browser_name, e)
+            continue
+
+    log.warning("No browser cookies available (tried Firefox, Safari)")
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -262,7 +272,7 @@ def main():
         return
 
     # Step 1: Extract cookies from Safari
-    cookies = extract_safari_cookies()
+    cookies = extract_browser_cookies()
     if not cookies:
         failures = _get_failure_count() + 1
         cache_cookies({}, session_alive=False)

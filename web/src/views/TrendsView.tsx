@@ -2,6 +2,7 @@ import { useMemo, useState, useCallback } from 'react'
 import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
 import { useHRV, useBodyComposition, useActivities, useDailyMetrics } from '../hooks/useSupabase'
+import type { HRVRow, BodyComposition, DailyMetrics } from '../lib/types'
 import { format, startOfWeek, subDays } from 'date-fns'
 import { RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
 import {
@@ -81,6 +82,10 @@ export default function TrendsView() {
     setSyncResult(null)
     try {
       const resp = await fetch('/api/egym-sync', { method: 'POST' })
+      if (!resp.ok) {
+        setSyncResult(`Sync failed (HTTP ${resp.status})`)
+        return
+      }
       const data = await resp.json()
       if (data.ok) {
         setSyncResult('Sync queued — data arrives in ~5 min')
@@ -99,8 +104,8 @@ export default function TrendsView() {
     const raw = (bodyComp.data ?? [])
       .slice()
       .reverse()
-      .filter((d: any) => d.weight_kg != null)
-      .map((d: any) => ({
+      .filter((d: BodyComposition) => d.weight_kg != null)
+      .map((d: BodyComposition) => ({
         date: format(new Date(d.date), 'MMM d'),
         weight: d.weight_kg ? +d.weight_kg.toFixed(1) : null,
         muscleMass: d.muscle_mass_grams ? +(d.muscle_mass_grams / 1000).toFixed(1) : null,
@@ -125,7 +130,7 @@ export default function TrendsView() {
   const hrvChartData = (hrv.data ?? [])
     .slice()
     .reverse()
-    .map((d: any) => ({
+    .map((d: HRVRow) => ({
       date: format(new Date(d.date), 'MMM d'),
       value: d.last_night_avg ? Math.round(d.last_night_avg) : null,
       baselineLow: d.baseline_balanced_low ? Math.round(d.baseline_balanced_low) : null,
@@ -135,15 +140,16 @@ export default function TrendsView() {
   const fatChartData = (bodyComp.data ?? [])
     .slice()
     .reverse()
-    .filter((d: any) => d.body_fat_pct != null)
-    .map((d: any) => ({
+    .filter((d: BodyComposition) => d.body_fat_pct != null)
+    .map((d: BodyComposition) => ({
       date: format(new Date(d.date), 'MMM d'),
-      bodyFat: +d.body_fat_pct.toFixed(1),
+      bodyFat: d.body_fat_pct != null ? +d.body_fat_pct.toFixed(1) : 0,
     }))
 
-  const latestComp = (bodyComp.data ?? []).find((d: any) => d.body_fat_pct != null) as any
-  const bioAges = latestComp?.raw_json?.bio_age ?? null
-  const rawMetrics = latestComp?.raw_json?.body_metrics ?? []
+  const latestComp = (bodyComp.data ?? []).find((d: BodyComposition) => d.body_fat_pct != null) ?? null
+  const rawJson = latestComp?.raw_json as Record<string, unknown> | null
+  const bioAges = (rawJson?.bio_age as { totalBioAge?: number; muscleBioAge?: number; metabolicAge?: number; cardioAge?: number } | undefined) ?? null
+  const rawMetrics = (rawJson?.body_metrics as Array<{ type: string; value: number | null }>) ?? []
 
   const rawByType: Record<string, number> = {}
   for (const m of rawMetrics) {
@@ -197,13 +203,13 @@ export default function TrendsView() {
   const vo2Data = (metrics.data ?? [])
     .slice()
     .reverse()
-    .filter((d: any) => d.vo2max != null)
-    .map((d: any) => ({
+    .filter((d: DailyMetrics) => d.vo2max != null)
+    .map((d: DailyMetrics) => ({
       date: format(new Date(d.date), 'MMM d'),
-      value: +d.vo2max.toFixed(1),
+      value: d.vo2max != null ? +d.vo2max.toFixed(1) : 0,
     }))
   const vo2Deduped = vo2Data.filter(
-    (d: any, i: number, arr: any[]) =>
+    (d: { date: string; value: number }, i: number, arr: { date: string; value: number }[]) =>
       i === 0 || i === arr.length - 1 || d.value !== arr[i - 1].value
   )
 
@@ -444,7 +450,7 @@ export default function TrendsView() {
               ].filter(b => b.value != null).map(b => (
                 <div key={b.label}>
                   <div className="text-[11px] text-text-muted font-semibold">{b.label}</div>
-                  <div className={`data-value-md mt-0.5 ${b.value <= b.threshold ? 'text-accent-green' : 'text-accent-yellow'}`}>
+                  <div className={`data-value-md mt-0.5 ${b.value! <= b.threshold ? 'text-accent-green' : 'text-accent-yellow'}`}>
                     {b.value}
                   </div>
                   <div className="text-[10px] text-text-dim">bio age</div>
@@ -474,7 +480,7 @@ export default function TrendsView() {
               </div>
               <div>
                 <div className="text-[11px] text-text-muted font-semibold">Body Water</div>
-                <div className={`data-value-sm mt-0.5 ${latestComp.body_water_pct >= 55 ? 'text-accent-blue' : 'text-accent-yellow'}`}>
+                <div className={`data-value-sm mt-0.5 ${(latestComp.body_water_pct ?? 0) >= 55 ? 'text-accent-blue' : 'text-accent-yellow'}`}>
                   {latestComp.body_water_pct?.toFixed(1) ?? '--'}<span className="text-[11px] text-text-muted font-normal">%</span>
                 </div>
               </div>

@@ -1,10 +1,11 @@
 import { LoadingState } from '../components/LoadingState'
 import { useDailySummary, useHRV, useDailyMetrics, useActivities, useSubjectiveWellness, usePlannedWorkouts } from '../hooks/useSupabase'
+import type { Activity, SubjectiveWellness, WarmupExercise, PlannedExercise } from '../lib/types'
 import {
   getProgramWeek, isDeloadWeek, getSessionForDate, SESSION_NAMES,
 } from '../lib/program'
-import { Clock, Flame, ArrowUpRight, Heart, ChevronDown, TrendingUp, Activity, Info } from 'lucide-react'
-import { useState, useMemo } from 'react'
+import { Clock, Flame, ArrowUpRight, Heart, ChevronDown, TrendingUp, Activity as ActivityIcon, Info } from 'lucide-react'
+import { useState, useMemo, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { format } from 'date-fns'
 
@@ -48,14 +49,15 @@ const WELLNESS_ITEMS = [
 ] as const
 
 function WellnessInput({ todayWellness, onSubmit }: {
-  todayWellness: any | null
+  todayWellness: SubjectiveWellness | null
   onSubmit: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const [values, setValues] = useState<Record<string, number>>({})
   const [submitting, setSubmitting] = useState(false)
+  const [saveMsg, setSaveMsg] = useState<string | null>(null)
 
-  const composite = todayWellness?.composite_score
+  const composite = todayWellness?.composite_score ?? null
 
   if (todayWellness && !expanded) {
     return (
@@ -67,7 +69,7 @@ function WellnessInput({ todayWellness, onSubmit }: {
           <div className="flex items-center gap-3">
             <span className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold">Wellness</span>
             <span className={`text-base font-bold font-data ${
-              composite >= 3.5 ? 'text-accent-green' : composite >= 2.5 ? 'text-accent-yellow' : 'text-accent-red'
+              (composite ?? 0) >= 3.5 ? 'text-accent-green' : (composite ?? 0) >= 2.5 ? 'text-accent-yellow' : 'text-accent-red'
             }`}>
               {composite != null ? composite.toFixed(1) : '?'}/5
             </span>
@@ -106,8 +108,12 @@ function WellnessInput({ todayWellness, onSubmit }: {
         ...values,
       }, { onConflict: 'date' })
       if (error) {
-        console.warn('Wellness save failed (table may not exist yet):', error.message)
+        setSaveMsg('Save failed')
+        setTimeout(() => setSaveMsg(null), 3000)
+        return
       }
+      setSaveMsg('Saved')
+      setTimeout(() => setSaveMsg(null), 2000)
       onSubmit()
       setExpanded(false)
     } finally {
@@ -156,6 +162,11 @@ function WellnessInput({ todayWellness, onSubmit }: {
       >
         {submitting ? 'Saving...' : 'Submit'}
       </button>
+      {saveMsg && (
+        <p className={`mt-2 text-center text-xs font-medium ${
+          saveMsg === 'Saved' ? 'text-accent-green' : 'text-accent-red'
+        }`}>{saveMsg}</p>
+      )}
     </div>
   )
 }
@@ -167,12 +178,26 @@ const RPE_LABELS: Record<number, string> = {
   5: 'Hard', 6: '', 7: 'Very hard', 8: '', 9: '', 10: 'Maximal',
 }
 
-function RPEPrompt({ activity }: { activity: any }) {
+function RPEPrompt({ activity }: { activity: Activity }) {
   const [rated, setRated] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [selectedRPE, setSelectedRPE] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
+  const [rpeMsg, setRpeMsg] = useState<string | null>(null)
 
-  if (rated) return null
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from('training_sessions')
+        .select('srpe')
+        .eq('date', activity.date)
+        .limit(1)
+      if (data?.[0]?.srpe != null) setRated(true)
+      setLoading(false)
+    })()
+  }, [activity.date])
+
+  if (loading || rated) return null
 
   const handleSubmit = async () => {
     if (selectedRPE == null) return
@@ -190,9 +215,12 @@ function RPEPrompt({ activity }: { activity: any }) {
             .from('training_sessions')
             .update({ srpe: selectedRPE })
             .eq('id', sessions[0].id)
+          setRpeMsg('RPE logged')
+          setTimeout(() => setRpeMsg(null), 2000)
         }
-      } catch (e) {
-        console.warn('RPE save failed:', e)
+      } catch {
+        setRpeMsg('Save failed')
+        setTimeout(() => setRpeMsg(null), 3000)
       }
       setRated(true)
     } finally {
@@ -234,6 +262,11 @@ function RPEPrompt({ activity }: { activity: any }) {
       >
         {saving ? 'Saving...' : 'Log RPE'}
       </button>
+      {rpeMsg && (
+        <p className={`mt-2 text-center text-xs font-medium ${
+          rpeMsg === 'RPE logged' ? 'text-accent-purple' : 'text-accent-red'
+        }`}>{rpeMsg}</p>
+      )}
     </div>
   )
 }
@@ -254,9 +287,9 @@ export default function TodayView() {
 
   const sleep7dAvg = useMemo(() => {
     const sleepDays = (summary.data ?? []).slice(0, 7)
-    const valid = sleepDays.filter((d: any) => d.total_sleep_seconds != null)
+    const valid = sleepDays.filter((d) => d.total_sleep_seconds != null)
     if (valid.length === 0) return null
-    return valid.reduce((s: number, d: any) => s + d.total_sleep_seconds / 3600, 0) / valid.length
+    return valid.reduce((s: number, d) => s + d.total_sleep_seconds! / 3600, 0) / valid.length
   }, [summary.data])
 
   const thisWeekActivities = useMemo(() => {
@@ -265,7 +298,7 @@ export default function TodayView() {
     const monday = new Date(now)
     monday.setDate(now.getDate() - ((dayOfWeek + 6) % 7))
     monday.setHours(0, 0, 0, 0)
-    return recentActivities.filter((a: any) => new Date(a.date) >= monday)
+    return recentActivities.filter((a) => new Date(a.date) >= monday)
   }, [recentActivities])
 
   const lastWeekActivities = useMemo(() => {
@@ -275,7 +308,7 @@ export default function TodayView() {
     monday.setDate(now.getDate() - ((dayOfWeek + 6) % 7))
     const prevMonday = new Date(monday)
     prevMonday.setDate(monday.getDate() - 7)
-    return recentActivities.filter((a: any) => {
+    return recentActivities.filter((a) => {
       const d = new Date(a.date)
       return d >= prevMonday && d < monday
     })
@@ -289,14 +322,14 @@ export default function TodayView() {
   const todayMetrics = metrics.data?.[0]
   const lastActivity = recentActivities[0]
   const todayStr = format(new Date(), 'yyyy-MM-dd')
-  const todayWellness = (wellness.data ?? []).find((w: any) => w.date === todayStr)
+  const todayWellness = (wellness.data ?? []).find((w) => w.date === todayStr) ?? null
 
   // ─── Derived values ───
   const sleepHours = today?.total_sleep_seconds
     ? Number((today.total_sleep_seconds / 3600).toFixed(1)) : null
   const { block, week } = getProgramWeek(new Date())
   const deload = isDeloadWeek(week)
-  const todayPlanned = planned.data?.find((pw: any) => pw.scheduled_date === todayStr) ?? null
+  const todayPlanned = planned.data?.find((pw) => pw.scheduled_date === todayStr) ?? null
   const todaySession = todayPlanned ? todayPlanned.workout_definition?.session_label : getSessionForDate(new Date())
   const isGymDay = todayPlanned != null || getSessionForDate(new Date()) != null
   const todaySessionName = todayPlanned?.workout_definition?.session_name ?? (todaySession ? SESSION_NAMES[todaySession as keyof typeof SESSION_NAMES] : null)
@@ -313,25 +346,25 @@ export default function TodayView() {
   // ─── Sleep context ───
   const sleepDays = (summary.data ?? []).slice(0, 7)
   const sleepBelowCount = sleepDays.filter(
-    (d: any) => d.total_sleep_seconds != null && d.total_sleep_seconds / 3600 < 6
+    (d) => d.total_sleep_seconds != null && d.total_sleep_seconds / 3600 < 6
   ).length
 
   // ─── Resting HR context ───
-  const rhrValues = (metrics.data ?? []).slice(0, 7).filter((d: any) => d.resting_hr != null)
+  const rhrValues = (metrics.data ?? []).slice(0, 7).filter((d) => d.resting_hr != null)
   const rhr7dAvg = rhrValues.length > 0
-    ? rhrValues.reduce((s: number, d: any) => s + d.resting_hr, 0) / rhrValues.length : null
-  const rhr30dValues = (metrics.data ?? []).filter((d: any) => d.resting_hr != null)
+    ? rhrValues.reduce((s: number, d) => s + d.resting_hr!, 0) / rhrValues.length : null
+  const rhr30dValues = (metrics.data ?? []).filter((d) => d.resting_hr != null)
   const rhr30dAvg = rhr30dValues.length > 0
-    ? rhr30dValues.reduce((s: number, d: any) => s + d.resting_hr, 0) / rhr30dValues.length : null
+    ? rhr30dValues.reduce((s: number, d) => s + d.resting_hr!, 0) / rhr30dValues.length : null
   const rhrElevated = rhr7dAvg != null && rhr30dAvg != null && rhr7dAvg > rhr30dAvg + 5
   const rhrTrend = todayMetrics?.resting_hr != null && rhr7dAvg != null
     ? (todayMetrics.resting_hr > rhr7dAvg + 2 ? '↑ Rising' : todayMetrics.resting_hr < rhr7dAvg - 2 ? '↓ Declining' : '→ Stable')
     : null
 
-  const thisWeekDuration = thisWeekActivities.reduce((s: number, a: any) => s + (a.duration_seconds ?? 0), 0)
-  const lastWeekDuration = lastWeekActivities.reduce((s: number, a: any) => s + (a.duration_seconds ?? 0), 0)
-  const thisWeekElev = thisWeekActivities.reduce((s: number, a: any) => s + (a.elevation_gain ?? 0), 0)
-  const lastWeekElev = lastWeekActivities.reduce((s: number, a: any) => s + (a.elevation_gain ?? 0), 0)
+  const thisWeekDuration = thisWeekActivities.reduce((s: number, a) => s + (a.duration_seconds ?? 0), 0)
+  const lastWeekDuration = lastWeekActivities.reduce((s: number, a) => s + (a.duration_seconds ?? 0), 0)
+  const thisWeekElev = thisWeekActivities.reduce((s: number, a) => s + (a.elevation_gain ?? 0), 0)
+  const lastWeekElev = lastWeekActivities.reduce((s: number, a) => s + (a.elevation_gain ?? 0), 0)
   const loadChangePct = lastWeekDuration > 0 ? Math.round(((thisWeekDuration - lastWeekDuration) / lastWeekDuration) * 100) : null
 
   // ─── Coaching card decision tree (evidence-based) ───
@@ -367,7 +400,7 @@ export default function TodayView() {
     coachingPoints.push({ icon: '🟡', text: 'One or more signals flagged — train if warmup feels good, otherwise swap to mobility', color: 'text-accent-yellow' })
   }
 
-  const lastGymSession = recentActivities.find((a: any) => a.activity_type === 'strength_training')
+  const lastGymSession = recentActivities.find((a) => a.activity_type === 'strength_training')
   const daysSinceGym = lastGymSession
     ? Math.floor((Date.now() - new Date(lastGymSession.date).getTime()) / 86400000)
     : null
@@ -454,7 +487,7 @@ export default function TodayView() {
                 {todayPlanned.workout_definition.warmup?.length > 0 && (
                   <div className="mb-3 pb-2 border-b border-text-primary/5">
                     <div className="text-[11px] text-text-dim uppercase tracking-[0.06em] font-semibold mb-2">Warm-up</div>
-                    {todayPlanned.workout_definition.warmup.map((wu: any, i: number) => (
+                    {todayPlanned.workout_definition.warmup.map((wu: WarmupExercise, i: number) => (
                       <div key={i} className="flex items-center justify-between text-[12px] py-0.5">
                         <span className="text-text-muted italic">{wu.name}</span>
                         <span className="text-text-dim font-mono text-[11px]">{wu.duration_s ? `${wu.duration_s}s` : `${wu.reps} reps`}</span>
@@ -464,7 +497,7 @@ export default function TodayView() {
                 )}
                 <table className="w-full text-[14px]">
                   <tbody>
-                    {todayPlanned.workout_definition.exercises.map((ex: any, i: number) => (
+                    {todayPlanned.workout_definition.exercises.map((ex: PlannedExercise, i: number) => (
                       <tr key={i} className="border-b border-text-primary/5 last:border-0">
                         <td className="py-2 text-text-primary">{ex.name}</td>
                         <td className="py-2 text-right text-text-secondary font-mono text-[13px] whitespace-nowrap">
@@ -560,7 +593,7 @@ export default function TodayView() {
       {/* ═══ 4. WEEKLY LOAD ═══ */}
       <div className="bg-bg-card rounded-2xl border border-border-subtle p-4">
         <div className="flex items-center gap-2 mb-3">
-          <Activity size={15} className="text-accent-purple" />
+          <ActivityIcon size={15} className="text-accent-purple" />
           <span className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold">Weekly Load</span>
         </div>
         <div className="flex gap-5 text-[14px]">
@@ -614,9 +647,9 @@ export default function TodayView() {
       {lastActivity && (
         <div className="bg-bg-card rounded-2xl border border-border-subtle p-4">
           <div className="flex items-center gap-2 mb-2">
-            {lastActivity.elevation_gain > 0
+            {(lastActivity.elevation_gain ?? 0) > 0
               ? <TrendingUp size={15} className="text-mountain" />
-              : <Activity size={15} className="text-gym" />
+              : <ActivityIcon size={15} className="text-gym" />
             }
             <span className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold">Latest Activity</span>
           </div>
@@ -627,8 +660,8 @@ export default function TodayView() {
             {lastActivity.duration_seconds && (
               <span className="flex items-center gap-1.5"><Clock size={12} className="text-text-muted" />{formatDuration(lastActivity.duration_seconds)}</span>
             )}
-            {lastActivity.elevation_gain > 0 && (
-              <span className="flex items-center gap-1.5"><ArrowUpRight size={12} className="text-mountain" />{Math.round(lastActivity.elevation_gain)}m</span>
+            {(lastActivity.elevation_gain ?? 0) > 0 && (
+              <span className="flex items-center gap-1.5"><ArrowUpRight size={12} className="text-mountain" />{Math.round(lastActivity.elevation_gain!)}m</span>
             )}
             {lastActivity.calories != null && (
               <span className="flex items-center gap-1.5"><Flame size={12} className="text-accent-orange" />{lastActivity.calories} kcal</span>

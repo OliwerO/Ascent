@@ -38,7 +38,7 @@ export default function RecoveryView() {
   const hrvChartData = (hrv.data ?? [])
     .slice()
     .reverse()
-    .map((d: any) => ({
+    .map((d) => ({
       date: format(new Date(d.date), 'MMM d'),
       value: d.last_night_avg ? Math.round(d.last_night_avg) : null,
       baselineLow: d.baseline_balanced_low ? Math.round(d.baseline_balanced_low) : null,
@@ -49,7 +49,7 @@ export default function RecoveryView() {
   const sleepChartData = (sleep.data ?? [])
     .slice()
     .reverse()
-    .map((d: any) => ({
+    .map((d) => ({
       date: format(new Date(d.date), 'MMM d'),
       deep: d.deep_sleep_seconds ? +(d.deep_sleep_seconds / 3600).toFixed(1) : 0,
       rem: d.rem_sleep_seconds ? +(d.rem_sleep_seconds / 3600).toFixed(1) : 0,
@@ -60,8 +60,8 @@ export default function RecoveryView() {
   const restingHRData = (metrics.data ?? [])
     .slice()
     .reverse()
-    .filter((d: any) => d.resting_hr != null)
-    .map((d: any) => ({
+    .filter((d) => d.resting_hr != null)
+    .map((d) => ({
       date: format(new Date(d.date), 'MMM d'),
       value: d.resting_hr,
     }))
@@ -70,9 +70,9 @@ export default function RecoveryView() {
   const recentHR3 = restingHRData.slice(-3)
   const previousHR7 = restingHRData.slice(Math.max(0, restingHRData.length - 10), Math.max(0, restingHRData.length - 3))
   const recentHRAvg = recentHR3.length > 0
-    ? recentHR3.reduce((s: number, d: any) => s + d.value, 0) / recentHR3.length : null
+    ? recentHR3.reduce((s: number, d) => s + d.value!, 0) / recentHR3.length : null
   const previousHRAvg = previousHR7.length > 0
-    ? previousHR7.reduce((s: number, d: any) => s + d.value, 0) / previousHR7.length : null
+    ? previousHR7.reduce((s: number, d) => s + d.value!, 0) / previousHR7.length : null
   const hrRiseDelta = recentHRAvg != null && previousHRAvg != null
     ? Math.round((recentHRAvg - previousHRAvg) * 10) / 10 : null
   const risingHR = hrRiseDelta != null && hrRiseDelta > 3
@@ -82,55 +82,55 @@ export default function RecoveryView() {
   const hrvDegraded = currentHRVStatus === 'LOW' || currentHRVStatus === 'UNBALANCED'
   let hrvConsecutiveDays = 0
   if (currentHRVStatus && hrv.data) {
-    for (const d of hrv.data as any[]) {
+    for (const d of hrv.data ?? []) {
       if (d.status?.toUpperCase() === currentHRVStatus) hrvConsecutiveDays++
       else break
     }
   }
-  const hrv14DayValues = (hrv.data ?? []).filter((d: any) => d.last_night_avg != null) as any[]
+  const hrv14DayValues = (hrv.data ?? []).filter((d) => d.last_night_avg != null)
   const hrv14DayAvg = hrv14DayValues.length > 0
-    ? hrv14DayValues.reduce((s: number, d: any) => s + d.last_night_avg, 0) / hrv14DayValues.length
+    ? hrv14DayValues.reduce((s: number, d) => s + d.last_night_avg!, 0) / hrv14DayValues.length
     : null
   const hrvPctChange = todayHRV?.last_night_avg != null && hrv14DayAvg != null && hrv14DayAvg > 0
     ? Math.round(((todayHRV.last_night_avg - hrv14DayAvg) / hrv14DayAvg) * 100)
     : null
 
   // --- Sleep trend context ---
-  const sleep7Days = (sleep.data ?? []).slice(0, 7).filter((d: any) => d.total_sleep_seconds != null) as any[]
+  const sleep7Days = (sleep.data ?? []).slice(0, 7).filter((d) => d.total_sleep_seconds != null)
   const sleepWeeklyAvg = sleep7Days.length > 0
-    ? sleep7Days.reduce((s: number, d: any) => s + d.total_sleep_seconds / 3600, 0) / sleep7Days.length
+    ? sleep7Days.reduce((s: number, d) => s + d.total_sleep_seconds! / 3600, 0) / sleep7Days.length
     : null
-  const nightsBelow6h = sleep7Days.filter((d: any) => d.total_sleep_seconds / 3600 < 6).length
+  const nightsBelow6h = sleep7Days.filter((d) => d.total_sleep_seconds! / 3600 < 6).length
 
   // --- Fatigue flags ---
-  const hrvValues = (hrv.data ?? []).slice(0, 7).filter((d: any) => d.last_night_avg != null)
+  const hrvValues = (hrv.data ?? []).slice(0, 7).filter((d) => d.last_night_avg != null)
   const hrvAvg =
     hrvValues.length > 0
-      ? hrvValues.reduce((s: number, d: any) => s + d.last_night_avg, 0) / hrvValues.length
+      ? hrvValues.reduce((s: number, d) => s + d.last_night_avg!, 0) / hrvValues.length
       : null
   const hrvSuppressedDays = hrvAvg
-    ? hrvValues.filter((d: any) => d.last_night_avg < hrvAvg * 0.9).length
+    ? hrvValues.filter((d) => d.last_night_avg! < hrvAvg * 0.9).length
     : 0
   const flagHRVSuppressed = hrvSuppressedDays >= 3
 
   const restingHRValues = (metrics.data ?? [])
     .slice(0, 7)
-    .filter((d: any) => d.resting_hr != null)
+    .filter((d) => d.resting_hr != null)
   const restingHRAvg =
     restingHRValues.length > 0
-      ? restingHRValues.reduce((s: number, d: any) => s + d.resting_hr, 0) / restingHRValues.length
+      ? restingHRValues.reduce((s: number, d) => s + d.resting_hr!, 0) / restingHRValues.length
       : null
   const hrElevatedDays = restingHRAvg
-    ? restingHRValues.filter((d: any) => d.resting_hr > restingHRAvg + 5).length
+    ? restingHRValues.filter((d) => d.resting_hr! > restingHRAvg + 5).length
     : 0
   const flagHRElevated = hrElevatedDays >= 3
 
   const sleepValues = (sleep.data ?? [])
     .slice(0, 7)
-    .filter((d: any) => d.total_sleep_seconds != null)
+    .filter((d) => d.total_sleep_seconds != null)
   const sleepAvgHours =
     sleepValues.length > 0
-      ? sleepValues.reduce((s: number, d: any) => s + d.total_sleep_seconds / 3600, 0) /
+      ? sleepValues.reduce((s: number, d) => s + d.total_sleep_seconds! / 3600, 0) /
         sleepValues.length
       : null
   const flagSleepLow = sleepAvgHours != null && sleepAvgHours < 6.5
@@ -168,10 +168,10 @@ export default function RecoveryView() {
   ]
 
   // --- HRV 14d trend direction ---
-  const hrvFirst7 = (hrv.data ?? []).slice(7, 14).filter((d: any) => d.last_night_avg != null)
-  const hrvLast7 = (hrv.data ?? []).slice(0, 7).filter((d: any) => d.last_night_avg != null)
-  const hrvFirst7Avg = hrvFirst7.length > 0 ? hrvFirst7.reduce((s: number, d: any) => s + d.last_night_avg, 0) / hrvFirst7.length : null
-  const hrvLast7Avg = hrvLast7.length > 0 ? hrvLast7.reduce((s: number, d: any) => s + d.last_night_avg, 0) / hrvLast7.length : null
+  const hrvFirst7 = (hrv.data ?? []).slice(7, 14).filter((d) => d.last_night_avg != null)
+  const hrvLast7 = (hrv.data ?? []).slice(0, 7).filter((d) => d.last_night_avg != null)
+  const hrvFirst7Avg = hrvFirst7.length > 0 ? hrvFirst7.reduce((s: number, d) => s + d.last_night_avg!, 0) / hrvFirst7.length : null
+  const hrvLast7Avg = hrvLast7.length > 0 ? hrvLast7.reduce((s: number, d) => s + d.last_night_avg!, 0) / hrvLast7.length : null
   const hrv14dPctChange = hrvFirst7Avg != null && hrvLast7Avg != null && hrvFirst7Avg > 0
     ? Math.round(((hrvLast7Avg - hrvFirst7Avg) / hrvFirst7Avg) * 100) : null
   const hrvTrendLabel = hrv14dPctChange != null
@@ -181,10 +181,10 @@ export default function RecoveryView() {
     : null
 
   // --- Sleep 14d trend direction ---
-  const sleepFirst7 = (sleep.data ?? []).slice(7, 14).filter((d: any) => d.total_sleep_seconds != null)
-  const sleepLast7 = (sleep.data ?? []).slice(0, 7).filter((d: any) => d.total_sleep_seconds != null)
-  const sleepFirst7Avg = sleepFirst7.length > 0 ? sleepFirst7.reduce((s: number, d: any) => s + d.total_sleep_seconds / 3600, 0) / sleepFirst7.length : null
-  const sleepLast7Avg = sleepLast7.length > 0 ? sleepLast7.reduce((s: number, d: any) => s + d.total_sleep_seconds / 3600, 0) / sleepLast7.length : null
+  const sleepFirst7 = (sleep.data ?? []).slice(7, 14).filter((d) => d.total_sleep_seconds != null)
+  const sleepLast7 = (sleep.data ?? []).slice(0, 7).filter((d) => d.total_sleep_seconds != null)
+  const sleepFirst7Avg = sleepFirst7.length > 0 ? sleepFirst7.reduce((s: number, d) => s + d.total_sleep_seconds! / 3600, 0) / sleepFirst7.length : null
+  const sleepLast7Avg = sleepLast7.length > 0 ? sleepLast7.reduce((s: number, d) => s + d.total_sleep_seconds! / 3600, 0) / sleepLast7.length : null
   const sleep14dPctChange = sleepFirst7Avg != null && sleepLast7Avg != null && sleepFirst7Avg > 0
     ? Math.round(((sleepLast7Avg - sleepFirst7Avg) / sleepFirst7Avg) * 100) : null
   const sleepTrendLabel = sleep14dPctChange != null
@@ -196,8 +196,8 @@ export default function RecoveryView() {
   // --- Resting HR 14d trend direction ---
   const hrFirst7 = restingHRData.slice(0, Math.floor(restingHRData.length / 2))
   const hrLater7 = restingHRData.slice(Math.floor(restingHRData.length / 2))
-  const hrFirst7Avg = hrFirst7.length > 0 ? hrFirst7.reduce((s: number, d: any) => s + d.value, 0) / hrFirst7.length : null
-  const hrLater7Avg = hrLater7.length > 0 ? hrLater7.reduce((s: number, d: any) => s + d.value, 0) / hrLater7.length : null
+  const hrFirst7Avg = hrFirst7.length > 0 ? hrFirst7.reduce((s: number, d) => s + d.value!, 0) / hrFirst7.length : null
+  const hrLater7Avg = hrLater7.length > 0 ? hrLater7.reduce((s: number, d) => s + d.value!, 0) / hrLater7.length : null
   const hr14dPctChange = hrFirst7Avg != null && hrLater7Avg != null && hrFirst7Avg > 0
     ? Math.round(((hrLater7Avg - hrFirst7Avg) / hrFirst7Avg) * 100) : null
   const hrTrendLabel = hr14dPctChange != null

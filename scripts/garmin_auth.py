@@ -8,9 +8,11 @@ It enforces three rules:
   3. Cooldown lock file prevents retries within 25 hours of a failed auth
 
 Auth priority:
+  0. Native garminconnect tokens from .garminconnect/garmin_tokens.json
+     (created by garmin_one_shot_login.py, auto-refresh ~1 year)
   1. Cached cookies from ~/.garmin-cookies.json (written by keepalive script)
   2. Live Safari cookie extraction via browser_cookie3
-  3. Saved garth OAuth tokens from ~/.garth/ (garth.resume, no network)
+  3. Saved garth OAuth tokens from ~/.garth/ (legacy, deprecated)
   4. FAIL → Slack alert to #ascent-daily + raise AuthExpiredError
 
 Usage:
@@ -33,7 +35,7 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
@@ -52,6 +54,11 @@ GARTH_HOME = Path.home() / ".garth"
 GARTH_TOKEN_DIR = PROJECT_ROOT / ".garth"
 COOLDOWN_FILE = GARTH_HOME / ".auth_cooldown"
 COOLDOWN_HOURS = 25
+
+# Native garminconnect token files (from one-shot login or auto-refresh)
+NATIVE_TOKEN_DIR = PROJECT_ROOT / ".garminconnect"
+NATIVE_TOKEN_FILE = NATIVE_TOKEN_DIR / "garmin_tokens.json"
+HOME_NATIVE_TOKEN_FILE = Path.home() / ".garminconnect" / "garmin_tokens.json"
 
 # Cookie cache written by garmin_session_keepalive.py
 COOKIE_CACHE = Path.home() / ".garmin-cookies.json"
@@ -194,6 +201,145 @@ def alert_slack(message: str):
 
 
 # ---------------------------------------------------------------------------
+# Auth Method 0: Native garminconnect tokens (from one-shot login)
+# ---------------------------------------------------------------------------
+
+
+def extract_csrf_token(html: str) -> str | None:
+    """Extract CSRF token from Garmin Connect HTML.
+
+    Uses BeautifulSoup if available (robust), falls back to multiple regex
+    patterns. Shared across all auth scripts — single source of truth.
+    """
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+        for meta in soup.find_all("meta"):
+            name = meta.get("name", "")
+            if "csrf" in name.lower():
+                token = meta.get("content")
+                if token:
+                    return token
+    except ImportError:
+        pass
+    # Fallback: try multiple regex patterns to handle attribute order changes
+    import re
+    patterns = [
+        r'<meta[^>]*name="[^"]*csrf[^"]*"[^>]*content="([^"]+)"',
+        r'<meta[^>]*content="([^"]+)"[^>]*name="[^"]*csrf[^"]*"',
+        r'csrf-token["\s]+content="([^"]+)"',
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, html, re.IGNORECASE)
+        if m:
+            return m.group(1)
+    return None
+
+
+def _fetch_csrf_from_page(cookies: dict, _retries: int = 2) -> str | None:
+    """Fetch the CSRF token from the Garmin Connect page meta tag.
+
+    Retries on transient network errors (timeout, connection reset).
+    """
+    import time
+    for attempt in range(_retries + 1):
+        try:
+            s = requests.Session()
+            for name, value in cookies.items():
+                s.cookies.set(name, value, domain=".garmin.com")
+            r = s.get("https://connect.garmin.com/modern/", timeout=15)
+            token = extract_csrf_token(r.text)
+            if token:
+                return token
+            log.debug("CSRF not found in page HTML (attempt %d)", attempt + 1)
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            if attempt < _retries:
+                log.info("CSRF fetch transient error, retry %d/%d: %s", attempt + 1, _retries, e)
+                time.sleep(3 * (attempt + 1))
+            else:
+                log.debug("CSRF fetch from page failed after %d retries: %s", _retries, e)
+        except Exception as e:
+            log.debug("CSRF fetch from page failed: %s", e)
+            break
+    return None
+
+
+def _try_native_tokens():
+    """Load native garminconnect tokens (jwt_web + csrf + cookies).
+
+    These are created by Firefox cookie extraction and saved to
+    ~/.garminconnect/garmin_tokens.json. The JWT expires in hours,
+    so the keepalive script refreshes it from Firefox cookies.
+
+    CSRF token is always fetched fresh from the Garmin Connect page
+    meta tag, as it changes per-session and stale CSRF causes 403.
+
+    Returns a garminconnect.Garmin client or None.
+    """
+    from garminconnect import Garmin
+
+    for token_path in [NATIVE_TOKEN_FILE, HOME_NATIVE_TOKEN_FILE]:
+        if not token_path.exists():
+            continue
+
+        try:
+            data = json.loads(token_path.read_text())
+            jwt_web = data.get("jwt_web")
+            saved_cookies = data.get("cookies", {})
+
+            if not jwt_web:
+                log.debug("Native tokens from %s missing jwt", token_path)
+                continue
+
+            # Always fetch fresh CSRF from page (stale CSRF causes 403)
+            csrf_token = _fetch_csrf_from_page(saved_cookies)
+            if not csrf_token:
+                csrf_token = data.get("csrf_token")
+                log.debug("Using cached CSRF (page fetch failed)")
+
+            if not csrf_token:
+                log.debug("No CSRF token available for %s", token_path)
+                continue
+
+            garmin = Garmin()
+            garmin.client.jwt_web = jwt_web
+            garmin.client.csrf_token = csrf_token
+            for name, value in saved_cookies.items():
+                garmin.client.cs.cookies.set(name, value, domain=".garmin.com")
+
+            # Verify tokens work
+            garmin.display_name = "72542053-234a-4f82-aebe-413f08153a8c"
+            try:
+                garmin.get_stats(date.today().isoformat())
+            except Exception as verify_err:
+                err_str = str(verify_err)
+                if "401" in err_str or "403" in err_str or "Not authenticated" in err_str:
+                    log.warning("Auth: native tokens from %s failed (%s)", token_path, err_str[:80])
+                    continue
+                log.debug("Auth: native token verify returned non-auth error: %s", verify_err)
+
+            log.info("Auth: native token resume from %s (display: %s)",
+                     token_path, garmin.display_name)
+            return garmin
+
+        except Exception as e:
+            err = str(e)
+            if "429" in err or "Too Many" in err:
+                log.error("Auth: RATE LIMITED (429) during native token refresh!")
+                record_cooldown("429 on native token refresh")
+                alert_slack(
+                    ":rotating_light: *Garmin 429 rate limit hit* during token refresh. "
+                    "Cooldown set for 25 hours."
+                )
+                return None
+            log.debug("Native tokens from %s failed: %s", token_path, e)
+            continue
+
+    log.info("Auth: no native garminconnect tokens found")
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Auth Method 1: Cached cookies (from keepalive script)
 # ---------------------------------------------------------------------------
 
@@ -235,60 +381,75 @@ def _try_cached_cookies() -> dict | None:
 
 
 # ---------------------------------------------------------------------------
-# Auth Method 2: Live Safari cookie extraction
+# Auth Method 2: Live browser cookie extraction (Safari + Firefox)
 # ---------------------------------------------------------------------------
 
 
-def _try_safari_cookies() -> dict | None:
-    """Extract Garmin session cookies directly from Safari.
+def _try_browser_cookies() -> dict | None:
+    """Extract Garmin session cookies from Safari or Firefox.
 
+    Tries Safari first, then Firefox as fallback.
     Requires: pip install browser-cookie3
     Returns dict of cookies or None if unavailable.
     """
     try:
         import browser_cookie3
     except ImportError:
-        log.debug("browser_cookie3 not installed, skipping live Safari extraction")
+        log.debug("browser_cookie3 not installed, skipping live browser extraction")
         return None
 
-    try:
-        cookie_jar = browser_cookie3.safari(domain_name=".garmin.com")
-        cookies = {}
-        for cookie in cookie_jar:
-            if cookie.domain and "garmin" in cookie.domain:
-                cookies[cookie.name] = cookie.value
+    browsers = [
+        ("Safari", browser_cookie3.safari),
+        ("Firefox", browser_cookie3.firefox),
+    ]
 
-        if not cookies:
-            log.debug("No Garmin cookies found in Safari")
-            return None
+    for browser_name, extractor in browsers:
+        try:
+            cookie_jar = extractor(domain_name=".garmin.com")
+            cookies = {}
+            for cookie in cookie_jar:
+                if cookie.domain and "garmin" in cookie.domain:
+                    cookies[cookie.name] = cookie.value
 
-        # Check for essential session cookies
-        essential = ["GARMIN-SSO-GUID", "GARMIN-SSO-CUST-GUID", "JWT_FGP", "SESSIONID"]
-        has_session = any(k in cookies for k in essential)
-        if not has_session:
-            log.debug("Safari cookies found but no session cookies (%d total)", len(cookies))
-            return None
+            if not cookies:
+                log.debug("No Garmin cookies found in %s", browser_name)
+                continue
 
-        log.info("Auth: extracted %d cookies from Safari (live)", len(cookies))
+            # Check for essential session cookies
+            essential = ["GARMIN-SSO-GUID", "GARMIN-SSO-CUST-GUID", "JWT_FGP", "SESSIONID", "JWT_WEB", "SESSION"]
+            has_session = any(k in cookies for k in essential)
+            if not has_session:
+                log.debug("%s cookies found but no session cookies (%d total)", browser_name, len(cookies))
+                continue
 
-        # Cache them for other scripts / next run
-        _cache_cookies(cookies)
-        return cookies
+            log.info("Auth: extracted %d cookies from %s (live)", len(cookies), browser_name)
 
-    except Exception as e:
-        log.debug("Safari cookie extraction failed: %s", e)
-        return None
+            # Cache them for other scripts / next run
+            _cache_cookies(cookies, source=f"{browser_name.lower()}_extraction")
+            return cookies
+
+        except Exception as e:
+            log.debug("%s cookie extraction failed: %s", browser_name, e)
+            continue
+
+    return None
 
 
-def _cache_cookies(cookies: dict):
+def _try_safari_cookies() -> dict | None:
+    """Legacy wrapper — now delegates to _try_browser_cookies."""
+    return _try_browser_cookies()
+
+
+def _cache_cookies(cookies: dict, source: str = "browser_extraction"):
     """Save cookies to cache file for use by other scripts."""
     try:
         data = {
             "cookies": cookies,
             "timestamp": time.time(),
-            "source": "safari_extraction",
+            "source": source,
         }
         COOKIE_CACHE.write_text(json.dumps(data, indent=2))
+        os.chmod(COOKIE_CACHE, 0o600)
         log.debug("Cookies cached to %s", COOKIE_CACHE)
     except OSError as e:
         log.warning("Failed to cache cookies: %s", e)
@@ -347,37 +508,60 @@ def _build_cookie_session(cookies: dict) -> requests.Session:
     return session
 
 
-def _verify_session(session: requests.Session) -> bool:
+def _verify_session(session: requests.Session, _retries: int = 2) -> bool:
     """Verify a cookie-based session works by hitting a lightweight endpoint.
 
     Also detects 429 rate limits and sets cooldown automatically.
+    Retries on transient network errors (timeout, connection reset).
     """
-    try:
-        resp = session.get(
-            "https://connect.garmin.com/userprofile-service/socialProfile",
-            timeout=15,
-        )
-        if resp.status_code == 200:
-            log.info("Auth: cookie session verified")
-            return True
-        elif resp.status_code == 429:
-            log.error("Auth: RATE LIMITED (429) during session verification!")
-            record_cooldown("429 on session verification")
-            alert_slack(
-                ":rotating_light: *Garmin 429 rate limit hit* during session verify. "
-                "Cooldown set for 25 hours. Do NOT retry."
+    import time as _time
+    for attempt in range(_retries + 1):
+        try:
+            resp = session.get(
+                "https://connect.garmin.com/modern/currentuser-service/user/info",
+                timeout=15,
             )
-            return False
-        elif resp.status_code in (401, 403):
-            log.warning("Auth: session expired or blocked (status %d)", resp.status_code)
-            return False
-        else:
-            log.warning("Auth: session verification returned %d", resp.status_code)
-            return False
+            if resp.status_code == 200:
+                ct = resp.headers.get("content-type", "")
+                if "json" in ct:
+                    log.info("Auth: cookie session verified")
+                    return True
+                else:
+                    log.warning("Auth: session returned HTML (not authenticated)")
+                    return False
+            elif resp.status_code == 429:
+                log.error("Auth: RATE LIMITED (429) during session verification!")
+                record_cooldown("429 on session verification")
+                alert_slack(
+                    ":rotating_light: *Garmin 429 rate limit hit* during session verify. "
+                    "Cooldown set for 25 hours. Do NOT retry."
+                )
+                return False
+            elif resp.status_code in (401, 403):
+                log.warning("Auth: session expired or blocked (status %d)", resp.status_code)
+                return False
+            elif resp.status_code in (502, 503):
+                if attempt < _retries:
+                    log.info("Auth: server error %d, retry %d/%d", resp.status_code, attempt + 1, _retries)
+                    _time.sleep(3 * (attempt + 1))
+                    continue
+                log.warning("Auth: session verification returned %d after retries", resp.status_code)
+                return False
+            else:
+                log.warning("Auth: session verification returned %d", resp.status_code)
+                return False
 
-    except Exception as e:
-        log.warning("Auth: session verification failed: %s", e)
-        return False
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            if attempt < _retries:
+                log.info("Auth: transient error, retry %d/%d: %s", attempt + 1, _retries, e)
+                _time.sleep(3 * (attempt + 1))
+            else:
+                log.warning("Auth: session verification failed after %d retries: %s", _retries, e)
+                return False
+        except Exception as e:
+            log.warning("Auth: session verification failed: %s", e)
+            return False
+    return False
 
 
 def _wrap_garminconnect(session=None, garth_client=None, method="unknown"):
@@ -398,10 +582,13 @@ def _wrap_garminconnect(session=None, garth_client=None, method="unknown"):
     if session:
         # Inject cookie session into garth for garminconnect compatibility
         import garth
-        for name in session.cookies.keys():
-            garth.client.sess.cookies.set(
-                name, session.cookies[name], domain=".garmin.com"
-            )
+        seen = set()
+        for cookie in session.cookies:
+            if cookie.name not in seen:
+                garth.client.sess.cookies.set(
+                    cookie.name, cookie.value, domain=".garmin.com"
+                )
+                seen.add(cookie.name)
         garth.client.sess.headers.update(BROWSER_HEADERS)
         client.client = garth.client
         client.display_name = method
@@ -439,7 +626,14 @@ def get_safe_client(require_garminconnect: bool = True):
     """
     check_cooldown_or_raise()
 
-    # Method 1: Cached cookies (fastest)
+    # Method 0: Native garminconnect tokens (best — auto-refresh, ~1 year)
+    native_client = _try_native_tokens()
+    if native_client:
+        if require_garminconnect:
+            return native_client
+        return native_client.client.cs  # return the underlying session
+
+    # Method 1: Cached cookies (from keepalive script)
     cookies = _try_cached_cookies()
     if cookies:
         session = _build_cookie_session(cookies)
@@ -457,7 +651,7 @@ def get_safe_client(require_garminconnect: bool = True):
                 return _wrap_garminconnect(session=session, method="safari_cookies")
             return session
 
-    # Method 3: Saved garth tokens
+    # Method 3: Saved garth tokens (legacy, deprecated)
     garth_client = _try_garth_tokens()
     if garth_client:
         if require_garminconnect:
@@ -467,18 +661,19 @@ def get_safe_client(require_garminconnect: bool = True):
     # All methods failed — alert and raise
     alert_slack(
         ":warning: *Garmin auth failed* — all methods exhausted.\n"
+        "• Native tokens: not found or expired\n"
         "• Cached cookies: expired or missing\n"
         "• Safari cookies: not available\n"
         "• garth OAuth tokens: expired or missing\n"
-        "\n*Action needed:* Log into Garmin Connect in Safari, "
-        "then wait for keepalive to refresh cookies."
+        "\n*Action needed:* Run `garmin_one_shot_login.py` to re-authenticate."
     )
     raise AuthExpiredError(
         "All Garmin auth methods failed.\n"
         "Options:\n"
-        "  1. Log into connect.garmin.com in Safari (refreshes cookies)\n"
-        "  2. Run garmin_browser_auth.py for new OAuth tokens\n"
-        "Do NOT run any script with login() or credential-based auth."
+        "  1. Run: cd ~/projects/ascent && source venv/bin/activate && "
+        "python3 scripts/garmin_one_shot_login.py\n"
+        "  2. This uses mobile SSO (safe, one attempt, MFA-aware)\n"
+        "Do NOT retry credential login multiple times."
     )
 
 
@@ -522,6 +717,14 @@ if __name__ == "__main__":
     # Check each auth method
     print("Checking auth methods:\n")
 
+    # Check native tokens (no network call for file check)
+    for tp in [NATIVE_TOKEN_FILE, HOME_NATIVE_TOKEN_FILE]:
+        if tp.exists():
+            print(f"  [ok] Native tokens: {tp}")
+            break
+    else:
+        print("  [--] Native tokens: not found")
+
     cookies = _try_cached_cookies()
     if cookies:
         print(f"  [ok] Cached cookies: {len(cookies)} cookies found")
@@ -536,7 +739,7 @@ if __name__ == "__main__":
 
     garth_client = _try_garth_tokens()
     if garth_client:
-        print("  [ok] Garth OAuth tokens: valid")
+        print("  [ok] Garth OAuth tokens: valid (legacy)")
     else:
         print("  [--] Garth OAuth tokens: not available or expired")
 

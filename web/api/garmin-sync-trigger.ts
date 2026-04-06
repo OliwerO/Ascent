@@ -22,6 +22,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const today = new Date().toISOString().slice(0, 10)
+    const twoMinAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString()
+
+    // Check for recent unacknowledged sync request (rate limiting)
+    const checkResp = await fetch(
+      `${supabaseUrl}/rest/v1/coaching_log?type=eq.sync_request&acknowledged=eq.false&created_at=gte.${twoMinAgo}`,
+      {
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+      }
+    )
+    if (checkResp.ok) {
+      const existing = await checkResp.json()
+      if (existing.length > 0) {
+        return res.status(429).json({
+          ok: false,
+          error: 'Sync already queued. Please wait a couple of minutes.',
+        })
+      }
+    }
 
     // Write sync request to coaching_log
     const upsertResp = await fetch(`${supabaseUrl}/rest/v1/coaching_log`, {
@@ -49,7 +70,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({
       ok: true,
-      message: 'Sync request queued. Your Mac will pick it up within 5 minutes.',
+      message: 'Sync request queued. Data should arrive within ~1 minute.',
     })
   } catch (err) {
     return res.status(500).json({ error: 'Request failed', detail: String(err) })
