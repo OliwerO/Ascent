@@ -1,12 +1,16 @@
 import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
-import { useHRV, useSleep, useDailyMetrics } from '../hooks/useSupabase'
+import {
+  useHRV, useSleep, useDailyMetrics, useActivities, useSubjectiveWellness,
+} from '../hooks/useSupabase'
 import { format } from 'date-fns'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, ResponsiveContainer, Tooltip,
 } from 'recharts'
 import { AlertTriangle, CheckCircle } from 'lucide-react'
+import { computeCoachingState } from '../lib/coachingDecision'
+import { MOUNTAIN_ACTIVITY_TYPES } from '../lib/activityTypes'
 
 const darkTooltipStyle = {
   backgroundColor: '#16161e',
@@ -20,14 +24,19 @@ export default function RecoveryView() {
   const hrv = useHRV(14)
   const sleep = useSleep(14)
   const metrics = useDailyMetrics(14)
-  const loading = hrv.loading || sleep.loading || metrics.loading
-  const error = hrv.error || sleep.error || metrics.error
+  const activities = useActivities(14)
+  const wellness = useSubjectiveWellness(14)
+  const loading = hrv.loading || sleep.loading || metrics.loading || activities.loading
+  const error = hrv.error || sleep.error || metrics.error || activities.error
 
   if (loading) return <LoadingState />
   if (error) return <div className="text-accent-red p-4">{error}</div>
 
   const todayHRV = hrv.data?.[0]
   const todayMetrics = metrics.data?.[0]
+  const todaySleep = sleep.data?.[0]
+  const todayStr = format(new Date(), 'yyyy-MM-dd')
+  const todayWellness = (wellness.data ?? []).find((w) => w.date === todayStr) ?? null
 
   const bodyBattery = todayMetrics?.body_battery_highest ?? null
   const trainingReadiness = todayMetrics?.training_readiness_score
@@ -209,8 +218,82 @@ export default function RecoveryView() {
   const axisTickStyle = { fill: '#646478', fontSize: 11 }
   const axisLineStyle = { stroke: '#262636' }
 
+  // ─── Coaching recommendation ───
+  const sleepHoursLastNight = todaySleep?.total_sleep_seconds
+    ? todaySleep.total_sleep_seconds / 3600
+    : null
+  const decision = computeCoachingState({
+    hrvStatus: todayHRV?.status,
+    hrvVal: todayHRV?.last_night_avg ?? null,
+    hrvWeeklyAvg: todayHRV?.weekly_avg ?? null,
+    sleepHoursLastNight,
+    sleep7dAvg: sleepWeeklyAvg,
+    wellnessComposite: todayWellness?.composite_score ?? null,
+    bodyBattery,
+    trainingReadiness,
+    rhrElevated: flagHRElevated,
+  })
+
+  // ─── Days since last rest day ───
+  // A "rest day" = a day with no strength_training and no MOUNTAIN activity in the last 14 days.
+  const daysSinceRest = (() => {
+    const acts = activities.data ?? []
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(today)
+      d.setDate(today.getDate() - i)
+      const dStr = format(d, 'yyyy-MM-dd')
+      const dayHasLoad = acts.some((a) =>
+        a.date === dStr && (
+          a.activity_type === 'strength_training' ||
+          MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type)
+        )
+      )
+      if (!dayHasLoad) return i
+    }
+    return 14 // capped
+  })()
+
+  const decisionGlow = decision.state === 'red' ? 'red' : decision.state === 'amber' ? 'yellow' : 'green'
+  const decisionTextColor =
+    decision.state === 'red' ? 'text-accent-red'
+    : decision.state === 'amber' ? 'text-accent-yellow'
+    : 'text-accent-green'
+
   return (
     <div className="space-y-3 pb-8">
+      {/* Coach's Recommendation */}
+      <Card glow={decisionGlow}>
+        <div className="text-[10px] uppercase tracking-wider font-semibold text-text-muted mb-1">
+          Coach's recommendation
+        </div>
+        <div className={`text-lg font-bold ${decisionTextColor}`}>{decision.label}</div>
+        <p className="text-[13px] text-text-secondary mt-2 leading-relaxed">
+          {decision.recommendation}
+        </p>
+        {decision.reasons.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-border-subtle">
+            <div className="text-[10px] uppercase tracking-wider text-text-dim mb-1">Signals</div>
+            <ul className="text-[12px] text-text-muted space-y-0.5">
+              {decision.reasons.map((r) => (
+                <li key={r}>• {r}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <div className="mt-3 pt-3 border-t border-border-subtle flex items-center justify-between text-[12px]">
+          <span className="text-text-muted">Days since last rest day</span>
+          <span className={`font-bold font-data ${
+            daysSinceRest >= 7 ? 'text-accent-red'
+            : daysSinceRest >= 4 ? 'text-accent-yellow'
+            : 'text-text-secondary'
+          }`}>
+            {daysSinceRest === 14 ? '14+' : daysSinceRest}
+          </span>
+        </div>
+      </Card>
+
       {/* Recovery Signals */}
       <Card title="Recovery Signals">
         <div className="space-y-2.5">

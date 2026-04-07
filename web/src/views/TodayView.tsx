@@ -9,6 +9,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { format } from 'date-fns'
 
+import { computeCoachingState } from '../lib/coachingDecision'
 import { formatDuration, formatActivityType } from '../lib/format'
 import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES } from '../lib/activityTypes'
 
@@ -618,6 +619,23 @@ export default function TodayView() {
     })
   }, [recentActivities])
 
+  // ─── Mountain load in last 72h (interference context) ───
+  const mountainLoad72h = useMemo(() => {
+    const threeDaysAgo = new Date()
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
+    threeDaysAgo.setHours(0, 0, 0, 0)
+    const mountainActivities = recentActivities.filter(
+      (a) => MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type) && new Date(a.date) >= threeDaysAgo
+    )
+    if (mountainActivities.length === 0) return null
+    const elevation = mountainActivities
+      .filter((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type))
+      .reduce((s: number, a) => s + (a.elevation_gain ?? 0), 0)
+    const hours = mountainActivities.reduce((s: number, a) => s + (a.duration_seconds ?? 0), 0) / 3600
+    const category = elevation >= 2000 || hours >= 5 ? 'heavy' : elevation >= 1000 || hours >= 3 ? 'moderate' : 'light'
+    return { days: mountainActivities.length, elevation: Math.round(elevation), hours: Math.round(hours * 10) / 10, category }
+  }, [recentActivities])
+
   const loading = summary.loading || hrv.loading || metrics.loading || activities.loading
   if (loading) return <LoadingState />
 
@@ -683,55 +701,21 @@ export default function TodayView() {
   const lastWeekElev = lastWeekActivities.reduce((s: number, a) => s + (a.elevation_gain ?? 0), 0)
   const loadChangePct = lastWeekDuration > 0 ? Math.round(((thisWeekDuration - lastWeekDuration) / lastWeekDuration) * 100) : null
 
-  // ─── Mountain load in last 72h (interference context) ───
-  // Use shared constants from lib/activityTypes
-  const threeDaysAgo = new Date()
-  threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
-  threeDaysAgo.setHours(0, 0, 0, 0)
+  // ─── Coaching card decision tree (centralized in lib/coachingDecision) ───
+  const decision = computeCoachingState({
+    hrvStatus: todayHRV?.status,
+    hrvVal,
+    hrvWeeklyAvg,
+    sleepHoursLastNight: sleepHours,
+    sleep7dAvg,
+    wellnessComposite: todayWellness?.composite_score ?? null,
+    bodyBattery: bbHigh,
+    trainingReadiness: readiness,
+    rhrElevated,
+  })
+  const cardState = decision.state
 
-  const mountainLoad72h = useMemo(() => {
-    const mountainActivities = recentActivities.filter(
-      (a) => MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type) && new Date(a.date) >= threeDaysAgo
-    )
-    if (mountainActivities.length === 0) return null
-    const elevation = mountainActivities
-      .filter((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type))
-      .reduce((s: number, a) => s + (a.elevation_gain ?? 0), 0)
-    const hours = mountainActivities.reduce((s: number, a) => s + (a.duration_seconds ?? 0), 0) / 3600
-    const category = elevation >= 2000 || hours >= 5 ? 'heavy' : elevation >= 1000 || hours >= 3 ? 'moderate' : 'light'
-    return { days: mountainActivities.length, elevation: Math.round(elevation), hours: Math.round(hours * 10) / 10, category }
-  }, [recentActivities])
-
-  // ─── Coaching card decision tree (aligned with coaching-context.md) ───
-  const hrvStatusLow = todayHRV?.status?.toUpperCase() === 'LOW'
-  const hrvUnbalanced = todayHRV?.status?.toUpperCase() === 'UNBALANCED'
-  const hrvBelowBaseline = hrvVal != null && hrvWeeklyAvg != null && hrvVal < hrvWeeklyAvg * 0.85
-  const sleepShort = sleepHours != null && sleepHours < 6
-  const wellnessLow = todayWellness?.composite_score != null && todayWellness.composite_score < 2.5
-  const bbLow = bbHigh != null && bbHigh < 30
-  const readinessLow = readiness != null && readiness < 40
-
-  let cardState: 'green' | 'amber' | 'red' = 'green'
-  // Multi-signal override (KB rule #13)
-  if (wellnessLow || bbLow || readinessLow) {
-    cardState = 'red'
-  } else if (hrvStatusLow) {
-    cardState = 'red'
-  } else if (hrvUnbalanced && sleepShort) {
-    cardState = 'red'
-  } else if (hrvUnbalanced) {
-    cardState = 'amber'
-  } else if (hrvBelowBaseline) {
-    cardState = 'amber'
-  } else if (sleepShort) {
-    cardState = 'amber'
-  } else if (sleep7dAvg != null && sleep7dAvg < 7) {
-    cardState = 'amber'
-  } else if (rhrElevated) {
-    cardState = 'amber'
-  }
-
-  const verdictLabel = cardState === 'green' ? 'Good to train' : cardState === 'amber' ? 'Train with caution' : 'Consider rest or light session'
+  const verdictLabel = decision.label
   const verdictColor = cardState === 'green' ? 'text-accent-green' : cardState === 'amber' ? 'text-accent-yellow' : 'text-accent-red'
   const verdictBg = cardState === 'green' ? 'border-accent-green/20 bg-glow-green' : cardState === 'amber' ? 'border-accent-yellow/20 bg-glow-yellow' : 'border-accent-red/20 bg-glow-red'
   const rpeRange = todayPlanned?.workout_definition?.rpe_range
