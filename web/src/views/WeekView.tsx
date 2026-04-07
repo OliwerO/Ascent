@@ -14,7 +14,7 @@ import { startOfWeek, endOfWeek, format, isWithinInterval, addDays, isSameDay, i
 import { Wind, ChevronDown, ChevronUp } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts'
 import { formatDuration, formatActivityType } from '../lib/format'
-import { MOUNTAIN_ACTIVITY_TYPES } from '../lib/activityTypes'
+import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES } from '../lib/activityTypes'
 import { getProgramWeek, isDeloadWeek, getWeekSchedule, SESSION_NAMES } from '../lib/program'
 
 function sleepBarColor(hours: number): string {
@@ -35,6 +35,8 @@ interface DayCell {
   templateDayType: 'gym' | 'rest' | 'mobility' | 'mountain' | 'cardio' | 'intervals' | null
   activities: Activity[]
   status: DayStatus
+  /** Override label when a real activity replaces the planned session for this day */
+  displayLabel: string | null
 }
 
 const STATUS_BADGES: Record<DayStatus, { icon: string; label: string; color: string }> = {
@@ -119,8 +121,17 @@ export default function WeekView() {
       const isToday = isSameDay(date, today)
       const isPast = isBefore(date, today) && !isToday
 
+      // Reality wins over plan: if a self-powered mountain activity happened
+      // this day, surface it regardless of what was planned. The DB will be
+      // reconciled by the daily coach_adjust pass; this is the view-time fix.
+      const mountainAct = dayActivities.find((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type))
+
       let status: DayStatus
-      if (planned) {
+      let displayLabel: string | null = null
+      if (mountainAct) {
+        status = 'mountain'
+        displayLabel = mountainAct.activity_name || formatActivityType(mountainAct.activity_type)
+      } else if (planned) {
         if (planned.status === 'completed') status = 'completed'
         else if (planned.status === 'adjusted') status = 'adjusted'
         else if (planned.status === 'skipped') status = 'skipped'
@@ -128,6 +139,7 @@ export default function WeekView() {
         else if (isToday) status = 'today'
         else status = 'planned'
       } else if (dayActivities.some((a) => MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type))) {
+        // Resort/lift-served mountain — not a self-powered tour, but still mountain context
         status = 'mountain'
       } else if (templateDay?.dayType === 'rest') {
         status = 'rest'
@@ -151,6 +163,7 @@ export default function WeekView() {
         templateDayType: templateDay?.dayType ?? null,
         activities: dayActivities,
         status,
+        displayLabel,
       }
     })
   }, [weekStart, weekPlanned, weekTemplate, weekActivities, today])
@@ -185,25 +198,30 @@ export default function WeekView() {
       .reduce((sum: number, s: TrainingSession) => sum + (s.total_volume_kg ?? 0), 0)
   }, [sessionsHook.data, prevWeekStart, prevWeekEnd])
 
+  // Elevation and training hours count strength + self-powered mountain only.
+  // Resort skiing/snowboarding is recovery context, not training load.
+  const isTrainingActivity = (a: Activity) =>
+    a.activity_type === 'strength_training' || SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type)
+
   const totalElevation = useMemo(
     () => weekActivities
-      .filter((a: Activity) => a.activity_type !== 'hang_gliding')
+      .filter((a: Activity) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type))
       .reduce((sum: number, a: Activity) => sum + (a.elevation_gain || 0), 0),
     [weekActivities]
   )
   const prevElevation = useMemo(
     () => prevWeekActivities
-      .filter((a: Activity) => a.activity_type !== 'hang_gliding')
+      .filter((a: Activity) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type))
       .reduce((sum: number, a: Activity) => sum + (a.elevation_gain || 0), 0),
     [prevWeekActivities]
   )
 
   const trainingHours = useMemo(
-    () => weekActivities.reduce((s: number, a: Activity) => s + (a.duration_seconds ?? 0), 0) / 3600,
+    () => weekActivities.filter(isTrainingActivity).reduce((s: number, a: Activity) => s + (a.duration_seconds ?? 0), 0) / 3600,
     [weekActivities]
   )
   const prevTrainingHours = useMemo(
-    () => prevWeekActivities.reduce((s: number, a: Activity) => s + (a.duration_seconds ?? 0), 0) / 3600,
+    () => prevWeekActivities.filter(isTrainingActivity).reduce((s: number, a: Activity) => s + (a.duration_seconds ?? 0), 0) / 3600,
     [prevWeekActivities]
   )
 
@@ -366,7 +384,8 @@ export default function WeekView() {
             const badge = STATUS_BADGES[cell.status]
             const isExpandable = cell.planned?.workout_definition?.exercises?.length
             const isExpanded = expandedDay === cell.dateStr
-            const sessionName = cell.planned?.workout_definition?.session_name
+            const sessionName = cell.displayLabel
+              ?? cell.planned?.workout_definition?.session_name
               ?? cell.templateSession
               ?? (cell.templateDayType === 'mobility' ? 'Mobility'
                 : cell.templateDayType === 'mountain' ? 'Mountain day'

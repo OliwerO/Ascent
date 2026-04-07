@@ -14,6 +14,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -84,6 +85,14 @@ def build_workout_definition(
         if is_deload_week(week):
             num_sets = max(1, num_sets // 2)
 
+        ex_note = ex.get("note") or note if note != "formula fallback" else None
+        # Notes must never embed numeric kg values — Weight column is the single
+        # source of truth. Stale snapshots in notes drift after re-generation.
+        if ex_note and re.search(r"\d+(?:\.\d+)?\s*kg", ex_note):
+            raise ValueError(
+                f"Refusing to store note with embedded kg value for {ex['name']}: {ex_note!r}"
+            )
+
         exercise_def = {
             "name": ex["name"],
             "sets": num_sets,
@@ -91,7 +100,7 @@ def build_workout_definition(
             "weight_kg": weight,
             "rest_s": ex["rest_s"],
             "equipment": _get_equipment(ex["name"]),
-            "note": ex.get("note") or note if note != "formula fallback" else None,
+            "note": ex_note,
         }
 
         # Include duration/distance for special exercises

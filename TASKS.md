@@ -272,3 +272,32 @@ After Grafana connected:
 | `CLAUDE.md` | Architecture, context, decisions (always loaded) |
 | `TASKS.md` | This file — operational status & next actions |
 | `.env.example` | Required environment variables |
+
+-----
+
+## Open Tasks
+
+### [open-task: goals-block1-seed] Apply Block 1 goals seed to Supabase
+
+**Created:** 2026-04-07
+**Branch:** `claude/fix-training-schedule-display-KnTCN`
+**File:** `sql/seed_goals_block1.sql` (idempotent — deletes rows tagged `[block1-seed]` in `notes` before insert)
+**Why this is open:** GoalsView now reads strength/endurance/milestones from the `goals` table. Until this seed is applied (with real values, not placeholders), the Strength card falls back to "awaiting data" and the Milestones card is empty.
+
+**Symptom if forgotten / bug-report hint:**
+- "Goals tab Strength section is empty / shows awaiting data"
+- "No milestones / week 4 / week 8 / season transition showing in Goals"
+- "Endurance VO2max progress bar empty"
+→ Root cause is almost certainly: this seed was never applied. Check `SELECT count(*) FROM goals WHERE notes LIKE '[block1-seed]%';` first.
+
+**Execution rules (user explicitly said: do NOT fabricate values):**
+1. Pull existing data from Supabase first:
+   - Per lift (squat, deadlift, bench, OHP, row): max `estimated_1rm` from `training_sets` joined to `exercises`, last 90 days.
+   - Latest `vo2max` from `daily_metrics`.
+   - Current weekly elevation from `activities` (mountain types only), last 7 days.
+2. Show the user what was found and which lifts have NO data.
+3. **Stop and ask the user** for any missing current 1RMs and for the actual target values. Never invent targets.
+4. Edit `sql/seed_goals_block1.sql` so each row has `target_value` = user-provided and `current_value` = real DB value or `NULL`. Drop rows for metrics with neither current data nor a user-provided target.
+5. Apply the SQL (use `SUPABASE_DB_URL` from `.env`, don't hardcode creds).
+6. Verify: `SELECT category, metric, current_value, target_value, target_date FROM goals WHERE notes LIKE '[block1-seed]%' ORDER BY category, metric;`
+7. If the SQL file was edited, commit on the same branch and push. No PR.
