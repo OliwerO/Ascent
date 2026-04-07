@@ -1,10 +1,12 @@
 import { useMemo, useState, useCallback } from 'react'
 import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
-import { useHRV, useBodyComposition, useActivities, useDailyMetrics } from '../hooks/useSupabase'
-import type { HRVRow, BodyComposition, DailyMetrics } from '../lib/types'
+import { useHRV, useBodyComposition, useActivities, useDailyMetrics, useSleep } from '../hooks/useSupabase'
+import type { HRVRow, BodyComposition, DailyMetrics, SleepRow } from '../lib/types'
 import { format, startOfWeek, subDays } from 'date-fns'
 import { RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
+import { correlateLagged, loadImpact, describeR, type DayPoint } from '../lib/correlations'
+import { MOUNTAIN_ACTIVITY_TYPES } from '../lib/activityTypes'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, ResponsiveContainer, Tooltip, Legend,
@@ -73,6 +75,7 @@ export default function TrendsView() {
   const bodyComp = useBodyComposition(90)
   const activities = useActivities(90)
   const metrics = useDailyMetrics(90)
+  const sleep = useSleep(90)
 
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<string | null>(null)
@@ -120,8 +123,8 @@ export default function TrendsView() {
     })
   }, [bodyComp.data])
 
-  const loading = hrv.loading || bodyComp.loading || activities.loading || metrics.loading
-  const error = hrv.error || bodyComp.error || activities.error || metrics.error
+  const loading = hrv.loading || bodyComp.loading || activities.loading || metrics.loading || sleep.loading
+  const error = hrv.error || bodyComp.error || activities.error || metrics.error || sleep.error
 
   if (loading) return <LoadingState />
   if (error) return <div className="text-accent-red p-4">{error}</div>
@@ -213,8 +216,94 @@ export default function TrendsView() {
       i === 0 || i === arr.length - 1 || d.value !== arr[i - 1].value
   )
 
+  // --- Insights / correlations ---
+  const hrvSeries: DayPoint[] = (hrv.data ?? []).map((d: HRVRow) => ({ date: d.date, value: d.last_night_avg }))
+  const sleepSeries: DayPoint[] = (sleep.data ?? []).map((d: SleepRow) => ({
+    date: d.date,
+    value: d.total_sleep_seconds != null ? d.total_sleep_seconds / 3600 : null,
+  }))
+  const readinessSeries: DayPoint[] = (metrics.data ?? []).map((d: DailyMetrics) => ({
+    date: d.date,
+    value: d.training_readiness_score != null ? Number(d.training_readiness_score) : null,
+  }))
+
+  const mountainLoadByDate = new Map<string, number>()
+  const strengthLoadByDate = new Map<string, number>()
+  for (const a of activities.data ?? []) {
+    if (MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type) && a.elevation_gain) {
+      mountainLoadByDate.set(a.date, (mountainLoadByDate.get(a.date) ?? 0) + a.elevation_gain)
+    }
+    if (a.activity_type === 'strength_training' && a.duration_seconds) {
+      strengthLoadByDate.set(a.date, (strengthLoadByDate.get(a.date) ?? 0) + a.duration_seconds / 60)
+    }
+  }
+
+  const mountainImpact = loadImpact(mountainLoadByDate, hrvSeries, 600, 1)
+  const sleepReadiness = correlateLagged(sleepSeries, readinessSeries, 0)
+  const strengthHrv = loadImpact(strengthLoadByDate, hrvSeries, 45, 1)
+
+  type Insight = { headline: string; detail: string; tone: 'green' | 'amber' | 'red' | 'neutral' }
+  const insights: Insight[] = []
+
+  if (mountainImpact && Math.abs(mountainImpact.delta) >= 1) {
+    const drop = mountainImpact.delta < 0
+    insights.push({
+      headline: `Big mountain days ${drop ? 'lower' : 'raise'} next-day HRV by ${Math.abs(mountainImpact.delta).toFixed(0)} ms`,
+      detail: `After days with ≥600 m elevation gain (n=${mountainImpact.nHigh}) vs other days (n=${mountainImpact.nBase}). ${drop ? 'Worth pairing with an easy day after big tours.' : 'Your system tolerates these well.'}`,
+      tone: drop ? 'amber' : 'green',
+    })
+  }
+
+  if (sleepReadiness && sleepReadiness.n >= 7) {
+    const desc = describeR(sleepReadiness.r)
+    if (desc.strength !== 'no clear') {
+      insights.push({
+        headline: `Sleep duration shows a ${desc.strength} ${desc.direction} link to training readiness`,
+        detail: `Pearson r = ${sleepReadiness.r.toFixed(2)} across ${sleepReadiness.n} matched days. ${desc.direction === 'positive' ? 'More sleep tends to lift next-day readiness.' : 'Readiness looks driven by something other than sleep length right now.'}`,
+        tone: desc.direction === 'positive' ? 'green' : 'neutral',
+      })
+    }
+  }
+
+  if (strengthHrv && Math.abs(strengthHrv.delta) >= 1) {
+    const drop = strengthHrv.delta < 0
+    insights.push({
+      headline: `HRV ${drop ? 'dips' : 'climbs'} ${Math.abs(strengthHrv.delta).toFixed(0)} ms the day after strength sessions`,
+      detail: `Comparing days after ≥45-min strength sessions (n=${strengthHrv.nHigh}) vs others (n=${strengthHrv.nBase}). ${drop ? 'Recovery cost is real — keep heavy sessions away from big mountain days.' : 'You bounce back fast.'}`,
+      tone: drop ? 'amber' : 'green',
+    })
+  }
+
+  const toneClasses: Record<Insight['tone'], string> = {
+    green: 'border-accent-green/30 bg-accent-green/5',
+    amber: 'border-accent-yellow/30 bg-accent-yellow/5',
+    red: 'border-accent-red/30 bg-accent-red/5',
+    neutral: 'border-border bg-bg-primary/40',
+  }
+
   return (
     <div className="space-y-3 pb-8">
+      {/* Insights */}
+      <Card title="Insights">
+        {insights.length === 0 ? (
+          <div className="text-text-muted text-[13px]">
+            Not enough overlapping data yet — insights appear once we have ~2 weeks of training plus recovery data.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {insights.map((ins, i) => (
+              <div key={i} className={`rounded-xl border px-3 py-2 ${toneClasses[ins.tone]}`}>
+                <div className="text-[13px] text-text-primary font-semibold">{ins.headline}</div>
+                <div className="text-[12px] text-text-muted mt-0.5 leading-relaxed">{ins.detail}</div>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="text-[10px] text-text-dim mt-2">
+          Observational only — correlation, not causation. Use as a hypothesis to discuss with your coach.
+        </div>
+      </Card>
+
       {/* Recovery & Readiness */}
       <CollapsibleSection title="Recovery & Readiness" defaultOpen>
       <Card title="HRV (90 days)">
