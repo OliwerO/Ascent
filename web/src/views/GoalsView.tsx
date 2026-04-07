@@ -52,9 +52,37 @@ export default function GoalsView() {
   const latestMuscle = bodyComp.data?.find((d: BodyComposition) => d.muscle_mass_grams != null)
   const latestBodyFat = bodyComp.data?.find((d: BodyComposition) => d.body_fat_pct != null)
   const latestVO2 = metrics.data?.find((d: DailyMetrics) => d.vo2max != null)
-  const bodyCompGoals = (goalsHook.data ?? []).filter((g: Goal) => g.category === 'body_composition')
+  const allGoals = (goalsHook.data ?? []) as Goal[]
+  const bodyCompGoals = allGoals.filter((g) => g.category === 'body_composition')
+  const strengthGoals = allGoals.filter((g) => g.category === 'strength')
+  const enduranceGoals = allGoals.filter((g) => g.category === 'endurance')
+  const milestoneGoals = allGoals
+    .filter((g) => g.category === 'milestone')
+    .sort((a, b) => (a.target_date ?? '').localeCompare(b.target_date ?? ''))
 
   const { week } = getProgramWeek(new Date())
+
+  const STRENGTH_LABELS: Record<string, string> = {
+    squat_e1rm_kg: 'Squat e1RM',
+    deadlift_e1rm_kg: 'Deadlift e1RM',
+    bench_e1rm_kg: 'Bench e1RM',
+    ohp_e1rm_kg: 'OH Press e1RM',
+    row_e1rm_kg: 'Row e1RM',
+  }
+  const ENDURANCE_LABELS: Record<string, { label: string; unit: string }> = {
+    vo2max: { label: 'VO2max', unit: '' },
+    weekly_elevation_m: { label: 'Weekly Elevation', unit: 'm' },
+  }
+  const enduranceCurrent = (metric: string): number | null => {
+    if (metric === 'vo2max') return latestVO2?.vo2max != null ? Number(latestVO2.vo2max) : null
+    if (metric === 'weekly_elevation_m') return weeklyElevation
+    return null
+  }
+  const milestoneTitle = (g: Goal) => {
+    const note = g.notes?.replace(/^\[block1-seed\]\s*/, '') ?? ''
+    const [label, ...rest] = note.split('—')
+    return { label: label?.trim() || g.metric, detail: rest.join('—').trim() }
+  }
 
   return (
     <div className="space-y-3 pb-8">
@@ -159,6 +187,24 @@ export default function GoalsView() {
             <div className="flex-1 min-w-0">
               <h3 className="text-[15px] font-bold text-text-primary">Endurance</h3>
               <div className="mt-2 space-y-3">
+                {enduranceGoals.length > 0 ? enduranceGoals.map((g) => {
+                  const meta = ENDURANCE_LABELS[g.metric] ?? { label: g.metric, unit: '' }
+                  const current = enduranceCurrent(g.metric)
+                  const pct = current != null && g.target_value > 0
+                    ? Math.min(100, (current / g.target_value) * 100) : 0
+                  return (
+                    <div key={g.id}>
+                      <div className="flex justify-between text-[14px]">
+                        <span className="text-text-secondary">{meta.label}</span>
+                        <span className="text-text-primary font-bold">
+                          {current != null ? `${current.toLocaleString(undefined, { maximumFractionDigits: 1 })}${meta.unit}` : '--'}
+                          <span className="text-text-muted text-[12px] font-normal"> / {g.target_value.toLocaleString()}{meta.unit}</span>
+                        </span>
+                      </div>
+                      {current != null && <ProgressBar value={pct} max={100} color="#38bdf8" />}
+                    </div>
+                  )
+                }) : (<>
                 <div>
                   <div className="flex justify-between text-[14px]">
                     <span className="text-text-secondary">VO2max</span>
@@ -182,13 +228,45 @@ export default function GoalsView() {
                     </span>
                   </div>
                 </div>
+                </>)}
               </div>
             </div>
           </div>
         </Card>
 
         {/* Strength */}
-        {week < 4 ? (
+        {strengthGoals.length > 0 ? (
+          <Card>
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-xl bg-accent-blue/15 text-accent-blue">
+                <Dumbbell size={20} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-[15px] font-bold text-text-primary">Strength</h3>
+                <div className="mt-2 space-y-2 text-[14px]">
+                  {strengthGoals.map((g) => {
+                    const label = STRENGTH_LABELS[g.metric] ?? g.metric
+                    const current = g.current_value
+                    const pct = current != null && g.target_value > 0
+                      ? Math.min(100, (current / g.target_value) * 100) : 0
+                    return (
+                      <div key={g.id}>
+                        <div className="flex justify-between">
+                          <span className="text-text-secondary">{label}</span>
+                          <span className="text-text-primary font-bold">
+                            {current != null ? `${current.toFixed(1)}kg` : <span className="text-text-muted font-normal">awaiting data</span>}
+                            <span className="text-text-muted text-[12px] font-normal"> / {g.target_value}kg</span>
+                          </span>
+                        </div>
+                        {current != null && <ProgressBar value={pct} max={100} color="#60a5fa" />}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          </Card>
+        ) : week < 4 ? (
           <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-bg-card border border-border-subtle">
             <Dumbbell size={16} className="text-accent-blue shrink-0" />
             <span className="text-[14px] text-text-muted">Strength targets set after Week 4 assessment (Apr 27)</span>
@@ -234,24 +312,34 @@ export default function GoalsView() {
       {/* Milestones */}
       <Card title="Milestones">
         <div className="space-y-3">
-          {[
-            { label: 'Week 4 Assessment', date: 'Apr 27, 2026', detail: 'Body comp, working weights, Opus review', upcoming: week < 4 },
-            { label: 'Week 8 Assessment', date: 'May 25, 2026', detail: 'Full review, block comparison', upcoming: week < 8 },
-            { label: 'Season Transition', date: 'Mid-May 2026', detail: 'Mountain primary to Hike & Fly', upcoming: true },
-          ].map((m) => (
-            <div key={m.label} className="flex items-start gap-3">
-              <div className={`p-2 rounded-xl ${m.upcoming ? 'bg-accent-blue/15 text-accent-blue' : 'bg-accent-green/15 text-accent-green'}`}>
-                <Calendar size={16} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-[14px] font-semibold text-text-primary">{m.label}</span>
-                  <span className="text-[12px] text-text-muted whitespace-nowrap">{m.date}</span>
+          {milestoneGoals.length === 0 && (
+            <div className="text-[13px] text-text-muted">No milestones set</div>
+          )}
+          {milestoneGoals.map((g) => {
+            const { label, detail } = milestoneTitle(g)
+            const daysLeft = g.target_date ? differenceInDays(new Date(g.target_date), new Date()) : null
+            const upcoming = daysLeft == null || daysLeft >= 0
+            const dateStr = g.target_date
+              ? new Date(g.target_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+              : ''
+            return (
+              <div key={g.id} className="flex items-start gap-3">
+                <div className={`p-2 rounded-xl ${upcoming ? 'bg-accent-blue/15 text-accent-blue' : 'bg-accent-green/15 text-accent-green'}`}>
+                  <Calendar size={16} />
                 </div>
-                <div className="text-[13px] text-text-secondary mt-0.5">{m.detail}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-[14px] font-semibold text-text-primary">{label}</span>
+                    <span className="text-[12px] text-text-muted whitespace-nowrap">{dateStr}</span>
+                  </div>
+                  {detail && <div className="text-[13px] text-text-secondary mt-0.5">{detail}</div>}
+                  {daysLeft != null && daysLeft >= 0 && (
+                    <div className="text-[11px] text-text-dim mt-0.5">{daysLeft} days remaining</div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </Card>
     </div>
