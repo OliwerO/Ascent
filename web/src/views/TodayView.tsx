@@ -695,11 +695,28 @@ export default function TodayView() {
     ? (todayMetrics.resting_hr > rhr7dAvg + 2 ? '↑ Rising' : todayMetrics.resting_hr < rhr7dAvg - 2 ? '↓ Declining' : '→ Stable')
     : null
 
-  const thisWeekDuration = thisWeekActivities.reduce((s: number, a) => s + (a.duration_seconds ?? 0), 0)
-  const lastWeekDuration = lastWeekActivities.reduce((s: number, a) => s + (a.duration_seconds ?? 0), 0)
-  const thisWeekElev = thisWeekActivities.reduce((s: number, a) => s + (a.elevation_gain ?? 0), 0)
-  const lastWeekElev = lastWeekActivities.reduce((s: number, a) => s + (a.elevation_gain ?? 0), 0)
-  const loadChangePct = lastWeekDuration > 0 ? Math.round(((thisWeekDuration - lastWeekDuration) / lastWeekDuration) * 100) : null
+  const splitLoad = (acts: typeof thisWeekActivities) => {
+    let gym = 0, mountain = 0, resort = 0
+    for (const a of acts) {
+      const dur = a.duration_seconds ?? 0
+      if (a.activity_type === 'strength_training') gym += dur
+      else if (SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type)) mountain += dur
+      else if (MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type)) resort += dur
+    }
+    return { gym, mountain, resort }
+  }
+  const thisWeekLoad = splitLoad(thisWeekActivities)
+  const lastWeekLoad = splitLoad(lastWeekActivities)
+  const thisWeekElev = thisWeekActivities
+    .filter((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type))
+    .reduce((s: number, a) => s + (a.elevation_gain ?? 0), 0)
+  const lastWeekElev = lastWeekActivities
+    .filter((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type))
+    .reduce((s: number, a) => s + (a.elevation_gain ?? 0), 0)
+  const trainingLoad = thisWeekLoad.gym + thisWeekLoad.mountain
+  const prevTrainingLoad = lastWeekLoad.gym + lastWeekLoad.mountain
+  const loadChangePct = prevTrainingLoad > 0
+    ? Math.round(((trainingLoad - prevTrainingLoad) / prevTrainingLoad) * 100) : null
 
   // ─── Coaching card decision tree (centralized in lib/coachingDecision) ───
   const decision = computeCoachingState({
@@ -945,10 +962,14 @@ export default function TodayView() {
           <ActivityIcon size={15} className="text-accent-purple" />
           <span className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold">Weekly Load</span>
         </div>
-        <div className="flex gap-5 text-[14px]">
+        <div className="flex flex-wrap gap-x-5 gap-y-1 text-[14px]">
           <div>
-            <span className="text-text-primary font-semibold">{formatDuration(thisWeekDuration)}</span>
+            <span className="text-text-primary font-semibold">{formatDuration(thisWeekLoad.gym)}</span>
             <span className="text-text-muted text-[12px] ml-1">gym</span>
+          </div>
+          <div>
+            <span className="text-text-primary font-semibold">{formatDuration(thisWeekLoad.mountain)}</span>
+            <span className="text-text-muted text-[12px] ml-1">mountain</span>
           </div>
           <div>
             <span className="text-text-primary font-semibold">{Math.round(thisWeekElev).toLocaleString()}m</span>
@@ -962,9 +983,9 @@ export default function TodayView() {
             </span>
           )}
         </div>
-        {lastWeekDuration > 0 && (
+        {prevTrainingLoad > 0 && (
           <div className="text-[12px] text-text-muted mt-1.5">
-            Last week: {formatDuration(lastWeekDuration)} · {Math.round(lastWeekElev).toLocaleString()}m
+            Last week: {formatDuration(lastWeekLoad.gym)} gym · {formatDuration(lastWeekLoad.mountain)} mountain · {Math.round(lastWeekElev).toLocaleString()}m
           </div>
         )}
       </div>

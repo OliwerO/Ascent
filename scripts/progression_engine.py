@@ -256,7 +256,7 @@ def calculate_next_weight(
             reps=target_reps,
             sets=target_sets,
             applied="first_session",
-            note=f"first session — starting at {weight}kg",
+            note="first session",
         )
 
     # Group by session date
@@ -280,7 +280,7 @@ def calculate_next_weight(
             reps=target_reps,
             sets=target_sets,
             applied="deload_week",
-            note=f"deload week — holding at {last_weight}kg, 50% volume",
+            note="deload week — 50% volume",
         )
 
     # Check exercise feedback — hold weight if rated "heavy" 2+ consecutive sessions
@@ -291,7 +291,7 @@ def calculate_next_weight(
             reps=target_reps,
             sets=target_sets,
             applied="hold",
-            note=f"rated 'heavy' {heavy_streak} sessions in a row — holding at {last_weight}kg until it feels easier",
+            note=f"rated 'heavy' {heavy_streak} sessions in a row — holding until it feels easier",
         )
 
     # Double progression check
@@ -310,7 +310,7 @@ def calculate_next_weight(
                 reps=target_reps,
                 sets=target_sets,
                 applied="hold",
-                note=f"not all sets at {last_weight}kg yet — keep building",
+                note="not all sets at top weight yet — keep building",
             )
         all_hit_target = True  # all sets at max weight hit target
 
@@ -326,7 +326,7 @@ def calculate_next_weight(
             sets=target_sets,
             applied="deload_reset",
             amount=drop_weight - last_weight,
-            note=f"stalled {stall_weeks} sessions at {last_weight}kg — dropping to {drop_weight}kg × 12",
+            note=f"stalled {stall_weeks} sessions — dropping weight, rebuild at 12 reps",
         )
 
     if stall_weeks == 2 and not all_hit_target:
@@ -335,7 +335,7 @@ def calculate_next_weight(
             reps=target_reps,
             sets=target_sets,
             applied="hold",
-            note=f"stall watch — 2 sessions at {last_weight}kg without hitting all reps",
+            note="stall watch — 2 sessions without hitting all reps",
         )
 
     if all_hit_target and (not has_rpe or last_rpe_max < 9):
@@ -352,7 +352,7 @@ def calculate_next_weight(
                 reps=target_reps,
                 sets=target_sets,
                 applied="hold",
-                note=f"increment {increase}kg would exceed 10% cap — holding at {last_weight}kg",
+                note="next jump would exceed 10% cap — holding",
             )
 
         return ProgressionResult(
@@ -361,7 +361,7 @@ def calculate_next_weight(
             sets=target_sets,
             applied="weight_increase",
             amount=increase,
-            note=f"+{increase}kg — all sets hit {target_reps}+ reps at {last_weight}kg",
+            note=f"weight up — all sets hit {target_reps}+ reps last session",
         )
 
     if all_hit_target and has_rpe and last_rpe_max >= 9:
@@ -371,7 +371,7 @@ def calculate_next_weight(
             reps=target_reps,
             sets=target_sets,
             applied="hold",
-            note=f"hit reps but RPE {last_rpe_max} — holding at {last_weight}kg until it feels easier",
+            note=f"hit reps but RPE {last_rpe_max} — holding until it feels easier",
         )
 
     # Didn't hit all target reps — hold weight, work on reps
@@ -381,7 +381,7 @@ def calculate_next_weight(
         reps=target_reps,
         sets=target_sets,
         applied="rep_increase",
-        note=f"not all sets at {target_reps} reps yet (got {last_reps_list}) — holding at {last_weight}kg",
+        note=f"not all sets at {target_reps} reps yet (got {last_reps_list}) — holding weight",
     )
 
 

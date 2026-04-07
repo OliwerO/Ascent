@@ -927,9 +927,9 @@ function LiftProgressionTracker({
 
         <div className="h-48">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+            <LineChart data={chartData} margin={{ top: 5, right: 10, left: 5, bottom: 0 }}>
               <XAxis dataKey="week" tick={{ fontSize: 11, fill: '#646478' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: '#646478' }} axisLine={false} tickLine={false} domain={['auto', 'auto']} width={40} unit="kg" />
+              <YAxis tick={{ fontSize: 11, fill: '#646478' }} axisLine={false} tickLine={false} domain={['auto', 'auto']} width={52} unit="kg" />
               <Tooltip contentStyle={darkTooltipStyle} />
               <Line type="monotone" dataKey="planned" stroke="#646478" strokeDasharray="4 4" strokeWidth={1.5} dot={false} name="Planned" />
               <Line type="monotone" dataKey="actual" stroke="#a78bfa" strokeWidth={2.5} dot={{ r: 5, fill: '#a78bfa', stroke: '#16161e', strokeWidth: 2 }} connectNulls={false} name="Actual" />
@@ -1065,7 +1065,7 @@ function EnduranceLoadTracker({ activities }: { activities: Activity[] }) {
 
         <div className="h-36">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={weeklyData} margin={{ top: 5, right: 5, left: -15, bottom: 0 }}>
+            <BarChart data={weeklyData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
               <XAxis dataKey="weekNum" tick={{ fontSize: 11, fill: '#646478' }} tickFormatter={(w) => `Wk${w}`} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11, fill: '#646478' }} axisLine={false} tickLine={false} width={45} tickFormatter={(v) => `${v}m`} />
               <Tooltip contentStyle={darkTooltipStyle} formatter={(value: unknown) => [`${Number(value).toLocaleString()}m`, 'Elevation']} labelFormatter={(w: unknown) => `Week ${w}`} />

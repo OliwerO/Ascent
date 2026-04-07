@@ -887,6 +887,11 @@ DAILY_SYNC_FUNCTIONS = [
     ("body_battery_events", sync_body_battery_events),
 ]
 
+# When syncing the default daily run, also re-pull activity metadata for the
+# last N days so that activity renames done in Garmin Connect propagate.
+# Upsert is keyed on garmin_activity_id so this is safe and idempotent.
+ACTIVITY_REFRESH_WINDOW_DAYS = 14
+
 # One-shot sync functions (run once per invocation, not per date)
 ONESHOT_SYNC_FUNCTIONS = [
     ("personal_records", sync_personal_records),
@@ -955,6 +960,27 @@ def main():
     try:
         for i, d in enumerate(dates):
             all_results[d.isoformat()] = sync_date(client, sb, d)
+
+        # Refresh activity metadata for the last N days so renames propagate.
+        # Skipped on bulk backfill (--range) since that already covers the window.
+        if not args.range:
+            today = date.today()
+            log.info(
+                "Refreshing activity metadata for last %d days (rename window)",
+                ACTIVITY_REFRESH_WINDOW_DAYS,
+            )
+            already_synced = {d.isoformat() for d in dates}
+            for offset in range(1, ACTIVITY_REFRESH_WINDOW_DAYS + 1):
+                refresh_d = today - timedelta(days=offset)
+                if refresh_d.isoformat() in already_synced:
+                    continue
+                try:
+                    sync_activities(client, sb, refresh_d)
+                except (GarminConnectTooManyRequestsError, RateLimitCooldownError, AuthExpiredError):
+                    raise
+                except Exception as exc:
+                    log.warning("Activity refresh failed for %s: %s", refresh_d, exc)
+                time.sleep(1)  # respect rate limit
 
         # Run one-shot syncs (personal records, etc.)
         for name, fn in ONESHOT_SYNC_FUNCTIONS:
