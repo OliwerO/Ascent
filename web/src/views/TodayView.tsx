@@ -863,7 +863,7 @@ export default function TodayView() {
                 )}
                 <table className="w-full text-[14px]">
                   <tbody>
-                    {todayPlanned.workout_definition.exercises.map((ex: PlannedExercise, i: number) => (
+                    {(todayPlanned.workout_definition.exercises ?? []).map((ex: PlannedExercise, i: number) => (
                       <tr key={i} className="border-b border-text-primary/5 last:border-0">
                         <td className="py-2 text-text-primary">{ex.name}</td>
                         <td className="py-2 text-right text-text-secondary font-mono text-[13px] whitespace-nowrap">

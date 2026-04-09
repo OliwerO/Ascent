@@ -450,7 +450,7 @@ export default function WeekView() {
                         Warmup: {cell.planned.workout_definition.warmup.map((w) => w.name).join(', ')}
                       </div>
                     )}
-                    {cell.planned.workout_definition.exercises.map((ex: PlannedExercise, i: number) => (
+                    {(cell.planned.workout_definition.exercises ?? []).map((ex: PlannedExercise, i: number) => (
                       <div key={i} className="flex items-baseline justify-between text-[12px]">
                         <span className="text-text-primary truncate pr-2">{ex.name}</span>
                         <span className="text-text-muted shrink-0 font-data">
