@@ -672,7 +672,7 @@ function LiftProgressionTracker({
     const names = new Set<string>()
     planned.forEach((pw) => {
       const def = pw.workout_definition as WorkoutDefinition | null
-      if (!def) return
+      if (!def?.exercises) return
       def.exercises.forEach((ex) => {
         if (ex.weight_kg != null && ex.weight_kg > 0) names.add(ex.name)
       })
@@ -708,7 +708,7 @@ function LiftProgressionTracker({
     const allPlannedNames = new Set<string>()
     planned.forEach((pw) => {
       const def = pw.workout_definition as WorkoutDefinition | null
-      if (!def) return
+      if (!def?.exercises) return
       def.exercises.forEach((ex) => allPlannedNames.add(ex.name))
     })
     exercisesWithData.forEach((dbName) => {
@@ -735,7 +735,7 @@ function LiftProgressionTracker({
     const map = new Map<number, number>()
     planned.forEach((pw) => {
       const def = pw.workout_definition as WorkoutDefinition | null
-      if (!def) return
+      if (!def?.exercises) return
       const ex = def.exercises.find((e) => e.name === selectedLift)
       if (ex?.weight_kg != null) {
         const existing = map.get(pw.week_number)
