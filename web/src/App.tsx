@@ -1,5 +1,7 @@
-import { useState, lazy, Suspense, useCallback, Component } from 'react'
+import { useState, useEffect, lazy, Suspense, useCallback, Component } from 'react'
 import type { ReactNode, ErrorInfo } from 'react'
+import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom'
+import { supabase } from './lib/supabase'
 import { Mountain, Calendar, Dumbbell, Heart, TrendingUp, Target, RefreshCw, Watch } from 'lucide-react'
 import { LoadingState } from './components/LoadingState'
 
@@ -32,29 +34,54 @@ const TrendsView = lazy(() => import('./views/TrendsView'))
 const GoalsView = lazy(() => import('./views/GoalsView'))
 
 const tabs = [
-  { id: 'today', label: 'Today', icon: Mountain },
-  { id: 'week', label: 'Week', icon: Calendar },
-  { id: 'plan', label: 'Plan', icon: Dumbbell },
-  { id: 'recovery', label: 'Recovery', icon: Heart },
-  { id: 'trends', label: 'Trends', icon: TrendingUp },
-  { id: 'goals', label: 'Goals', icon: Target },
+  { path: '/', label: 'Today', icon: Mountain },
+  { path: '/week', label: 'Week', icon: Calendar },
+  { path: '/plan', label: 'Plan', icon: Dumbbell },
+  { path: '/recovery', label: 'Recovery', icon: Heart },
+  { path: '/trends', label: 'Trends', icon: TrendingUp },
+  { path: '/goals', label: 'Goals', icon: Target },
 ] as const
 
-type TabId = (typeof tabs)[number]['id']
-
-function App() {
-  const [activeTab, setActiveTab] = useState<TabId>('today')
+function AppShell() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
+  const [lastSync, setLastSync] = useState<string | null>(null)
+  const navigate = useNavigate()
+
+  // Fetch latest data timestamp
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('daily_metrics')
+          .select('synced_at')
+          .order('synced_at', { ascending: false })
+          .limit(1)
+        if (data?.[0]?.synced_at) {
+          const ago = Date.now() - new Date(data[0].synced_at).getTime()
+          const hours = Math.floor(ago / 3600000)
+          const mins = Math.floor((ago % 3600000) / 60000)
+          if (hours > 24) setLastSync(`${Math.floor(hours / 24)}d ago`)
+          else if (hours > 0) setLastSync(`${hours}h ago`)
+          else setLastSync(`${mins}m ago`)
+        }
+      } catch { /* silent */ }
+    })()
+  }, [refreshKey])
+
   const handleRefresh = useCallback(() => {
     setRefreshKey((k) => k + 1)
   }, [])
+
   const handleSync = useCallback(async () => {
     setSyncing(true)
     setSyncMsg(null)
     try {
-      const resp = await fetch('/api/garmin-sync-trigger', { method: 'POST' })
+      const resp = await fetch('/api/garmin-sync-trigger', {
+        method: 'POST',
+        headers: { 'x-ascent-token': import.meta.env.VITE_SYNC_TRIGGER_SECRET ?? '' },
+      })
       const data = await resp.json()
       setSyncMsg(data.ok ? 'Sync queued — data arrives in ~5 min' : (data.error || 'Failed'))
       setTimeout(() => setSyncMsg(null), 5000)
@@ -66,18 +93,49 @@ function App() {
     }
   }, [])
 
+  // Pull-to-refresh on mobile
+  const handlePullRefresh = useCallback((e: React.TouchEvent<HTMLElement>) => {
+    const el = e.currentTarget
+    if (el.scrollTop > 0) return
+
+    let startY = e.touches[0].clientY
+    let triggered = false
+
+    const onMove = (ev: TouchEvent) => {
+      const dy = ev.touches[0].clientY - startY
+      if (dy > 80 && !triggered) {
+        triggered = true
+        handleRefresh()
+        // Brief haptic-like visual feedback
+        el.style.transition = 'transform 0.2s'
+        el.style.transform = 'translateY(4px)'
+        setTimeout(() => { el.style.transform = ''; el.style.transition = '' }, 200)
+      }
+    }
+    const onEnd = () => {
+      el.removeEventListener('touchmove', onMove)
+      el.removeEventListener('touchend', onEnd)
+    }
+    el.addEventListener('touchmove', onMove, { passive: true })
+    el.addEventListener('touchend', onEnd)
+  }, [handleRefresh])
+
   return (
     <div className="min-h-screen bg-bg-primary">
       {/* Header */}
       <header className="sticky top-0 z-50 bg-bg-primary/90 backdrop-blur-xl border-b border-border-subtle pt-[env(safe-area-inset-top)]">
         <div className="max-w-2xl mx-auto px-5 py-3 flex items-center justify-between">
-          <h1 className="text-[15px] font-semibold tracking-tight flex items-center gap-2">
+          <h1
+            className="text-[15px] font-semibold tracking-tight flex items-center gap-2 cursor-pointer"
+            onClick={() => navigate('/')}
+          >
             <span className="text-accent-green text-lg">&#9650;</span>
             <span className="text-text-primary">Ascent</span>
           </h1>
           <div className="flex items-center gap-4">
             <span className="text-[12px] text-text-muted font-medium">
               {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+              {lastSync && <span className="text-text-dim ml-1.5">· {lastSync}</span>}
             </span>
             <button
               onClick={handleSync}
@@ -108,15 +166,21 @@ function App() {
       </header>
 
       {/* Content */}
-      <main className="max-w-2xl mx-auto px-4 py-4 pb-28 space-y-3">
+      <main
+        className="max-w-2xl mx-auto px-4 py-4 pb-28 space-y-3"
+        onTouchStart={handlePullRefresh}
+      >
         <ErrorBoundary>
           <Suspense fallback={<LoadingState />}>
-            {activeTab === 'today' && <TodayView key={refreshKey} />}
-            {activeTab === 'week' && <WeekView key={refreshKey} />}
-            {activeTab === 'plan' && <TrainingPlanView key={refreshKey} />}
-            {activeTab === 'recovery' && <RecoveryView key={refreshKey} />}
-            {activeTab === 'trends' && <TrendsView key={refreshKey} />}
-            {activeTab === 'goals' && <GoalsView key={refreshKey} />}
+            <Routes>
+              <Route path="/" element={<TodayView key={refreshKey} />} />
+              <Route path="/week" element={<WeekView key={refreshKey} />} />
+              <Route path="/plan" element={<TrainingPlanView key={refreshKey} />} />
+              <Route path="/recovery" element={<RecoveryView key={refreshKey} />} />
+              <Route path="/trends" element={<TrendsView key={refreshKey} />} />
+              <Route path="/goals" element={<GoalsView key={refreshKey} />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
           </Suspense>
         </ErrorBoundary>
       </main>
@@ -126,27 +190,41 @@ function App() {
         <div className="max-w-2xl mx-auto flex pb-[env(safe-area-inset-bottom)]">
           {tabs.map((tab) => {
             const Icon = tab.icon
-            const active = activeTab === tab.id
             return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 flex flex-col items-center pt-2.5 pb-1.5 gap-0.5 transition-all duration-200 min-h-[48px] ${
-                  active
-                    ? 'text-accent-green'
-                    : 'text-text-muted hover:text-text-secondary active:scale-95'
-                }`}
+              <NavLink
+                key={tab.path}
+                to={tab.path}
+                end={tab.path === '/'}
+                className={({ isActive }) =>
+                  `flex-1 flex flex-col items-center pt-2.5 pb-1.5 gap-0.5 transition-all duration-200 min-h-[48px] ${
+                    isActive
+                      ? 'text-accent-green'
+                      : 'text-text-muted hover:text-text-secondary active:scale-95'
+                  }`
+                }
               >
-                <Icon size={20} strokeWidth={active ? 2 : 1.5} />
-                <span className={`text-[10px] tracking-wide ${active ? 'font-semibold' : 'font-medium'}`}>
-                  {tab.label}
-                </span>
-              </button>
+                {({ isActive }) => (
+                  <>
+                    <Icon size={20} strokeWidth={isActive ? 2 : 1.5} />
+                    <span className={`text-[10px] tracking-wide ${isActive ? 'font-semibold' : 'font-medium'}`}>
+                      {tab.label}
+                    </span>
+                  </>
+                )}
+              </NavLink>
             )
           })}
         </div>
       </nav>
     </div>
+  )
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AppShell />
+    </BrowserRouter>
   )
 }
 

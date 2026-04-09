@@ -42,14 +42,6 @@
   --color-glow-blue: rgba(96, 165, 250, 0.08);
 }
 
-@font-face {
-  font-family: 'Inter';
-  font-style: normal;
-  font-weight: 100 900;
-  font-display: swap;
-  src: url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-}
-
 body {
   margin: 0;
   background: var(--color-bg-primary);

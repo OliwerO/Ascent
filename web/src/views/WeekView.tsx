@@ -14,14 +14,9 @@ import { startOfWeek, endOfWeek, format, isWithinInterval, addDays, isSameDay, i
 import { Wind, ChevronDown, ChevronUp } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts'
 import { formatDuration, formatActivityType } from '../lib/format'
-import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES } from '../lib/activityTypes'
+import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES } from '../lib/constants'
 import { getProgramWeek, isDeloadWeek, getWeekSchedule, SESSION_NAMES } from '../lib/program'
-
-function sleepBarColor(hours: number): string {
-  if (hours >= 7) return '#4ade80'
-  if (hours >= 6) return '#fbbf24'
-  return '#f87171'
-}
+import { sleepBarColor } from '../lib/colors'
 
 type DayStatus = 'completed' | 'adjusted' | 'skipped' | 'planned' | 'missed' | 'today' | 'rest' | 'mountain'
 

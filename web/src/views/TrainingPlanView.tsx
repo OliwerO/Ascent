@@ -8,7 +8,7 @@ import {
   useCoachingLog,
   usePlannedWorkouts,
 } from '../hooks/useSupabase'
-import type { PlannedWorkout, WorkoutDefinition } from '../lib/types'
+import type { Activity, TrainingSession, TrainingSet, CoachingLogEntry, PlannedWorkout, WorkoutDefinition } from '../lib/types'
 import {
   getProgramWeek,
   getWeekSchedule,
@@ -28,7 +28,8 @@ import {
 } from 'recharts'
 import { ChevronDown, ChevronRight, Mountain, Dumbbell } from 'lucide-react'
 import { formatDuration, formatActivityType } from '../lib/format'
-import { MOUNTAIN_ACTIVITY_TYPES } from '../lib/activityTypes'
+import { loadChangeColor } from '../lib/colors'
+import { MOUNTAIN_ACTIVITY_TYPES } from '../lib/constants'
 
 const darkTooltipStyle = {
   background: '#16161e',
@@ -39,12 +40,6 @@ const darkTooltipStyle = {
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────
-function loadChangeColor(pct: number): string {
-  if (Math.abs(pct) <= 15) return 'text-accent-green'
-  if (Math.abs(pct) <= 25) return 'text-accent-yellow'
-  return 'text-accent-red'
-}
-
 function fmtDate(d: Date): string {
   return format(d, 'yyyy-MM-dd')
 }
@@ -55,51 +50,6 @@ function normalizeExName(name: string): string {
 
 function exerciseNameMatch(a: string, b: string): boolean {
   return normalizeExName(a) === normalizeExName(b)
-}
-
-// ─── Types for Supabase data ──────────────────────────────────────
-type Activity = {
-  date: string
-  activity_type: string
-  activity_name: string | null
-  duration_seconds: number | null
-  calories: number | null
-  elevation_gain: number | null
-  avg_hr: number | null
-  max_hr: number | null
-  garmin_activity_id: string | null
-}
-
-type TrainingSession = {
-  id: number
-  date: string
-  name: string | null
-  program: string | null
-  duration_minutes: number | null
-  total_volume_kg: number | null
-  total_sets: number | null
-  notes: string | null
-  rating: number | null
-}
-
-type TrainingSet = {
-  id: number
-  session_id: number
-  exercise_id: number
-  set_number: number
-  set_type: string
-  weight_kg: number | null
-  reps: number | null
-  rpe: number | null
-  volume_kg: number | null
-  exercises: { name: string; category: string | null } | null
-}
-
-type CoachingEntry = {
-  id: number
-  date: string
-  type: string
-  message: string
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -128,7 +78,7 @@ export function TrainingPlanView() {
   const activities = (activitiesQuery.data ?? []) as Activity[]
   const sessions = (sessionsQuery.data ?? []) as TrainingSession[]
   const sets = (setsQuery.data ?? []) as TrainingSet[]
-  const coaching = (coachingQuery.data ?? []) as CoachingEntry[]
+  const coaching = (coachingQuery.data ?? []) as CoachingLogEntry[]
   const planned = (plannedQuery.data ?? []) as PlannedWorkout[]
 
   return (
@@ -535,7 +485,7 @@ function TodaySession({
 }: {
   sessions: TrainingSession[]
   sets: TrainingSet[]
-  coaching: CoachingEntry[]
+  coaching: CoachingLogEntry[]
   planned: PlannedWorkout[]
 }) {
   const today = new Date()
