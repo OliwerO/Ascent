@@ -93,32 +93,6 @@ function AppShell() {
     }
   }, [])
 
-  // Pull-to-refresh on mobile — requires a deliberate 120px pull at scroll top
-  const handlePullRefresh = useCallback((e: React.TouchEvent<HTMLElement>) => {
-    const el = e.currentTarget
-    if (el.scrollTop > 5) return // only at very top of scroll
-
-    const startY = e.touches[0].clientY
-    let triggered = false
-
-    const onMove = (ev: TouchEvent) => {
-      const dy = ev.touches[0].clientY - startY
-      if (dy > 120 && !triggered) {
-        triggered = true
-        handleRefresh()
-        el.style.transition = 'transform 0.2s'
-        el.style.transform = 'translateY(4px)'
-        setTimeout(() => { el.style.transform = ''; el.style.transition = '' }, 200)
-      }
-    }
-    const onEnd = () => {
-      el.removeEventListener('touchmove', onMove)
-      el.removeEventListener('touchend', onEnd)
-    }
-    el.addEventListener('touchmove', onMove, { passive: true })
-    el.addEventListener('touchend', onEnd)
-  }, [handleRefresh])
-
   return (
     <div className="min-h-screen bg-bg-primary">
       {/* Header */}
@@ -167,7 +141,6 @@ function AppShell() {
       {/* Content */}
       <main
         className="max-w-2xl mx-auto px-4 py-4 pb-28 space-y-3"
-        onTouchStart={handlePullRefresh}
       >
         <ErrorBoundary>
           <Suspense fallback={<LoadingState />}>
