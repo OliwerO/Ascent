@@ -681,6 +681,57 @@ def _sync_training_session(client: Garmin, sb, act: dict, garmin_id: str):
     log.info("  training_session upserted (id=%d, %d sets) for activity %s",
              session_id, set_number, garmin_id)
 
+    # Check for new e1RM personal records
+    _check_prs(sb, session_id, act_date)
+
+
+def _check_prs(sb, session_id: int, act_date: str):
+    """Check if any working sets in this session set a new estimated 1RM PR."""
+    sets = sb.table("training_sets").select(
+        "id,exercise_id,weight_kg,reps,set_type"
+    ).eq("session_id", session_id).eq("set_type", "working").execute().data
+
+    if not sets:
+        return
+
+    # Group by exercise, find best e1RM per exercise
+    from collections import defaultdict
+    best_by_exercise: dict[int, tuple[float, int]] = {}  # exercise_id → (e1rm, set_id)
+    for s in sets:
+        w = s.get("weight_kg")
+        r = s.get("reps")
+        if not w or not r or r < 1:
+            continue
+        # Epley formula
+        e1rm = w * (1 + r / 30.0) if r > 1 else w
+        eid = s["exercise_id"]
+        if eid not in best_by_exercise or e1rm > best_by_exercise[eid][0]:
+            best_by_exercise[eid] = (round(e1rm, 1), s["id"])
+
+    for exercise_id, (e1rm, set_id) in best_by_exercise.items():
+        # Check existing PR for this exercise
+        existing = sb.table("exercise_prs").select("id,value").eq(
+            "exercise_id", exercise_id
+        ).eq("pr_type", "e1rm").order("value", desc=True).limit(1).execute().data
+
+        if existing and existing[0]["value"] >= e1rm:
+            continue  # not a new PR
+
+        # New PR — insert it
+        sb.table("exercise_prs").insert({
+            "exercise_id": exercise_id,
+            "pr_type": "e1rm",
+            "value": e1rm,
+            "date": act_date,
+            "set_id": set_id,
+        }).execute()
+
+        # Look up exercise name for logging
+        ex = sb.table("exercises").select("name").eq("id", exercise_id).limit(1).execute().data
+        name = ex[0]["name"] if ex else f"exercise #{exercise_id}"
+        prev = f" (prev: {existing[0]['value']}kg)" if existing else " (first tracked)"
+        log.info("  NEW PR: %s e1RM = %.1f kg%s", name, e1rm, prev)
+
 
 def sync_training_status(client: Garmin, sb, d: date) -> bool | None:
     """Training status: productive/detraining labels, acute/chronic load."""
@@ -872,6 +923,108 @@ def sync_personal_records(client: Garmin, sb, d: date) -> bool | None:
 
 
 # ---------------------------------------------------------------------------
+# Data quality tracking
+# ---------------------------------------------------------------------------
+
+
+def sync_data_quality(client: Garmin, sb, d: date) -> bool | None:
+    """Compute and write data quality metrics for a given date.
+
+    Checks which key tables have data for this date and estimates wear hours
+    from available signals. Writes to daily_data_quality.
+    """
+    ds = d.isoformat()
+
+    # Check which data sources exist for this date
+    has_sleep = bool(
+        sb.table("sleep").select("id").eq("date", ds).limit(1).execute().data
+    )
+    has_metrics = bool(
+        sb.table("daily_metrics").select("id").eq("date", ds).limit(1).execute().data
+    )
+    has_hrv = bool(
+        sb.table("hrv").select("id").eq("date", ds).limit(1).execute().data
+    )
+    has_hr_series = False
+    hr_hours = 0
+    hr_rows = sb.table("heart_rate_series").select("readings").eq("date", ds).limit(1).execute().data
+    if hr_rows and hr_rows[0].get("readings"):
+        has_hr_series = True
+        readings = hr_rows[0]["readings"]
+        if isinstance(readings, list):
+            # Each reading is typically a 15-second or 1-minute sample.
+            # Estimate hours of coverage: count non-null entries and divide
+            # by expected samples per hour (~60 for 1-min, ~240 for 15-sec).
+            non_null = 0
+            for r in readings:
+                if r is None:
+                    continue
+                if isinstance(r, dict):
+                    if r.get("value") or r.get("heartRate") or r.get("hr"):
+                        non_null += 1
+                elif isinstance(r, (int, float)) and r > 0:
+                    non_null += 1
+            # Conservative: assume 1-minute samples → 60/hr
+            hr_hours = round(non_null / 60, 1) if non_null > 0 else 0
+
+    # Estimate wear hours
+    # Sleep data implies ~6-8h of nighttime wear; HR series gives daytime coverage
+    wear_hours = 0.0
+    if has_sleep:
+        # Fetch actual sleep duration
+        sleep_rows = sb.table("sleep").select("total_sleep_seconds").eq("date", ds).limit(1).execute().data
+        sleep_secs = (sleep_rows[0].get("total_sleep_seconds") or 0) if sleep_rows else 0
+        wear_hours += min(sleep_secs / 3600, 10)  # cap nighttime at 10h
+    if hr_hours > 0:
+        wear_hours += min(hr_hours, 16)  # cap daytime at 16h
+    elif has_metrics:
+        # If we have daily metrics but no HR series, assume ~8h daytime wear
+        wear_hours += 8
+
+    wear_hours = round(min(wear_hours, 24), 1)
+
+    # Completeness score: percentage of key data sources present
+    sources = [has_sleep, has_metrics, has_hrv, has_hr_series]
+    completeness_score = round(sum(sources) / len(sources), 2)
+
+    # Find largest gap in HR data (if available)
+    max_gap_minutes = None
+    if has_hr_series and isinstance(readings, list) and len(readings) > 1:
+        # Simple gap detection: find longest run of nulls/missing
+        current_gap = 0
+        max_gap = 0
+        for r in readings:
+            is_valid = (isinstance(r, dict) and (r.get("value") or r.get("heartRate"))) or (
+                isinstance(r, (int, float)) and r > 0
+            )
+            if not is_valid:
+                current_gap += 1
+            else:
+                max_gap = max(max_gap, current_gap)
+                current_gap = 0
+        max_gap = max(max_gap, current_gap)
+        max_gap_minutes = max_gap  # assuming 1-min samples
+
+    row = {
+        "date": ds,
+        "wear_hours": wear_hours,
+        "completeness_score": completeness_score,
+        "max_gap_minutes": max_gap_minutes,
+        "data_issues": json.dumps({
+            "has_sleep": has_sleep,
+            "has_metrics": has_metrics,
+            "has_hrv": has_hrv,
+            "has_hr_series": has_hr_series,
+            "hr_coverage_hours": hr_hours,
+        }),
+    }
+    sb.table("daily_data_quality").upsert(row, on_conflict="date").execute()
+    log.info("daily_data_quality upserted for %s (wear=%.1fh, completeness=%.0f%%)",
+             ds, wear_hours, completeness_score * 100)
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Main sync orchestrator
 # ---------------------------------------------------------------------------
 
@@ -887,6 +1040,7 @@ DAILY_SYNC_FUNCTIONS = [
     ("training_status", sync_training_status),
     ("performance_scores", sync_performance_scores),
     ("body_battery_events", sync_body_battery_events),
+    ("data_quality", sync_data_quality),  # must be last — reads from tables above
 ]
 
 # When syncing the default daily run, also re-pull activity metadata for the

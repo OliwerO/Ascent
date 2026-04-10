@@ -797,7 +797,7 @@ These are locked and must not be changed without an Opus session:
 - Training times default to: gym 19:00 weekday evenings, touring 17:00 weekdays / 07:00 weekends.
 - Subjective wellness questionnaire is the highest-priority unbuilt feature — stronger evidence base than any wearable metric for detecting maladaptation (Saw et al. 2016, Nummela et al. 2024).
 - ACWR ratio is not implemented — use absolute weekly load monitoring with >10–15% spike detection.
-- Body Battery, sleep staging, and Garmin Training Status/Readiness are displayed as contextual information only — never used as inputs to automated coaching decisions.
+- Body Battery and Garmin Training Readiness are used as **safety guard rails at extreme values only** (BB<30, TR<40 trigger hard rest overrides), but are NOT used for graduated decision-making. These overrides are **gated on data freshness** — they only fire when `data_age_hours < 12` to prevent stale-data false positives (see sql/026). Sleep staging is contextual display only.
 - All coaching messages use autonomy-supportive framing per SDT research — never directive language ("should," "must," "need to").
 - Alert system uses compound conditions and time-delay filtering — no single-metric single-day alerts.
 

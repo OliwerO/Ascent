@@ -111,18 +111,6 @@ below for any date-specific overrides.
 
 -----
 
-## Injury & Soreness Log
-
-|Date             |Issue     |Status         |Accommodations                                                                                |
-|-----------------|----------|---------------|----------------------------------------------------------------------------------------------|
-|~Early March 2026|Broken rib|Fully recovered|No current restrictions. Monitor for discomfort during heavy pressing or rotational movements.|
-
-### Recurring Issues
-
-- None currently flagged. Update as they arise.
-
------
-
 ## Learned Preferences
 
 ### Coaching Delivery

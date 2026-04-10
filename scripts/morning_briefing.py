@@ -58,6 +58,27 @@ def supabase_get(table: str, params: dict) -> list:
     return resp.json()
 
 
+def fetch_data_freshness(target_date: date) -> float | None:
+    """Return the age in hours of the most recent daily_metrics sync.
+
+    Checks synced_at for target_date (or the most recent row before it).
+    Returns None if no data exists.
+    """
+    rows = supabase_get("daily_metrics", {
+        "select": "synced_at",
+        "date": f"lte.{target_date.isoformat()}",
+        "order": "date.desc",
+        "limit": "1",
+    })
+    if not rows or not rows[0].get("synced_at"):
+        return None
+    from datetime import datetime, timezone
+    synced = rows[0]["synced_at"]
+    synced_dt = datetime.fromisoformat(synced.replace("Z", "+00:00"))
+    age = (datetime.now(timezone.utc) - synced_dt).total_seconds() / 3600
+    return round(age, 1)
+
+
 def fetch_daily_summary(target_date: date) -> dict | None:
     """Fetch daily_summary view for a given date."""
     rows = supabase_get("daily_summary", {
@@ -158,6 +179,36 @@ def fetch_mountain_patterns() -> list:
         return []
 
 
+def fetch_recent_prs(since_date: date) -> list:
+    """Fetch exercise PRs set since the given date."""
+    try:
+        rows = supabase_get("exercise_prs", {
+            "select": "exercise_id,pr_type,value,date",
+            "date": f"gte.{since_date.isoformat()}",
+            "pr_type": "eq.e1rm",
+            "order": "date.desc",
+        })
+        if not rows:
+            return []
+        # Look up exercise names
+        exercise_ids = list({r["exercise_id"] for r in rows})
+        exercises = {}
+        for eid in exercise_ids:
+            ex = supabase_get("exercises", {
+                "select": "id,name",
+                "id": f"eq.{eid}",
+                "limit": "1",
+            })
+            if ex:
+                exercises[eid] = ex[0]["name"]
+        for r in rows:
+            r["exercise_name"] = exercises.get(r["exercise_id"], f"Exercise #{r['exercise_id']}")
+        return rows
+    except Exception as e:
+        log.warning("Failed to fetch PRs: %s", e)
+        return []
+
+
 def is_gym_day(target_date: date) -> bool:
     """Check if there's a planned workout today."""
     try:
@@ -225,14 +276,17 @@ def _readiness_label(score: float | None) -> str:
 
 
 def _recommendation(readiness: float | None, hrv_avg: float | None,
-                    sleep_score: int | None, wellness_composite: float | None) -> str:
+                    sleep_score: int | None, wellness_composite: float | None,
+                    data_is_stale: bool = False) -> str:
     """One-line training recommendation based on recovery signals."""
-    # Wellness self-report is the highest-trust signal
+    # Wellness self-report is the highest-trust signal (never gated on data freshness)
     if wellness_composite is not None and wellness_composite < 2.5:
         return ":zzz: Rest day recommended. Self-reported wellness is low — listen to your body."
 
     scores = []
-    if readiness is not None:
+    # When data is stale, exclude device-only metrics (readiness, BB) from scoring
+    # but keep HRV/sleep which may still be directionally useful
+    if readiness is not None and not data_is_stale:
         scores.append(("readiness", readiness))
     if hrv_avg is not None:
         scores.append(("hrv", hrv_avg))
@@ -242,6 +296,8 @@ def _recommendation(readiness: float | None, hrv_avg: float | None,
         scores.append(("wellness", wellness_composite))
 
     if not scores:
+        if data_is_stale:
+            return ":white_circle: Data is stale — check how you feel before deciding."
         return "Insufficient data for recommendation."
 
     # Simple scoring: count how many signals are in green/yellow/red
@@ -319,11 +375,14 @@ def build_message(target_date: date) -> dict:
     yesterday_activities = fetch_activities(yesterday)
     resting_hr_7d = fetch_resting_hr_7d(target_date)
     wellness = fetch_wellness(target_date)
+    data_age_hours = fetch_data_freshness(target_date)
 
     # Use today's summary for current recovery state; fall back to yesterday
     summary = today_summary or yesterday_summary
     if not summary:
         return _error_message(target_date, "No health data found.")
+
+    data_is_stale = data_age_hours is not None and data_age_hours > 12
 
     # Extract fields
     hrv_avg = summary.get("hrv_avg")
@@ -347,6 +406,16 @@ def build_message(target_date: date) -> dict:
         "type": "header",
         "text": {"type": "plain_text", "text": f"Morning Briefing — {target_date.strftime('%A, %b %d')}"}
     })
+
+    # Stale-data warning (if sync is >12h old)
+    if data_is_stale:
+        age_str = f"{data_age_hours:.0f}h" if data_age_hours < 48 else f"{data_age_hours / 24:.1f}d"
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text":
+                f":warning: *Data may be stale* — last sync was {age_str} ago. "
+                "Hard overrides (Training Readiness, Body Battery) are suppressed until fresh data arrives."}
+        })
 
     # Recovery Triad
     triad_lines = []
@@ -404,6 +473,19 @@ def build_message(target_date: date) -> dict:
             }
         })
 
+    # Personal Records (set yesterday)
+    recent_prs = fetch_recent_prs(yesterday)
+    if recent_prs:
+        pr_lines = []
+        for pr in recent_prs:
+            pr_lines.append(
+                f":trophy: *{pr['exercise_name']}* — new e1RM: {pr['value']}kg"
+            )
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "*New PRs*\n" + "\n".join(pr_lines)}
+        })
+
     blocks.append({"type": "divider"})
 
     # Wellness check-in (if submitted today)
@@ -446,7 +528,8 @@ def build_message(target_date: date) -> dict:
     blocks.append({"type": "divider"})
 
     # Recommendation
-    rec = _recommendation(readiness, hrv_avg, sleep_score, wellness_composite)
+    rec = _recommendation(readiness, hrv_avg, sleep_score, wellness_composite,
+                          data_is_stale=data_is_stale)
     blocks.append({
         "type": "section",
         "text": {"type": "mrkdwn", "text": rec}

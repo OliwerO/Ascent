@@ -37,6 +37,16 @@ ANALYSES = [
         "script": "decision_retrospective.py",
         "args": ["--lookback", "14"],
     },
+    {
+        "name": "Recomp Analysis",
+        "script": "recomp_analysis.py",
+        "args": ["--days", "90"],
+    },
+    {
+        "name": "Weekly Summary",
+        "script": "weekly_summary.py",
+        "args": [],
+    },
 ]
 
 
