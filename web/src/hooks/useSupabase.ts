@@ -4,7 +4,7 @@ import { format, subDays } from 'date-fns'
 import type {
   DailySummary, HRVRow, SleepRow, Activity, DailyMetrics,
   BodyComposition, TrainingSession, TrainingSet, SubjectiveWellness,
-  Goal, CoachingLogEntry, PlannedWorkout,
+  Goal, CoachingLogEntry, PlannedWorkout, PerformanceScore,
 } from '../lib/types'
 
 function useFetch<T>(
@@ -105,7 +105,7 @@ export function useActivities(days = 14) {
   return useFetch<Activity[]>('activities', async () => {
     const { data, error } = await supabase
       .from('activities')
-      .select('date,activity_type,activity_name,duration_seconds,calories,elevation_gain,elevation_loss,distance_meters,avg_hr,max_hr,avg_speed,max_speed,start_time,garmin_activity_id,raw_json')
+      .select('date,activity_type,activity_name,duration_seconds,calories,elevation_gain,elevation_loss,distance_meters,avg_hr,max_hr,avg_speed,max_speed,start_time,garmin_activity_id,training_effect_aerobic,training_effect_anaerobic,hr_zones,raw_json')
       .gte('date', fmt(daysAgo(days)))
       .order('date', { ascending: false })
     if (error) throw error
@@ -221,6 +221,22 @@ export function usePlannedWorkouts(weeksBehind = 2, weeksAhead = 4) {
     if (error) throw error
     return data ?? []
   }, [weeksBehind, weeksAhead, rt])
+}
+
+export function usePerformanceScores(days = 90) {
+  const rt = useRealtimeRefresh('performance_scores')
+  return useFetch<PerformanceScore[]>('performance_scores', async () => {
+    const { data, error } = await supabase
+      .from('performance_scores')
+      .select('date,endurance_score,hill_score,fitness_age')
+      .gte('date', fmt(daysAgo(days)))
+      .order('date', { ascending: true })
+    if (error) {
+      if (error.message?.includes('relation') || error.message?.includes('does not exist')) return []
+      throw error
+    }
+    return data ?? []
+  }, [days, rt])
 }
 
 /**

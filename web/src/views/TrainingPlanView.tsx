@@ -8,7 +8,7 @@ import {
   useCoachingLog,
   usePlannedWorkouts,
 } from '../hooks/useSupabase'
-import type { PlannedWorkout, WorkoutDefinition } from '../lib/types'
+import type { Activity, PlannedWorkout, WorkoutDefinition } from '../lib/types'
 import {
   getProgramWeek,
   getWeekSchedule,
@@ -27,8 +27,9 @@ import {
   Cell,
 } from 'recharts'
 import { ChevronDown, ChevronRight, Mountain, Dumbbell } from 'lucide-react'
-import { formatDuration, formatActivityType } from '../lib/format'
+import { formatDuration } from '../lib/format'
 import { MOUNTAIN_ACTIVITY_TYPES } from '../lib/activityTypes'
+import { MountainActivityCard } from '../components/MountainActivityCard'
 
 const darkTooltipStyle = {
   background: '#16161e',
@@ -58,18 +59,6 @@ function exerciseNameMatch(a: string, b: string): boolean {
 }
 
 // ─── Types for Supabase data ──────────────────────────────────────
-type Activity = {
-  date: string
-  activity_type: string
-  activity_name: string | null
-  duration_seconds: number | null
-  calories: number | null
-  elevation_gain: number | null
-  avg_hr: number | null
-  max_hr: number | null
-  garmin_activity_id: string | null
-}
-
 type TrainingSession = {
   id: number
   date: string
@@ -445,24 +434,11 @@ function WeekExpanded({
     <div className="ml-2 mr-1 mb-2 mt-1 space-y-3">
       {items.map((item) => {
         if (item.kind === 'mountain') {
-          const a = item.activity
           return (
-            <div key={`mtn-${item.date}-${item.idx}`} className="bg-bg-primary/50 rounded-xl px-4 py-3">
-              <div className="flex items-center gap-2 mb-1">
-                <Mountain size={14} className="text-mountain shrink-0" />
-                <span className="text-[14px] font-semibold text-text-primary">
-                  {a.activity_name ?? formatActivityType(a.activity_type)}
-                </span>
-              </div>
-              <div className="text-[13px] text-text-muted">
-                {format(new Date(a.date + 'T12:00:00'), 'EEE')}
-                {a.duration_seconds != null && <span> &middot; {formatDuration(a.duration_seconds)}</span>}
-                {a.elevation_gain != null && a.elevation_gain > 0 && (
-                  <span> &middot; {Math.round(a.elevation_gain)}m &uarr;</span>
-                )}
-                {a.avg_hr != null && <span> &middot; HR {a.avg_hr}</span>}
-              </div>
-            </div>
+            <MountainActivityCard
+              key={`mtn-${item.date}-${item.idx}`}
+              activity={item.activity}
+            />
           )
         }
 

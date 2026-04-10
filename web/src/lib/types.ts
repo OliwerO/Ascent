@@ -60,7 +60,24 @@ export interface Activity {
   max_speed: number | null
   start_time: string | null
   garmin_activity_id: string | null
+  training_effect_aerobic: number | null
+  training_effect_anaerobic: number | null
+  hr_zones: HRZone[] | null
   raw_json: Record<string, unknown> | null
+}
+
+export interface HRZone {
+  zone: number | string
+  seconds: number
+  [key: string]: unknown
+}
+
+// --- Performance scores (Garmin endurance/hill)
+export interface PerformanceScore {
+  date: string
+  endurance_score: number | null
+  hill_score: number | null
+  fitness_age: number | null
 }
 
 // --- Daily metrics

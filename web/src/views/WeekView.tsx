@@ -14,6 +14,7 @@ import { startOfWeek, endOfWeek, format, isWithinInterval, addDays, isSameDay, i
 import { Wind, ChevronDown, ChevronUp, ArrowRightLeft } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts'
 import { formatDuration, formatActivityType } from '../lib/format'
+import { MountainActivityCard } from '../components/MountainActivityCard'
 import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES } from '../lib/activityTypes'
 import { getProgramWeek, isDeloadWeek, getWeekSchedule, SESSION_NAMES } from '../lib/program'
 
@@ -402,7 +403,8 @@ export default function WeekView() {
         <div className="space-y-1.5">
           {dayCells.map((cell) => {
             const badge = STATUS_BADGES[cell.status]
-            const isExpandable = cell.planned?.workout_definition?.exercises?.length
+            const hasMountainActivity = cell.status === 'mountain' && cell.activities.length > 0
+            const isExpandable = cell.planned?.workout_definition?.exercises?.length || hasMountainActivity
             const isExpanded = expandedDay === cell.dateStr
             const sessionName = cell.displayLabel
               ?? cell.planned?.workout_definition?.session_name
@@ -498,6 +500,16 @@ export default function WeekView() {
                         Move to another day
                       </button>
                     )}
+                  </div>
+                )}
+
+                {isExpanded && hasMountainActivity && !cell.planned?.workout_definition && (
+                  <div className="mt-3 pt-3 border-t border-border-subtle">
+                    {cell.activities
+                      .filter((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type) || MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type))
+                      .map((a, i) => (
+                        <MountainActivityCard key={a.garmin_activity_id ?? i} activity={a} showDate={false} />
+                      ))}
                   </div>
                 )}
               </div>
