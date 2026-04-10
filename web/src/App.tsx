@@ -80,7 +80,7 @@ function AppShell() {
     try {
       const resp = await fetch('/api/garmin-sync-trigger', {
         method: 'POST',
-        headers: { 'x-ascent-token': import.meta.env.VITE_SYNC_TRIGGER_SECRET ?? '' },
+        headers: { 'x-ascent-token': import.meta.env.VITE_SUPABASE_KEY ?? '' },
       })
       const data = await resp.json()
       setSyncMsg(data.ok ? 'Sync queued — data arrives in ~5 min' : (data.error || 'Failed'))

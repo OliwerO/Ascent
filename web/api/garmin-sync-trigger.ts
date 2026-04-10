@@ -13,10 +13,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  // Authenticate request — reject if no valid token
+  // Authenticate request — accept either the dedicated sync secret
+  // or the Supabase anon key (which the client already has)
   const syncSecret = process.env.SYNC_TRIGGER_SECRET
+  const supabaseAnon = process.env.VITE_SUPABASE_KEY
   const authHeader = req.headers['x-ascent-token'] as string | undefined
-  if (syncSecret && authHeader !== syncSecret) {
+  const isAuthed = authHeader && (
+    (syncSecret && authHeader === syncSecret) ||
+    (supabaseAnon && authHeader === supabaseAnon)
+  )
+  if (!isAuthed) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
