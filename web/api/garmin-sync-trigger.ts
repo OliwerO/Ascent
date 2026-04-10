@@ -16,7 +16,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Authenticate request — accept either the dedicated sync secret
   // or the Supabase anon key (which the client already has)
   const syncSecret = process.env.SYNC_TRIGGER_SECRET
-  const supabaseAnon = process.env.VITE_SUPABASE_KEY
+  const supabaseAnon = process.env.SUPABASE_ANON_KEY
   const authHeader = req.headers['x-ascent-token'] as string | undefined
   const isAuthed = authHeader && (
     (syncSecret && authHeader === syncSecret) ||
