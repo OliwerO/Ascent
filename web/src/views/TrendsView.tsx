@@ -1,4 +1,5 @@
-import { useMemo, useState, useCallback } from 'react'
+import { useMemo, useState, useCallback, Component } from 'react'
+import type { ReactNode, ErrorInfo } from 'react'
 import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
 import { useHRV, useBodyComposition, useActivities, useDailyMetrics, useSleep, usePerformanceScores } from '../hooks/useSupabase'
@@ -11,6 +12,22 @@ import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, ResponsiveContainer, Tooltip, Legend,
 } from 'recharts'
+
+class SectionErrorBoundary extends Component<{ name: string; children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null }
+  static getDerivedStateFromError(error: Error) { return { error } }
+  componentDidCatch(error: Error, info: ErrorInfo) { console.error(`${this.props.name} crash:`, error, info) }
+  render() {
+    if (this.state.error) {
+      return (
+        <Card title={this.props.name}>
+          <div className="text-accent-red text-[13px]">Failed to render: {this.state.error.message}</div>
+        </Card>
+      )
+    }
+    return this.props.children
+  }
+}
 
 function CollapsibleSection({ title, defaultOpen = false, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
   const [open, setOpen] = useState(defaultOpen)
@@ -251,7 +268,7 @@ export default function TrendsView() {
       .map((a) => ({
         date: format(new Date(a.date), 'MMM d'),
         vam: Math.round(((a.elevation_gain ?? 0) / (a.duration_seconds ?? 1)) * 3600),
-        name: a.activity_name ?? a.activity_type,
+        name: String(a.activity_name ?? a.activity_type),
       }))
     return mountainActs
   }, [activities.data])
@@ -655,7 +672,7 @@ export default function TrendsView() {
 
       {/* Performance */}
       <CollapsibleSection title="Performance">
-
+      <SectionErrorBoundary name="Mountain Fitness">
       {/* Hill Score + Endurance Score */}
       <Card title="Mountain Fitness (90d)" subtitle="Hill Score measures climbing ability. Endurance Score captures aerobic base. Both update from all activities.">
         {latestScores.hill != null && (
@@ -726,6 +743,8 @@ export default function TrendsView() {
           <p>The trend matters more than single values. If you see VAM increasing while HR stays the same (or drops), your mountain fitness is improving.</p>
         </InfoPanel>
       </Card>
+
+      </SectionErrorBoundary>
 
       {/* e1RM Progression (kept) */}
       <Card title="e1RM Progression" subtitle="Normal variation: ±3-5% per session. Plateau = flat or declining for ≥4 weeks.">

@@ -42,6 +42,7 @@ Everything below is built, deployed, and running:
 ### High Priority
 
 - [ ] **Actual vs planned workout comparison** — once a Garmin strength session exists for a completed day, show actual exercises/weights/reps alongside planned targets in both Week and Plan expanded views. Pattern exists in TodaySession component — generalize to any completed workout. Fuzzy exercise name matching needed (already implemented in `exerciseNameMatch()`).
+- [ ] **Garmin push on reschedule** — when a workout is rescheduled in the app, push the updated workout to Garmin (reschedule if one exists on old date, create if none on new date). Requires a server-side API endpoint that calls `workout_push.py`. Currently reschedule only updates Supabase and relies on the daily CCD coaching run.
 - [ ] **Mountain day data deep dive** — extend MountainActivityCard to show splits/laps, weather conditions, and HR-over-elevation profile from `activity_details.raw_json`. Current card shows aggregates only.
 
 ### Medium Priority

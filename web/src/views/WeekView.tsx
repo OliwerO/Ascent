@@ -58,6 +58,7 @@ export default function WeekView() {
   const [activitiesExpanded, setActivitiesExpanded] = useState(false)
   const [expandedDay, setExpandedDay] = useState<string | null>(null)
   const [rescheduleSource, setRescheduleSource] = useState<DayCell | null>(null)
+  const [rescheduleTarget, setRescheduleTarget] = useState<string | null>(null)
   const [rescheduleLoading, setRescheduleLoading] = useState(false)
 
   const loading = activitiesHook.loading || sleepHook.loading || bodyCompHook.loading
@@ -170,22 +171,22 @@ export default function WeekView() {
   const canReschedule = (cell: DayCell) =>
     cell.planned && (cell.status === 'planned' || cell.status === 'today' || cell.status === 'adjusted')
 
-  const handleReschedule = useCallback(async (targetDateStr: string) => {
-    if (!rescheduleSource?.planned) return
+  const handleRescheduleConfirm = useCallback(async () => {
+    if (!rescheduleSource?.planned || !rescheduleTarget) return
     setRescheduleLoading(true)
     try {
-      // Only swap if target has an active (non-skipped, non-completed) planned workout
       const targetPlanned = weekPlanned.find(
-        (p) => p.scheduled_date === targetDateStr && p.status !== 'skipped' && p.status !== 'completed'
+        (p) => p.scheduled_date === rescheduleTarget && p.status !== 'skipped' && p.status !== 'completed'
       ) ?? undefined
-      await rescheduleWorkout(rescheduleSource.planned.id, targetDateStr, targetPlanned)
+      await rescheduleWorkout(rescheduleSource.planned.id, rescheduleTarget, targetPlanned)
     } catch (err) {
       console.error('Reschedule failed:', err)
     } finally {
       setRescheduleLoading(false)
       setRescheduleSource(null)
+      setRescheduleTarget(null)
     }
-  }, [rescheduleSource, weekPlanned])
+  }, [rescheduleSource, rescheduleTarget, weekPlanned])
 
   // ─── Compliance summary ───
   const compliance = useMemo(() => {
@@ -678,7 +679,7 @@ export default function WeekView() {
       {rescheduleSource && (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/60"
-          onClick={() => !rescheduleLoading && setRescheduleSource(null)}
+          onClick={() => { if (!rescheduleLoading) { setRescheduleSource(null); setRescheduleTarget(null) } }}
         >
           <div
             className="w-full max-w-lg bg-bg-card border-t border-border-subtle rounded-t-2xl p-5 pb-8 animate-slide-up"
@@ -689,7 +690,7 @@ export default function WeekView() {
                 Move session
               </h3>
               <button
-                onClick={() => !rescheduleLoading && setRescheduleSource(null)}
+                onClick={() => { if (!rescheduleLoading) { setRescheduleSource(null); setRescheduleTarget(null) } }}
                 className="text-text-muted text-sm px-2 py-1"
               >
                 Cancel
@@ -712,14 +713,17 @@ export default function WeekView() {
                 const hasSwappableWorkout = cell.planned != null
                   && cell.planned.status !== 'skipped' && cell.planned.status !== 'completed'
                   && cell.status !== 'mountain'
+                const isSelected = rescheduleTarget === cell.dateStr
                 return (
                   <button
                     key={cell.dateStr}
                     disabled={disabled}
-                    onClick={() => handleReschedule(cell.dateStr)}
+                    onClick={() => !disabled && setRescheduleTarget(isSelected ? null : cell.dateStr)}
                     className={`flex flex-col items-center py-2.5 rounded-xl border transition-colors ${
                       isSource
                         ? 'border-accent-blue/40 bg-accent-blue/10 opacity-50'
+                        : isSelected
+                          ? 'border-accent-green bg-accent-green/15'
                         : disabled
                           ? 'border-border-subtle bg-bg-surface opacity-30 cursor-not-allowed'
                           : hasSwappableWorkout
@@ -733,12 +737,15 @@ export default function WeekView() {
                       {cell.label}
                     </div>
                     <div className={`text-base font-bold font-data ${
-                      isSource ? 'text-accent-blue' : 'text-text-primary'
+                      isSource ? 'text-accent-blue' : isSelected ? 'text-accent-green' : 'text-text-primary'
                     }`}>
                       {format(cell.date, 'd')}
                     </div>
-                    {!isSource && hasSwappableWorkout && !disabled && (
+                    {!isSource && hasSwappableWorkout && !disabled && !isSelected && (
                       <div className="text-[9px] text-accent-yellow font-semibold mt-0.5">swap</div>
+                    )}
+                    {isSelected && (
+                      <div className="text-[9px] text-accent-green font-semibold mt-0.5">to</div>
                     )}
                     {isSource && (
                       <div className="text-[9px] text-accent-blue font-semibold mt-0.5">from</div>
@@ -747,9 +754,18 @@ export default function WeekView() {
                 )
               })}
             </div>
-            {rescheduleLoading && (
-              <div className="text-[12px] text-text-muted text-center mt-3">Moving...</div>
+            {rescheduleTarget && (
+              <button
+                onClick={handleRescheduleConfirm}
+                disabled={rescheduleLoading}
+                className="w-full mt-4 py-2.5 rounded-xl bg-accent-green text-bg-primary font-semibold text-[14px] disabled:opacity-50 transition-colors active:bg-accent-green/80"
+              >
+                {rescheduleLoading ? 'Moving...' : `Move to ${format(parseISO(rescheduleTarget), 'EEEE')}`}
+              </button>
             )}
+            <div className="text-[11px] text-text-dim text-center mt-2">
+              Garmin push will happen at next daily coaching run
+            </div>
           </div>
         </div>
       )}
