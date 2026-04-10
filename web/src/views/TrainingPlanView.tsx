@@ -257,9 +257,10 @@ function WeekGrid({ activities, planned }: { activities: Activity[]; planned: Pl
           const allWeekDates = ws.days.map((d) => fmtDate(d.date))
           const mountainDates = new Set(allWeekDates.filter((d) => mountainByDate.has(d)))
           const mountainCompleted = mountainDates.size
-          // Exclude skipped sessions that were replaced by mountain days
+          // Exclude gym sessions replaced by mountain days
           const activeGymPlanned = weekPlanned.filter(
-            (pw) => !(pw.status === 'skipped' && mountainDates.has(pw.scheduled_date))
+            (pw) => !(mountainDates.has(pw.scheduled_date) &&
+              (pw.status === 'skipped' || pw.status === 'adjusted'))
           )
           const gymTarget = activeGymPlanned.length || 3
           const gymCompleted = activeGymPlanned.filter((pw) => pw.status === 'completed').length
@@ -369,8 +370,9 @@ function WeekExpanded({
   const mountainDates = new Set(allWeekDates.filter((d) => mountainByDate.has(d)))
 
   weekPlanned.forEach((pw) => {
-    // Don't show skipped gym sessions when a mountain day replaced them
-    if (pw.status === 'skipped' && mountainDates.has(pw.scheduled_date)) return
+    // Don't show gym sessions that were replaced by mountain days
+    if (mountainDates.has(pw.scheduled_date) &&
+        (pw.status === 'skipped' || pw.status === 'adjusted')) return
     items.push({ kind: 'gym', date: pw.scheduled_date, pw })
   })
 

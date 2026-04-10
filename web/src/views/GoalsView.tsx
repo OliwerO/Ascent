@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
 import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
-import { useBodyComposition, useDailyMetrics, useActivities, useGoals } from '../hooks/useSupabase'
-import type { BodyComposition, DailyMetrics, Activity, Goal } from '../lib/types'
+import { useBodyComposition, useDailyMetrics, useActivities, useGoals, usePerformanceScores } from '../hooks/useSupabase'
+import type { BodyComposition, Activity, Goal, PerformanceScore } from '../lib/types'
 import { getProgramWeek } from '../lib/program'
 import { startOfWeek, endOfWeek, isWithinInterval, differenceInDays } from 'date-fns'
 import { Target, Mountain, Dumbbell, Calendar, TrendingDown, TrendingUp, Minus } from 'lucide-react'
@@ -24,9 +24,10 @@ export default function GoalsView() {
   const metrics = useDailyMetrics(14)
   const activitiesHook = useActivities(14)
   const goalsHook = useGoals()
+  const perfScores = usePerformanceScores(90)
 
-  const loading = bodyComp.loading || metrics.loading || activitiesHook.loading || goalsHook.loading
-  const error = bodyComp.error || metrics.error || activitiesHook.error || goalsHook.error
+  const loading = bodyComp.loading || metrics.loading || activitiesHook.loading || goalsHook.loading || perfScores.loading
+  const error = bodyComp.error || metrics.error || activitiesHook.error || goalsHook.error || perfScores.error
 
   const now = new Date()
   const weekStart = startOfWeek(now, { weekStartsOn: 1 })
@@ -51,8 +52,10 @@ export default function GoalsView() {
   // Muscle mass comes from egym body scans (xiaomi only has weight)
   const latestMuscle = bodyComp.data?.find((d: BodyComposition) => d.muscle_mass_grams != null)
   const latestBodyFat = bodyComp.data?.find((d: BodyComposition) => d.body_fat_pct != null)
-  const latestVO2 = metrics.data?.find((d: DailyMetrics) => d.vo2max != null)
   const allGoals = (goalsHook.data ?? []) as Goal[]
+  const scores = perfScores.data ?? []
+  const latestHill = scores.filter((d: PerformanceScore) => typeof d.hill_score === 'number').slice(-1)[0]
+  const latestEndurance = scores.filter((d: PerformanceScore) => typeof d.endurance_score === 'number').slice(-1)[0]
   const bodyCompGoals = allGoals.filter((g) => g.category === 'body_composition')
   const strengthGoals = allGoals.filter((g) => g.category === 'strength')
   const enduranceGoals = allGoals.filter((g) => g.category === 'endurance')
@@ -72,9 +75,12 @@ export default function GoalsView() {
   const ENDURANCE_LABELS: Record<string, { label: string; unit: string }> = {
     vo2max: { label: 'VO2max', unit: '' },
     weekly_elevation_m: { label: 'Weekly Elevation', unit: 'm' },
+    hill_score: { label: 'Hill Score', unit: '' },
+    endurance_score: { label: 'Endurance Score', unit: '' },
   }
   const enduranceCurrent = (metric: string): number | null => {
-    if (metric === 'vo2max') return latestVO2?.vo2max != null ? Number(latestVO2.vo2max) : null
+    if (metric === 'hill_score') return latestHill?.hill_score ?? null
+    if (metric === 'endurance_score') return latestEndurance?.endurance_score ?? null
     if (metric === 'weekly_elevation_m') return weeklyElevation
     return null
   }
@@ -207,16 +213,29 @@ export default function GoalsView() {
                 }) : (<>
                 <div>
                   <div className="flex justify-between text-[14px]">
-                    <span className="text-text-secondary">VO2max</span>
+                    <span className="text-text-secondary">Hill Score</span>
                     <span className="text-text-primary font-bold">
-                      {latestVO2?.vo2max
-                        ? Number(latestVO2.vo2max).toFixed(1)
-                        : '--'}
+                      {latestHill?.hill_score ?? '--'}
+                      <span className="text-text-muted text-[12px] font-normal"> / 100</span>
                     </span>
                   </div>
-                  {latestVO2?.vo2max && (
-                    <ProgressBar value={Number(latestVO2.vo2max)} max={55} color="#38bdf8" />
+                  {latestHill?.hill_score != null && (
+                    <ProgressBar value={latestHill.hill_score} max={100} color="#38bdf8" />
                   )}
+                  <div className="text-[11px] text-text-dim mt-0.5">Climbing fitness — target: 75+ by end of Block 2</div>
+                </div>
+                <div>
+                  <div className="flex justify-between text-[14px]">
+                    <span className="text-text-secondary">Endurance Score</span>
+                    <span className="text-text-primary font-bold">
+                      {latestEndurance?.endurance_score ?? '--'}
+                      <span className="text-text-muted text-[12px] font-normal"> / 100</span>
+                    </span>
+                  </div>
+                  {latestEndurance?.endurance_score != null && (
+                    <ProgressBar value={latestEndurance.endurance_score} max={100} color="#34d399" />
+                  )}
+                  <div className="text-[11px] text-text-dim mt-0.5">Aerobic base — target: 70+ by end of Block 2</div>
                 </div>
                 <div>
                   <div className="flex justify-between text-[14px]">
@@ -225,8 +244,13 @@ export default function GoalsView() {
                       {weeklyElevation > 0
                         ? `${weeklyElevation.toLocaleString()}m`
                         : '0m'}
+                      <span className="text-text-muted text-[12px] font-normal"> / 2,000m</span>
                     </span>
                   </div>
+                  {weeklyElevation > 0 && (
+                    <ProgressBar value={weeklyElevation} max={2000} color="#38bdf8" />
+                  )}
+                  <div className="text-[11px] text-text-dim mt-0.5">Weekly volume target for mountain fitness</div>
                 </div>
                 </>)}
               </div>

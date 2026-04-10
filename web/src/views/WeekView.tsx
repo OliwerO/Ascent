@@ -174,7 +174,10 @@ export default function WeekView() {
     if (!rescheduleSource?.planned) return
     setRescheduleLoading(true)
     try {
-      const targetPlanned = weekPlanned.find((p) => p.scheduled_date === targetDateStr) ?? undefined
+      // Only swap if target has an active (non-skipped, non-completed) planned workout
+      const targetPlanned = weekPlanned.find(
+        (p) => p.scheduled_date === targetDateStr && p.status !== 'skipped' && p.status !== 'completed'
+      ) ?? undefined
       await rescheduleWorkout(rescheduleSource.planned.id, targetDateStr, targetPlanned)
     } catch (err) {
       console.error('Reschedule failed:', err)
@@ -460,7 +463,7 @@ export default function WeekView() {
                   </div>
                 </button>
 
-                {isExpanded && cell.planned?.workout_definition && (
+                {isExpanded && cell.planned?.workout_definition && !hasMountainActivity && (
                   <div className="mt-3 pt-3 border-t border-border-subtle space-y-1.5">
                     {cell.planned.workout_definition.warmup?.length > 0 && (
                       <div className="text-[11px] text-text-muted mb-2">
@@ -498,7 +501,7 @@ export default function WeekView() {
                   </div>
                 )}
 
-                {isExpanded && hasMountainActivity && !cell.planned?.workout_definition && (
+                {isExpanded && hasMountainActivity && (
                   <div className="mt-3 pt-3 border-t border-border-subtle">
                     {cell.activities
                       .filter((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type) || MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type))
@@ -706,7 +709,9 @@ export default function WeekView() {
                 const isPast = isBefore(cell.date, today) && !cell.isToday
                 const isCompleted = cell.status === 'completed'
                 const disabled = isSource || isPast || isCompleted || rescheduleLoading
-                const hasWorkout = cell.planned != null
+                const hasSwappableWorkout = cell.planned != null
+                  && cell.planned.status !== 'skipped' && cell.planned.status !== 'completed'
+                  && cell.status !== 'mountain'
                 return (
                   <button
                     key={cell.dateStr}
@@ -717,7 +722,7 @@ export default function WeekView() {
                         ? 'border-accent-blue/40 bg-accent-blue/10 opacity-50'
                         : disabled
                           ? 'border-border-subtle bg-bg-surface opacity-30 cursor-not-allowed'
-                          : hasWorkout
+                          : hasSwappableWorkout
                             ? 'border-accent-yellow/40 bg-accent-yellow/5 active:bg-accent-yellow/15'
                             : 'border-border-subtle bg-bg-surface active:bg-accent-green/10 active:border-accent-green/40'
                     }`}
@@ -732,7 +737,7 @@ export default function WeekView() {
                     }`}>
                       {format(cell.date, 'd')}
                     </div>
-                    {!isSource && hasWorkout && !disabled && (
+                    {!isSource && hasSwappableWorkout && !disabled && (
                       <div className="text-[9px] text-accent-yellow font-semibold mt-0.5">swap</div>
                     )}
                     {isSource && (
