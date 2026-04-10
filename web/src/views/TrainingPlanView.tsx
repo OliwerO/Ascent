@@ -302,11 +302,16 @@ function WeekGrid({ activities, planned }: { activities: Activity[]; planned: Pl
           const weekPlanned = plannedByWeek.get(weekNum) ?? []
           const deload = isDeloadWeek(weekNum)
 
-          const gymTarget = weekPlanned.length || 3
-          const gymCompleted = weekPlanned.filter((pw) => pw.status === 'completed').length
           const ws = getWeekSchedule(weekNum)
           const allWeekDates = ws.days.map((d) => fmtDate(d.date))
-          const mountainCompleted = allWeekDates.filter((d) => mountainByDate.has(d)).length
+          const mountainDates = new Set(allWeekDates.filter((d) => mountainByDate.has(d)))
+          const mountainCompleted = mountainDates.size
+          // Exclude skipped sessions that were replaced by mountain days
+          const activeGymPlanned = weekPlanned.filter(
+            (pw) => !(pw.status === 'skipped' && mountainDates.has(pw.scheduled_date))
+          )
+          const gymTarget = activeGymPlanned.length || 3
+          const gymCompleted = activeGymPlanned.filter((pw) => pw.status === 'completed').length
 
           return (
             <div key={weekNum}>
@@ -344,7 +349,7 @@ function WeekGrid({ activities, planned }: { activities: Activity[]; planned: Pl
                 </div>
 
                 <div className="flex gap-1.5 flex-wrap ml-5">
-                  {weekPlanned.map((pw) => {
+                  {activeGymPlanned.map((pw) => {
                     const shortLabel = pw.workout_definition?.session_name
                       ? pw.workout_definition.session_name.replace(/^Strength [A-Z]: /, '')
                       : pw.session_name
@@ -375,122 +380,173 @@ function WeekGrid({ activities, planned }: { activities: Activity[]; planned: Pl
               </button>
 
               {isExpanded && (
-                <div className="ml-2 mr-1 mb-2 mt-1 space-y-3">
-                  {weekPlanned.map((pw) => {
-                    const def = pw.workout_definition as WorkoutDefinition | null
-                    const exercises = def?.exercises ?? []
-                    const warmup = def?.warmup ?? []
-                    const rpeLabel = deload
-                      ? 'Deload 50% vol'
-                      : def?.rpe_range
-                        ? `RPE ${def.rpe_range[0]}-${def.rpe_range[1]}`
-                        : ''
-                    const sessionLabel = def?.session_name ?? pw.session_name
-
-                    return (
-                      <div key={pw.id} className="bg-bg-primary/50 rounded-xl px-4 py-3">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Dumbbell size={15} className="text-gym shrink-0" />
-                          <span className="text-[15px] font-semibold text-text-primary">
-                            {sessionLabel}
-                          </span>
-                          {pw.status === 'completed' && (
-                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent-green/25 text-accent-green font-semibold">
-                              Done
-                            </span>
-                          )}
-                          {pw.status === 'adjusted' && (
-                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent-yellow/25 text-accent-yellow font-semibold">
-                              Adjusted
-                            </span>
-                          )}
-                          {pw.status === 'skipped' && (
-                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-bg-primary/60 text-text-dim font-semibold">
-                              Skipped
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[13px] text-text-muted mb-2">
-                          {pw.scheduled_date} &middot; {rpeLabel}
-                          {def?.estimated_duration_minutes && (
-                            <span> &middot; ~{def.estimated_duration_minutes} min</span>
-                          )}
-                        </div>
-
-                        {pw.status === 'adjusted' && pw.adjustment_reason && (
-                          <div className="text-[13px] text-accent-yellow bg-accent-yellow/10 rounded-lg px-3 py-2 mb-3">
-                            {pw.adjustment_reason}
-                          </div>
-                        )}
-
-                        {warmup.length > 0 && <WarmupSection warmup={warmup} />}
-
-                        <table className="w-full text-[14px]">
-                          <thead>
-                            <tr className="text-text-muted border-b border-border">
-                              <th className="text-left py-2 font-semibold pr-2 text-[12px] uppercase tracking-wider">Exercise</th>
-                              <th className="text-right py-2 font-semibold px-2 whitespace-nowrap text-[12px] uppercase tracking-wider">Sets×Reps</th>
-                              <th className="text-right py-2 font-semibold pl-2 w-20 text-[12px] uppercase tracking-wider">Weight</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {exercises.map((ex) => {
-                              const setsReps = deload
-                                ? `${Math.ceil(ex.sets / 2)}\u00D7${ex.reps}`
-                                : `${ex.sets}\u00D7${ex.reps}`
-                              return (
-                                <tr key={ex.name} className="border-b border-border-subtle last:border-0">
-                                  <td className="py-2 pr-2 text-text-primary">
-                                    {ex.name}
-                                    {ex.note && <span className="text-text-dim ml-1.5 text-[12px]">({ex.note})</span>}
-                                  </td>
-                                  <td className="py-2 px-2 text-right font-mono text-text-secondary whitespace-nowrap">{setsReps}</td>
-                                  <td className="py-2 pl-2 text-right font-mono text-text-primary font-semibold w-20">
-                                    {ex.weight_kg != null && ex.weight_kg > 0 ? `${ex.weight_kg}kg` : '\u2014'}
-                                  </td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )
-                  })}
-
-                  {allWeekDates
-                    .filter((d) => mountainByDate.has(d))
-                    .flatMap((dateStr) =>
-                      (mountainByDate.get(dateStr) ?? []).map((a, ai) => (
-                        <div key={`${dateStr}-${ai}`} className="bg-bg-primary/50 rounded-xl px-4 py-3">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Mountain size={14} className="text-mountain shrink-0" />
-                            <span className="text-[14px] font-semibold text-text-primary">
-                              {a.activity_name ?? formatActivityType(a.activity_type)}
-                            </span>
-                          </div>
-                          <div className="text-[13px] text-text-muted">
-                            {format(new Date(a.date + 'T12:00:00'), 'EEE')}
-                            {a.duration_seconds != null && <span> &middot; {formatDuration(a.duration_seconds)}</span>}
-                            {a.elevation_gain != null && a.elevation_gain > 0 && (
-                              <span> &middot; {Math.round(a.elevation_gain)}m &uarr;</span>
-                            )}
-                            {a.avg_hr != null && <span> &middot; HR {a.avg_hr}</span>}
-                          </div>
-                        </div>
-                      ))
-                    )}
-
-                  {weekPlanned.length === 0 &&
-                    allWeekDates.every((d) => !mountainByDate.has(d)) && (
-                    <div className="text-[13px] text-text-dim py-1">No planned sessions this week</div>
-                  )}
-                </div>
+                <WeekExpanded
+                  weekPlanned={weekPlanned}
+                  mountainByDate={mountainByDate}
+                  allWeekDates={allWeekDates}
+                  deload={deload}
+                />
               )}
             </div>
           )
         })}
       </div>
     </Card>
+  )
+}
+
+// ─── Week Expanded: merged & date-sorted gym + mountain items ───
+function WeekExpanded({
+  weekPlanned,
+  mountainByDate,
+  allWeekDates,
+  deload,
+}: {
+  weekPlanned: PlannedWorkout[]
+  mountainByDate: Map<string, Activity[]>
+  allWeekDates: string[]
+  deload: boolean
+}) {
+  // Build a unified list sorted by date
+  type Item =
+    | { kind: 'gym'; date: string; pw: PlannedWorkout }
+    | { kind: 'mountain'; date: string; activity: Activity; idx: number }
+
+  const items: Item[] = []
+
+  // Dates that have a mountain activity (used to suppress skipped gym sessions)
+  const mountainDates = new Set(allWeekDates.filter((d) => mountainByDate.has(d)))
+
+  weekPlanned.forEach((pw) => {
+    // Don't show skipped gym sessions when a mountain day replaced them
+    if (pw.status === 'skipped' && mountainDates.has(pw.scheduled_date)) return
+    items.push({ kind: 'gym', date: pw.scheduled_date, pw })
+  })
+
+  allWeekDates
+    .filter((d) => mountainByDate.has(d))
+    .forEach((dateStr) => {
+      (mountainByDate.get(dateStr) ?? []).forEach((a, ai) => {
+        items.push({ kind: 'mountain', date: dateStr, activity: a, idx: ai })
+      })
+    })
+
+  items.sort((a, b) => a.date.localeCompare(b.date))
+
+  if (items.length === 0) {
+    return (
+      <div className="ml-2 mr-1 mb-2 mt-1">
+        <div className="text-[13px] text-text-dim py-1">No planned sessions this week</div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="ml-2 mr-1 mb-2 mt-1 space-y-3">
+      {items.map((item) => {
+        if (item.kind === 'mountain') {
+          const a = item.activity
+          return (
+            <div key={`mtn-${item.date}-${item.idx}`} className="bg-bg-primary/50 rounded-xl px-4 py-3">
+              <div className="flex items-center gap-2 mb-1">
+                <Mountain size={14} className="text-mountain shrink-0" />
+                <span className="text-[14px] font-semibold text-text-primary">
+                  {a.activity_name ?? formatActivityType(a.activity_type)}
+                </span>
+              </div>
+              <div className="text-[13px] text-text-muted">
+                {format(new Date(a.date + 'T12:00:00'), 'EEE')}
+                {a.duration_seconds != null && <span> &middot; {formatDuration(a.duration_seconds)}</span>}
+                {a.elevation_gain != null && a.elevation_gain > 0 && (
+                  <span> &middot; {Math.round(a.elevation_gain)}m &uarr;</span>
+                )}
+                {a.avg_hr != null && <span> &middot; HR {a.avg_hr}</span>}
+              </div>
+            </div>
+          )
+        }
+
+        const pw = item.pw
+        const def = pw.workout_definition as WorkoutDefinition | null
+        const exercises = def?.exercises ?? []
+        const warmup = def?.warmup ?? []
+        const rpeLabel = deload
+          ? 'Deload 50% vol'
+          : def?.rpe_range
+            ? `RPE ${def.rpe_range[0]}-${def.rpe_range[1]}`
+            : ''
+        const sessionLabel = def?.session_name ?? pw.session_name
+
+        return (
+          <div key={pw.id} className="bg-bg-primary/50 rounded-xl px-4 py-3">
+            <div className="flex items-center gap-2 mb-2">
+              <Dumbbell size={15} className="text-gym shrink-0" />
+              <span className="text-[15px] font-semibold text-text-primary">
+                {sessionLabel}
+              </span>
+              {pw.status === 'completed' && (
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent-green/25 text-accent-green font-semibold">
+                  Done
+                </span>
+              )}
+              {pw.status === 'adjusted' && (
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent-yellow/25 text-accent-yellow font-semibold">
+                  Adjusted
+                </span>
+              )}
+              {pw.status === 'skipped' && (
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-bg-primary/60 text-text-dim font-semibold">
+                  Skipped
+                </span>
+              )}
+            </div>
+            <div className="text-[13px] text-text-muted mb-2">
+              {pw.scheduled_date} &middot; {rpeLabel}
+              {def?.estimated_duration_minutes && (
+                <span> &middot; ~{def.estimated_duration_minutes} min</span>
+              )}
+            </div>
+
+            {pw.status === 'adjusted' && pw.adjustment_reason && (
+              <div className="text-[13px] text-accent-yellow bg-accent-yellow/10 rounded-lg px-3 py-2 mb-3">
+                {pw.adjustment_reason}
+              </div>
+            )}
+
+            {warmup.length > 0 && <WarmupSection warmup={warmup} />}
+
+            <table className="w-full text-[14px]">
+              <thead>
+                <tr className="text-text-muted border-b border-border">
+                  <th className="text-left py-2 font-semibold pr-2 text-[12px] uppercase tracking-wider">Exercise</th>
+                  <th className="text-right py-2 font-semibold px-2 whitespace-nowrap text-[12px] uppercase tracking-wider">Sets×Reps</th>
+                  <th className="text-right py-2 font-semibold pl-2 w-20 text-[12px] uppercase tracking-wider">Weight</th>
+                </tr>
+              </thead>
+              <tbody>
+                {exercises.map((ex) => {
+                  const setsReps = deload
+                    ? `${Math.ceil(ex.sets / 2)}\u00D7${ex.reps}`
+                    : `${ex.sets}\u00D7${ex.reps}`
+                  return (
+                    <tr key={ex.name} className="border-b border-border-subtle last:border-0">
+                      <td className="py-2 pr-2 text-text-primary">
+                        {ex.name}
+                        {ex.note && <span className="text-text-dim ml-1.5 text-[12px]">({ex.note})</span>}
+                      </td>
+                      <td className="py-2 px-2 text-right font-mono text-text-secondary whitespace-nowrap">{setsReps}</td>
+                      <td className="py-2 pl-2 text-right font-mono text-text-primary font-semibold w-20">
+                        {ex.weight_kg != null && ex.weight_kg > 0 ? `${ex.weight_kg}kg` : '\u2014'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+      })}
+    </div>
   )
 }
 

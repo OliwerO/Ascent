@@ -15,12 +15,14 @@ function useFetch<T>(
   const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const hasFetched = useRef(false)
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
+    // Only show loading spinner on initial fetch, not on realtime refetches
+    if (!hasFetched.current) setLoading(true)
     fetcher()
-      .then((d) => { if (!cancelled) setData(d) })
+      .then((d) => { if (!cancelled) { setData(d); hasFetched.current = true } })
       .catch((e) => { if (!cancelled) setError(e.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
