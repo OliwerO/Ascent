@@ -93,33 +93,6 @@ function AppShell() {
     }
   }, [])
 
-  // Pull-to-refresh on mobile
-  const handlePullRefresh = useCallback((e: React.TouchEvent<HTMLElement>) => {
-    const el = e.currentTarget
-    if (el.scrollTop > 0) return
-
-    let startY = e.touches[0].clientY
-    let triggered = false
-
-    const onMove = (ev: TouchEvent) => {
-      const dy = ev.touches[0].clientY - startY
-      if (dy > 80 && !triggered) {
-        triggered = true
-        handleRefresh()
-        // Brief haptic-like visual feedback
-        el.style.transition = 'transform 0.2s'
-        el.style.transform = 'translateY(4px)'
-        setTimeout(() => { el.style.transform = ''; el.style.transition = '' }, 200)
-      }
-    }
-    const onEnd = () => {
-      el.removeEventListener('touchmove', onMove)
-      el.removeEventListener('touchend', onEnd)
-    }
-    el.addEventListener('touchmove', onMove, { passive: true })
-    el.addEventListener('touchend', onEnd)
-  }, [handleRefresh])
-
   return (
     <div className="min-h-screen bg-bg-primary">
       {/* Header */}
@@ -168,17 +141,16 @@ function AppShell() {
       {/* Content */}
       <main
         className="max-w-2xl mx-auto px-4 py-4 pb-28 space-y-3"
-        onTouchStart={handlePullRefresh}
       >
         <ErrorBoundary>
           <Suspense fallback={<LoadingState />}>
             <Routes>
-              <Route path="/" element={<TodayView key={refreshKey} />} />
-              <Route path="/week" element={<WeekView key={refreshKey} />} />
-              <Route path="/plan" element={<TrainingPlanView key={refreshKey} />} />
-              <Route path="/recovery" element={<RecoveryView key={refreshKey} />} />
-              <Route path="/trends" element={<TrendsView key={refreshKey} />} />
-              <Route path="/goals" element={<GoalsView key={refreshKey} />} />
+              <Route path="/" element={<TodayView />} />
+              <Route path="/week" element={<WeekView />} />
+              <Route path="/plan" element={<TrainingPlanView />} />
+              <Route path="/recovery" element={<RecoveryView />} />
+              <Route path="/trends" element={<TrendsView />} />
+              <Route path="/goals" element={<GoalsView />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>
