@@ -13,6 +13,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
+  // Authenticate request — reject if no valid token
+  const syncSecret = process.env.SYNC_TRIGGER_SECRET
+  const authHeader = req.headers['x-ascent-token'] as string | undefined
+  if (syncSecret && authHeader !== syncSecret) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+
   const supabaseUrl = process.env.SUPABASE_URL
   const supabaseKey = process.env.SUPABASE_SERVICE_KEY
 

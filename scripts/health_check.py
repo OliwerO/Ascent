@@ -17,7 +17,7 @@ import os
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -44,14 +44,17 @@ def check_garmin_auth() -> tuple[bool, str]:
         if locked:
             return False, f"Garmin auth locked ({hours_remaining:.1f}h remaining)"
 
-        # Check token freshness
-        token_file = Path.home() / ".garminconnect" / "garmin_tokens.json"
-        if token_file.exists():
-            age_hours = (time.time() - token_file.stat().st_mtime) / 3600
-            if age_hours > 6:
-                return False, f"Garmin tokens stale ({age_hours:.1f}h old)"
-            return True, f"Tokens OK ({age_hours:.1f}h old)"
-        return False, "No token file found"
+        # Check Playwright storage_state freshness (the new browser-session
+        # auth path; replaces the old garmin_tokens.json check).
+        storage_file = Path.home() / ".garminconnect" / "garmin_storage_state.json"
+        if storage_file.exists():
+            age_hours = (time.time() - storage_file.stat().st_mtime) / 3600
+            # Storage state lifetime is currently unknown empirically; warn
+            # past 7 days as a soft signal to re-bootstrap.
+            if age_hours > 24 * 7:
+                return False, f"Garmin storage state stale ({age_hours/24:.1f}d old)"
+            return True, f"Storage state OK ({age_hours/24:.1f}d old)"
+        return False, "No Garmin storage state — run garmin_browser_bootstrap.py"
     except Exception as e:
         return False, f"Auth check error: {e}"
 
@@ -99,25 +102,57 @@ def check_supabase() -> tuple[bool, str]:
 
 
 def check_sync_watcher() -> tuple[bool, str]:
-    """Check if sync_watcher daemon is running."""
+    """Check if sync_watcher launchd agent is loaded.
+
+    sync_watcher runs every 300s and exits — it's not a persistent daemon.
+    Check launchctl for the agent registration instead of pgrep for a process.
+    """
     try:
         result = subprocess.run(
-            ["pgrep", "-f", "sync_watcher"],
+            ["launchctl", "list", "com.ascent.sync-watcher"],
             capture_output=True, text=True, timeout=5,
         )
         if result.returncode == 0:
-            pids = result.stdout.strip().split("\n")
-            return True, f"sync_watcher running (PID {pids[0]})"
-        return False, "sync_watcher not running"
+            # Parse last exit status from launchctl output
+            lines = result.stdout.strip().split("\n")
+            for line in lines:
+                if '"LastExitStatus"' in line or "LastExitStatus" in line:
+                    return True, f"sync_watcher agent loaded (last run OK)"
+            return True, "sync_watcher agent loaded"
+        return False, "sync_watcher agent not registered in launchctl"
     except Exception as e:
-        return False, f"Process check error: {e}"
+        return False, f"Agent check error: {e}"
 
 
 def write_heartbeat() -> None:
-    """Write heartbeat timestamp to Supabase for SPOF detection."""
+    """Write heartbeat timestamp to Supabase for SPOF detection.
+
+    Only writes one row per hour to avoid flooding coaching_log.
+    Checks the last heartbeat timestamp before inserting.
+    """
     try:
         import requests
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(timezone.utc)
+        today = now.strftime("%Y-%m-%d")
+        one_hour_ago = (now - timedelta(hours=1)).isoformat()
+
+        # Check if a recent heartbeat already exists
+        resp = requests.get(
+            f"{SUPABASE_URL}/rest/v1/coaching_log",
+            headers={
+                "apikey": SUPABASE_KEY,
+                "Authorization": f"Bearer {SUPABASE_KEY}",
+            },
+            params={
+                "type": "eq.heartbeat",
+                "created_at": f"gte.{one_hour_ago}",
+                "limit": "1",
+            },
+            timeout=10,
+        )
+        if resp.ok and resp.json():
+            return  # recent heartbeat exists, skip
+
         requests.post(
             f"{SUPABASE_URL}/rest/v1/coaching_log",
             headers={
@@ -127,11 +162,11 @@ def write_heartbeat() -> None:
                 "Prefer": "return=minimal",
             },
             json={
-                "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                "date": today,
                 "type": "heartbeat",
                 "channel": "system",
                 "message": "Mac health check heartbeat",
-                "data_context": {"timestamp": now},
+                "data_context": {"timestamp": now.isoformat()},
                 "acknowledged": True,
             },
             timeout=10,

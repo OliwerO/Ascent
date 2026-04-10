@@ -3,18 +3,23 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.ascent.garmin-keepalive</string>
+    <string>com.ascent.rpe-reminder</string>
     <key>ProgramArguments</key>
     <array>
         <string>/Users/jarvisforoli/projects/ascent/venv/bin/python</string>
-        <string>/Users/jarvisforoli/projects/ascent/scripts/garmin_session_keepalive.py</string>
+        <string>/Users/jarvisforoli/projects/ascent/scripts/rpe_reminder.py</string>
     </array>
-    <key>StartInterval</key>
-    <integer>1800</integer>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>21</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
     <key>StandardOutPath</key>
-    <string>/Users/jarvisforoli/projects/ascent/logs/keepalive.log</string>
+    <string>/Users/jarvisforoli/projects/ascent/logs/rpe-reminder.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/jarvisforoli/projects/ascent/logs/keepalive-error.log</string>
+    <string>/Users/jarvisforoli/projects/ascent/logs/rpe-reminder.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>

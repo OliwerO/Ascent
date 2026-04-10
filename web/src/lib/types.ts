@@ -219,6 +219,8 @@ export interface WorkoutDefinition {
   rpe_range: [number, number]
   warmup: WarmupExercise[]
   exercises: PlannedExercise[]
+  venue?: 'gym' | 'home'
+  original_gym_definition?: WorkoutDefinition
 }
 
 export interface WarmupExercise {

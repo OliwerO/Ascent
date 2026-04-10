@@ -294,6 +294,31 @@ def calculate_next_weight(
             note=f"rated 'heavy' {heavy_streak} sessions in a row — holding until it feels easier",
         )
 
+    # Session-level sRPE check — hold if the whole session felt brutal,
+    # even when per-set RPE and per-exercise feel are fine
+    srpe_mod = _get_session_rpe_modifier(sb, exercise_name)
+    if srpe_mod is not None and srpe_mod >= 1.0 and all(r >= target_reps for r in last_reps_list):
+        # sRPE >= 9: hold weight regardless — session was a grinder
+        return ProgressionResult(
+            weight_kg=last_weight,
+            reps=target_reps,
+            sets=target_sets,
+            applied="hold",
+            note=f"session RPE >= 9 — holding at {last_weight}kg until sessions feel easier",
+        )
+
+    if srpe_mod is not None and srpe_mod >= 0.5 and all(r >= target_reps for r in last_reps_list):
+        # sRPE 8 with recent weight increase: be conservative
+        sessions_at_wt = _count_sessions_at_weight(sessions, last_weight)
+        if sessions_at_wt <= 2:
+            return ProgressionResult(
+                weight_kg=last_weight,
+                reps=target_reps,
+                sets=target_sets,
+                applied="hold",
+                note=f"session RPE 8 with recent weight increase — consolidating at {last_weight}kg",
+            )
+
     # Double progression check
     all_hit_target = all(r >= target_reps for r in last_reps_list)
 
@@ -425,6 +450,65 @@ def _count_heavy_streak(sb, exercise_name: str) -> int:
         return streak
     except Exception:
         return 0
+
+
+def _get_session_rpe_modifier(sb, exercise_name: str) -> float | None:
+    """Check the most recent session sRPE for a session containing this exercise.
+
+    Returns a modifier indicating how conservative to be:
+      None  — no session RPE data
+      0     — sRPE <= 7, no effect
+      0.5   — sRPE 8, mild conservatism (hold on recent weight increases)
+      1.0   — sRPE >= 9, strong conservatism (always hold)
+    """
+    try:
+        db_name = resolve_exercise_name(exercise_name)
+
+        # Find the most recent session containing this exercise
+        ex = sb.table("exercises").select("id").eq("name", db_name).limit(1).execute()
+        if not ex.data:
+            return None
+        ex_id = ex.data[0]["id"]
+
+        # Get the most recent session_id for this exercise
+        recent_set = sb.table("training_sets").select(
+            "session_id"
+        ).eq("exercise_id", ex_id).order("id", desc=True).limit(1).execute()
+
+        if not recent_set.data:
+            return None
+
+        session_id = recent_set.data[0]["session_id"]
+
+        # Get the session's sRPE
+        session = sb.table("training_sessions").select(
+            "srpe"
+        ).eq("id", session_id).limit(1).execute()
+
+        if not session.data or session.data[0].get("srpe") is None:
+            return None
+
+        srpe = session.data[0]["srpe"]
+        if srpe >= 9:
+            return 1.0
+        elif srpe == 8:
+            return 0.5
+        else:
+            return 0
+    except Exception:
+        return None
+
+
+def _count_sessions_at_weight(sessions: list[dict], weight: float) -> int:
+    """Count how many of the most recent sessions used this weight."""
+    count = 0
+    for session in sessions:
+        max_w = max((s["weight_kg"] for s in session["sets"] if s.get("weight_kg")), default=0)
+        if abs(max_w - weight) < 0.1:
+            count += 1
+        else:
+            break
+    return count
 
 
 def _count_stall_weeks(sessions: list[dict], current_weight: float) -> int:

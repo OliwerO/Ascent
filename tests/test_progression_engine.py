@@ -12,6 +12,7 @@ from progression_engine import (
     calculate_next_weight,
     _count_stall_weeks,
     _group_by_session,
+    _get_session_rpe_modifier,
     KB_WEIGHTS,
 )
 
@@ -175,3 +176,111 @@ class TestStallDetection:
         assert len(groups) == 2
         assert len(groups[0]["sets"]) == 2
         assert len(groups[1]["sets"]) == 1
+
+
+# ─── Session sRPE integration ────────────────────────────────────
+
+class TestSessionRPE:
+    def test_srpe_9_holds_despite_hitting_reps(self, mock_sb):
+        """Session sRPE >= 9 should hold weight even when all target reps are hit."""
+        mock_sb.set_table_data("exercises", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            {"weight_kg": 70.0, "reps": 8, "rpe": 7, "set_number": 1, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 7, "set_number": 2, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 7, "set_number": 3, "session_id": 1, "exercise_id": 1},
+        ])
+        mock_sb.set_table_data("training_sessions", [{"id": 1, "date": "2026-04-01", "srpe": 9}])
+        mock_sb.set_table_data("exercise_feedback", [])
+
+        result = calculate_next_weight(mock_sb, "Barbell Back Squat",
+                                       target_reps=8, target_sets=3,
+                                       current_week=2, start_kg=70)
+        assert result.applied == "hold"
+        assert "session RPE" in result.note
+
+    def test_srpe_7_does_not_affect_progression(self, mock_sb):
+        """Session sRPE 7 should not block a weight increase."""
+        mock_sb.set_table_data("exercises", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            {"weight_kg": 70.0, "reps": 8, "rpe": 7, "set_number": 1, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 7, "set_number": 2, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 7, "set_number": 3, "session_id": 1, "exercise_id": 1},
+        ])
+        mock_sb.set_table_data("training_sessions", [{"id": 1, "date": "2026-04-01", "srpe": 7}])
+        mock_sb.set_table_data("exercise_feedback", [])
+
+        result = calculate_next_weight(mock_sb, "Barbell Back Squat",
+                                       target_reps=8, target_sets=3,
+                                       current_week=2, start_kg=70)
+        assert result.applied == "weight_increase"
+        assert result.weight_kg == 75.0
+
+    def test_srpe_8_with_recent_weight_increase_holds(self, mock_sb):
+        """Session sRPE 8 with weight only used 1-2 sessions should hold."""
+        mock_sb.set_table_data("exercises", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            # Only 1 session at 70kg (recent increase)
+            {"weight_kg": 70.0, "reps": 8, "rpe": 7, "set_number": 1, "session_id": 2, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 7, "set_number": 2, "session_id": 2, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 7, "set_number": 3, "session_id": 2, "exercise_id": 1},
+            # Previous session at 65kg
+            {"weight_kg": 65.0, "reps": 8, "rpe": 7, "set_number": 1, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 65.0, "reps": 8, "rpe": 7, "set_number": 2, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 65.0, "reps": 8, "rpe": 7, "set_number": 3, "session_id": 1, "exercise_id": 1},
+        ])
+        mock_sb.set_table_data("training_sessions", [
+            {"id": 2, "date": "2026-04-03", "srpe": 8},
+            {"id": 1, "date": "2026-04-01", "srpe": 7},
+        ])
+        mock_sb.set_table_data("exercise_feedback", [])
+
+        result = calculate_next_weight(mock_sb, "Barbell Back Squat",
+                                       target_reps=8, target_sets=3,
+                                       current_week=2, start_kg=65)
+        assert result.applied == "hold"
+        assert "session RPE 8" in result.note
+
+    def test_srpe_8_with_established_weight_defers_to_stall(self, mock_sb):
+        """Session sRPE 8 with weight used 3+ sessions: sRPE hold is skipped,
+        normal stall protocol takes over (deload_reset at 3+ sessions same weight)."""
+        mock_sb.set_table_data("exercises", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            # 3 sessions at 70kg (established, triggers stall)
+            {"weight_kg": 70.0, "reps": 8, "rpe": 7, "set_number": 1, "session_id": 3, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 7, "set_number": 2, "session_id": 3, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 7, "set_number": 3, "session_id": 3, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 7, "set_number": 1, "session_id": 2, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 7, "set_number": 2, "session_id": 2, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 7, "set_number": 3, "session_id": 2, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 7, "set_number": 1, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 7, "set_number": 2, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 7, "set_number": 3, "session_id": 1, "exercise_id": 1},
+        ])
+        mock_sb.set_table_data("training_sessions", [
+            {"id": 3, "date": "2026-04-05", "srpe": 8},
+            {"id": 2, "date": "2026-04-03", "srpe": 7},
+            {"id": 1, "date": "2026-04-01", "srpe": 7},
+        ])
+        mock_sb.set_table_data("exercise_feedback", [])
+
+        result = calculate_next_weight(mock_sb, "Barbell Back Squat",
+                                       target_reps=8, target_sets=3,
+                                       current_week=2, start_kg=65)
+        # sRPE 8 hold is NOT applied (sessions_at_wt > 2)
+        # Instead, stall protocol triggers (3 sessions at same weight)
+        assert result.applied == "deload_reset"
+        assert "session RPE 8" not in result.note
+
+    def test_get_session_rpe_modifier_no_data(self, mock_sb):
+        """No exercise data returns None."""
+        mock_sb.set_table_data("exercises", [])
+        assert _get_session_rpe_modifier(mock_sb, "Nonexistent Exercise") is None
+
+    def test_get_session_rpe_modifier_no_srpe(self, mock_sb):
+        """Session without sRPE returns None."""
+        mock_sb.set_table_data("exercises", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            {"session_id": 1, "exercise_id": 1},
+        ])
+        mock_sb.set_table_data("training_sessions", [{"id": 1, "srpe": None}])
+        assert _get_session_rpe_modifier(mock_sb, "Barbell Back Squat") is None

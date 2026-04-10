@@ -148,7 +148,9 @@ workout_generator.py --mark-completed:
 | Script | Schedule | Purpose |
 |--------|----------|---------|
 | `garmin_sync.py` | Daily 09:00 | Pull all Garmin data → Supabase |
-| `garmin_session_keepalive.py` | Every 30 min | Keep Garmin auth cookies alive |
+| `garmin_browser_bootstrap.py` | One-time / on session expiry | Headful Firefox login → save Playwright `storage_state.json` |
+| `garmin_browser_session.py` | Library | Headless Playwright transport (in-page fetch via gc-api host with CSRF) |
+| `garmin_auth.py` | Library | Wraps `Garmin()` and monkey-patches `_run_request` to route through `BrowserSession` |
 | `scale_sync.py` | Daily 10:00 | Pull Xiaomi weight → body_composition |
 | `morning_briefing.py` | Daily 10:05 | Recovery check → Slack briefing |
 | `workout_generator.py` | Sunday + on demand | Populate/update planned_workouts |
@@ -156,7 +158,8 @@ workout_generator.py --mark-completed:
 | `progression_engine.py` | Called by generator/push | Calculate next weights |
 | `egym_sync.py` | On demand | Pull eGym body scans |
 | `mobility_workout.py` | One-time | Upload Protocol A yoga workout |
-| `garmin_auth.py` | Library | Shared Garmin authentication |
+
+> **Note (2026-04-07):** Garmin auth was rebuilt around headless Playwright + in-page fetch after every Python HTTP-client path failed. The previous keepalive/refresh scripts (`garmin_session_keepalive.py`, `garmin_session_refresh.sh`, `garmin_token_refresh.py`, `garmin_one_shot_login.py`, `garmin_browser_login.py`, `garmin_session_keeper.py`) are deleted. See the `project_garmin_browser_auth.md` memory for the working recipe.
 
 ## App Views & Data Sources
 

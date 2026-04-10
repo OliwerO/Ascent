@@ -11,7 +11,7 @@
 |------|-------|--------|
 | 09:00 | Garmin sync | `garmin_sync.py` via launchd — pulls all data to Supabase |
 | 09:15 | Morning briefing | Jarvis posts to `#ascent-daily` (Slack) |
-| Every 4h | Session refresh | `garmin_session_refresh.sh` — keeps Safari auth alive |
+| On session expiry | Re-auth | Manual `garmin_browser_bootstrap.py` — saves Playwright `storage_state.json` (cadence empirical, expected days–weeks) |
 | Sunday 20:00 | Weekly analysis | Jarvis posts to `#ascent-training` (Slack) |
 
 -----

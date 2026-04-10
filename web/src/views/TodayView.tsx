@@ -1,579 +1,22 @@
-import { LoadingState } from '../components/LoadingState'
+import { supabase } from '../lib/supabase'
+import { buildHomeWorkout, restoreGymWorkout, isHomeWorkout } from '../lib/homeWorkout'
+import { LoadingState, EmptyState } from '../components/LoadingState'
+import { WellnessInput } from '../components/WellnessInput'
+import { RPEPrompt } from '../components/RPEPrompt'
+import { ExerciseFeedbackPrompt } from '../components/ExerciseFeedbackPrompt'
+import { WeeklyReflection } from '../components/WeeklyReflection'
 import { useDailySummary, useHRV, useDailyMetrics, useActivities, useSubjectiveWellness, usePlannedWorkouts, useCoachingLog } from '../hooks/useSupabase'
-import type { Activity, SubjectiveWellness, WarmupExercise, PlannedExercise, ExerciseFeedback } from '../lib/types'
+import type { WarmupExercise, PlannedExercise } from '../lib/types'
 import {
   getProgramWeek, isDeloadWeek, getSessionForDate, SESSION_NAMES,
 } from '../lib/program'
-import { Clock, Flame, ArrowUpRight, Heart, ChevronDown, TrendingUp, Activity as ActivityIcon, Info } from 'lucide-react'
-import { useState, useMemo, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
-import { format } from 'date-fns'
-
+import { metricColor, hrvStatusInfo } from '../lib/colors'
+import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES } from '../lib/constants'
 import { computeCoachingState } from '../lib/coachingDecision'
 import { formatDuration, formatActivityType } from '../lib/format'
-import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES } from '../lib/activityTypes'
-
-// ─── Helpers ──────────────────────────────────────────────────────
-
-function hrvStatusInfo(status: string | null | undefined): { color: string; label: string } {
-  if (!status) return { color: 'text-accent-yellow', label: 'Unknown' }
-  const s = status.toUpperCase()
-  if (s === 'BALANCED') return { color: 'text-accent-green', label: 'Balanced' }
-  if (s === 'UNBALANCED') return { color: 'text-accent-yellow', label: 'Unbalanced' }
-  return { color: 'text-accent-red', label: 'Low' }
-}
-
-function metricColor(value: number | null, green: number, yellow: number): string {
-  if (value == null) return 'text-text-muted'
-  if (value >= green) return 'text-accent-green'
-  if (value >= yellow) return 'text-accent-yellow'
-  return 'text-accent-red'
-}
-
-// ─── Wellness Input Component ────────────────────────────────────
-
-const WELLNESS_ITEMS = [
-  { key: 'sleep_quality', label: 'Sleep quality', low: 'Poor', high: 'Great' },
-  { key: 'energy', label: 'Energy level', low: 'Exhausted', high: 'Fresh' },
-  { key: 'muscle_soreness', label: 'Muscle soreness', low: 'Very sore', high: 'None' },
-  { key: 'motivation', label: 'Motivation', low: 'None', high: 'Fired up' },
-  { key: 'stress', label: 'Stress', low: 'Very high', high: 'Very low' },
-] as const
-
-function WellnessInput({ todayWellness, onSubmit }: {
-  todayWellness: SubjectiveWellness | null
-  onSubmit: () => void
-}) {
-  const [expanded, setExpanded] = useState(false)
-  const [values, setValues] = useState<Record<string, number>>({})
-  const [submitting, setSubmitting] = useState(false)
-  const [saveMsg, setSaveMsg] = useState<string | null>(null)
-
-  // Pre-populate values when expanding an existing wellness entry
-  useEffect(() => {
-    if (expanded && todayWellness) {
-      const existing: Record<string, number> = {}
-      for (const item of WELLNESS_ITEMS) {
-        const v = todayWellness[item.key as keyof SubjectiveWellness]
-        if (typeof v === 'number') existing[item.key] = v
-      }
-      setValues(existing)
-    }
-  }, [expanded, todayWellness])
-
-  const composite = todayWellness?.composite_score ?? null
-
-  if (todayWellness && !expanded) {
-    return (
-      <button
-        onClick={() => setExpanded(true)}
-        className="w-full bg-bg-card rounded-2xl border border-border-subtle p-4 text-left"
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold">Wellness</span>
-            <span className={`text-base font-bold font-data ${
-              (composite ?? 0) >= 3.5 ? 'text-accent-green' : (composite ?? 0) >= 2.5 ? 'text-accent-yellow' : 'text-accent-red'
-            }`}>
-              {composite != null ? composite.toFixed(1) : '?'}/5
-            </span>
-          </div>
-          <span className="text-[11px] text-text-dim">Tap to view</span>
-        </div>
-      </button>
-    )
-  }
-
-  if (!expanded && !todayWellness) {
-    return (
-      <button
-        onClick={() => setExpanded(true)}
-        className="w-full bg-bg-card rounded-2xl border border-accent-green/20 p-4 text-left animate-pulse-subtle"
-      >
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-sm font-semibold text-text-primary">How are you feeling?</div>
-            <div className="text-[12px] text-text-muted mt-0.5">30-second daily check-in</div>
-          </div>
-          <ChevronDown size={16} className="text-text-muted" />
-        </div>
-      </button>
-    )
-  }
-
-  const handleSubmit = async () => {
-    const allFilled = WELLNESS_ITEMS.every(item => values[item.key] != null)
-    if (!allFilled) return
-    setSubmitting(true)
-    try {
-      const todayStr = format(new Date(), 'yyyy-MM-dd')
-      const { error } = await supabase.from('subjective_wellness').upsert({
-        date: todayStr,
-        ...values,
-      }, { onConflict: 'date' })
-      if (error) {
-        setSaveMsg('Save failed')
-        setTimeout(() => setSaveMsg(null), 3000)
-        return
-      }
-      setSaveMsg('Saved')
-      setTimeout(() => setSaveMsg(null), 2000)
-      onSubmit()
-      setExpanded(false)
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <div className="bg-bg-card rounded-2xl border border-border-subtle p-4">
-      <div className="flex items-center justify-between mb-4">
-        <span className="text-sm font-semibold text-text-primary">How are you feeling?</span>
-        <button onClick={() => setExpanded(false)} className="text-[11px] text-text-muted hover:text-text-secondary">Close</button>
-      </div>
-      <div className="space-y-4">
-        {WELLNESS_ITEMS.map(item => (
-          <div key={item.key}>
-            <div className="flex justify-between text-[12px] mb-1.5">
-              <span className="text-text-secondary font-medium">{item.label}</span>
-              <span className="text-text-dim">{item.low} → {item.high}</span>
-            </div>
-            <div className="flex gap-2">
-              {[1, 2, 3, 4, 5].map(v => (
-                <button
-                  key={v}
-                  onClick={() => setValues(prev => ({ ...prev, [item.key]: v }))}
-                  className={`flex-1 h-10 rounded-xl text-sm font-semibold transition-all ${
-                    values[item.key] === v
-                      ? v >= 4 ? 'bg-accent-green/20 text-accent-green border border-accent-green/40'
-                        : v === 3 ? 'bg-accent-yellow/20 text-accent-yellow border border-accent-yellow/40'
-                        : 'bg-accent-red/20 text-accent-red border border-accent-red/40'
-                      : 'bg-bg-primary/50 text-text-muted border border-transparent hover:border-border'
-                  }`}
-                >
-                  {v}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-      <button
-        onClick={handleSubmit}
-        disabled={submitting || !WELLNESS_ITEMS.every(item => values[item.key] != null)}
-        className="mt-4 w-full py-2.5 rounded-xl bg-accent-green/15 text-accent-green text-sm font-semibold
-                   disabled:opacity-30 disabled:cursor-not-allowed transition-all hover:bg-accent-green/25"
-      >
-        {submitting ? 'Saving...' : 'Submit'}
-      </button>
-      {saveMsg && (
-        <p className={`mt-2 text-center text-xs font-medium ${
-          saveMsg === 'Saved' ? 'text-accent-green' : 'text-accent-red'
-        }`}>{saveMsg}</p>
-      )}
-    </div>
-  )
-}
-
-// ─── RPE Prompt Component ─────────────────────────────────────────
-
-const RPE_LABELS: Record<number, string> = {
-  0: 'Rest', 1: 'Very light', 2: 'Light', 3: 'Moderate', 4: 'Somewhat hard',
-  5: 'Hard', 6: '', 7: 'Very hard', 8: '', 9: '', 10: 'Maximal',
-}
-
-function RPEPrompt({ activity }: { activity: Activity }) {
-  const [rated, setRated] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [selectedRPE, setSelectedRPE] = useState<number | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [rpeMsg, setRpeMsg] = useState<string | null>(null)
-
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from('training_sessions')
-        .select('srpe')
-        .eq('date', activity.date)
-        .limit(1)
-      if (data?.[0]?.srpe != null) setRated(true)
-      setLoading(false)
-    })()
-  }, [activity.date])
-
-  if (loading || rated) return null
-
-  const handleSubmit = async () => {
-    if (selectedRPE == null) return
-    setSaving(true)
-    try {
-      const { data: sessions } = await supabase
-        .from('training_sessions')
-        .select('id')
-        .eq('date', activity.date)
-        .limit(1)
-      if (sessions && sessions.length > 0) {
-        const { error } = await supabase
-          .from('training_sessions')
-          .update({ srpe: selectedRPE })
-          .eq('id', sessions[0].id)
-        if (error) throw error
-        setRpeMsg('RPE logged')
-        setTimeout(() => setRpeMsg(null), 2000)
-        setRated(true)
-      }
-    } catch {
-      setRpeMsg('Save failed')
-      setTimeout(() => setRpeMsg(null), 3000)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="bg-bg-card rounded-2xl border border-accent-purple/20 p-4">
-      <div className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold mb-2">Session RPE</div>
-      <div className="text-[13px] text-text-secondary mb-3">
-        How hard was {activity.activity_name || 'your session'}? (0-10)
-      </div>
-      <div className="flex gap-1">
-        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => (
-          <button
-            key={v}
-            onClick={() => setSelectedRPE(v)}
-            className={`flex-1 h-9 rounded-lg text-[11px] font-semibold transition-all ${
-              selectedRPE === v
-                ? v >= 8 ? 'bg-accent-red/20 text-accent-red border border-accent-red/40'
-                  : v >= 5 ? 'bg-accent-yellow/20 text-accent-yellow border border-accent-yellow/40'
-                  : 'bg-accent-green/20 text-accent-green border border-accent-green/40'
-                : 'bg-bg-primary/50 text-text-muted border border-transparent'
-            }`}
-          >
-            {v}
-          </button>
-        ))}
-      </div>
-      {selectedRPE != null && RPE_LABELS[selectedRPE] && (
-        <div className="text-[11px] text-text-dim mt-1.5 text-center">{RPE_LABELS[selectedRPE]}</div>
-      )}
-      <button
-        onClick={handleSubmit}
-        disabled={saving || selectedRPE == null}
-        className="mt-3 w-full py-2 rounded-xl bg-accent-purple/15 text-accent-purple text-[13px] font-semibold
-                   disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-      >
-        {saving ? 'Saving...' : 'Log RPE'}
-      </button>
-      {rpeMsg && (
-        <p className={`mt-2 text-center text-xs font-medium ${
-          rpeMsg === 'RPE logged' ? 'text-accent-purple' : 'text-accent-red'
-        }`}>{rpeMsg}</p>
-      )}
-    </div>
-  )
-}
-
-// ─── Exercise Feedback Component ─────────────────────────────────
-
-const FEEL_OPTIONS: { value: ExerciseFeedback['feel']; label: string; color: string; activeClass: string }[] = [
-  { value: 'light', label: 'Light', color: 'text-accent-green', activeClass: 'bg-accent-green/20 text-accent-green border-accent-green/40' },
-  { value: 'right', label: 'Right', color: 'text-accent-blue', activeClass: 'bg-accent-blue/20 text-accent-blue border-accent-blue/40' },
-  { value: 'heavy', label: 'Heavy', color: 'text-accent-red', activeClass: 'bg-accent-red/20 text-accent-red border-accent-red/40' },
-]
-
-function ExerciseFeedbackPrompt({ exercises, sessionDate }: {
-  exercises: PlannedExercise[]
-  sessionDate: string
-}) {
-  const [expanded, setExpanded] = useState(false)
-  const [feedback, setFeedback] = useState<Record<string, ExerciseFeedback['feel']>>({})
-  const [saving, setSaving] = useState(false)
-  const [done, setDone] = useState(false)
-  const [loaded, setLoaded] = useState(false)
-
-  // Check if feedback already exists for this session
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from('exercise_feedback')
-        .select('exercise_name, feel')
-        .eq('session_date', sessionDate)
-      if (data && data.length > 0) {
-        if (data.length >= exercises.length) {
-          setDone(true)
-        } else {
-          const existing: Record<string, ExerciseFeedback['feel']> = {}
-          for (const row of data) {
-            existing[row.exercise_name] = row.feel as ExerciseFeedback['feel']
-          }
-          setFeedback(existing)
-        }
-      }
-      setLoaded(true)
-    })()
-  }, [sessionDate, exercises.length])
-
-  if (!loaded || done) return null
-
-  const filledCount = Object.keys(feedback).length
-  const allFilled = filledCount >= exercises.length
-
-  if (!expanded) {
-    return (
-      <button
-        onClick={() => setExpanded(true)}
-        className="w-full bg-bg-card rounded-2xl border border-accent-blue/20 p-4 text-left"
-      >
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-sm font-semibold text-text-primary">How did each exercise feel?</div>
-            <div className="text-[12px] text-text-muted mt-0.5">
-              {filledCount > 0 ? `${filledCount}/${exercises.length} rated` : 'Quick per-exercise feedback'}
-            </div>
-          </div>
-          <ChevronDown size={16} className="text-text-muted" />
-        </div>
-      </button>
-    )
-  }
-
-  const handleSubmit = async () => {
-    if (!allFilled) return
-    setSaving(true)
-    try {
-      const rows = exercises.map(ex => ({
-        session_date: sessionDate,
-        exercise_name: ex.name,
-        feel: feedback[ex.name],
-      }))
-      const { error } = await supabase
-        .from('exercise_feedback')
-        .upsert(rows, { onConflict: 'session_date,exercise_name' })
-      if (!error) setDone(true)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="bg-bg-card rounded-2xl border border-border-subtle p-4">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-semibold text-text-primary">Exercise feel</span>
-        <button onClick={() => setExpanded(false)} className="text-[11px] text-text-muted hover:text-text-secondary">Close</button>
-      </div>
-      <div className="space-y-2.5">
-        {exercises.map(ex => (
-          <div key={ex.name} className="flex items-center justify-between gap-2">
-            <span className="text-[13px] text-text-secondary truncate flex-1">{ex.name}</span>
-            <div className="flex gap-1.5">
-              {FEEL_OPTIONS.map(opt => (
-                <button
-                  key={opt.value}
-                  onClick={() => setFeedback(prev => ({ ...prev, [ex.name]: opt.value }))}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all ${
-                    feedback[ex.name] === opt.value
-                      ? opt.activeClass
-                      : 'bg-bg-primary/50 text-text-muted border-transparent'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-      <button
-        onClick={handleSubmit}
-        disabled={saving || !allFilled}
-        className="mt-3 w-full py-2 rounded-xl bg-accent-blue/15 text-accent-blue text-[13px] font-semibold
-                   disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-      >
-        {saving ? 'Saving...' : `Save feedback (${filledCount}/${exercises.length})`}
-      </button>
-    </div>
-  )
-}
-
-// ─── Weekly Reflection Component (Sundays only) ─────────────────
-
-const ENERGY_OPTIONS = [
-  { value: 'improving', label: 'Improving', color: 'bg-accent-green/20 text-accent-green border-accent-green/40' },
-  { value: 'stable', label: 'Stable', color: 'bg-accent-blue/20 text-accent-blue border-accent-blue/40' },
-  { value: 'declining', label: 'Declining', color: 'bg-accent-red/20 text-accent-red border-accent-red/40' },
-] as const
-
-function WeeklyReflection() {
-  const [expanded, setExpanded] = useState(false)
-  const [done, setDone] = useState(false)
-  const [loaded, setLoaded] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [energy, setEnergy] = useState<string | null>(null)
-  const [satisfaction, setSatisfaction] = useState<number | null>(null)
-  const [highlight, setHighlight] = useState('')
-  const [challenge, setChallenge] = useState('')
-  const [focus, setFocus] = useState('')
-
-  // Week start = Monday of current week
-  const weekStart = useMemo(() => {
-    const now = new Date()
-    const day = now.getDay()
-    const diff = now.getDate() - ((day + 6) % 7)
-    const monday = new Date(now.setDate(diff))
-    return format(monday, 'yyyy-MM-dd')
-  }, [])
-
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from('weekly_reflections')
-        .select('*')
-        .eq('week_start', weekStart)
-        .limit(1)
-      if (data && data.length > 0) {
-        const r = data[0]
-        if (r.training_satisfaction != null) {
-          setDone(true)
-        } else {
-          if (r.energy_trend) setEnergy(r.energy_trend)
-          if (r.training_satisfaction) setSatisfaction(r.training_satisfaction)
-          if (r.top_highlight) setHighlight(r.top_highlight)
-          if (r.biggest_challenge) setChallenge(r.biggest_challenge)
-          if (r.next_week_focus) setFocus(r.next_week_focus)
-        }
-      }
-      setLoaded(true)
-    })()
-  }, [weekStart])
-
-  if (!loaded || done) return null
-
-  if (!expanded) {
-    return (
-      <button
-        onClick={() => setExpanded(true)}
-        className="w-full bg-bg-card rounded-2xl border border-accent-purple/20 p-4 text-left"
-      >
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-sm font-semibold text-text-primary">Weekly Reflection</div>
-            <div className="text-[12px] text-text-muted mt-0.5">How was this week? (30 seconds)</div>
-          </div>
-          <ChevronDown size={16} className="text-text-muted" />
-        </div>
-      </button>
-    )
-  }
-
-  const handleSubmit = async () => {
-    if (!energy || !satisfaction) return
-    setSaving(true)
-    try {
-      const { error } = await supabase
-        .from('weekly_reflections')
-        .upsert({
-          week_start: weekStart,
-          energy_trend: energy,
-          training_satisfaction: satisfaction,
-          top_highlight: highlight || null,
-          biggest_challenge: challenge || null,
-          next_week_focus: focus || null,
-        }, { onConflict: 'week_start' })
-      if (!error) setDone(true)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="bg-bg-card rounded-2xl border border-border-subtle p-4">
-      <div className="flex items-center justify-between mb-4">
-        <span className="text-sm font-semibold text-text-primary">Weekly Reflection</span>
-        <button onClick={() => setExpanded(false)} className="text-[11px] text-text-muted hover:text-text-secondary">Close</button>
-      </div>
-
-      {/* Energy trend */}
-      <div className="mb-4">
-        <div className="text-[12px] text-text-secondary font-medium mb-2">Energy trend this week</div>
-        <div className="flex gap-2">
-          {ENERGY_OPTIONS.map(opt => (
-            <button
-              key={opt.value}
-              onClick={() => setEnergy(opt.value)}
-              className={`flex-1 py-2 rounded-xl text-[12px] font-semibold border transition-all ${
-                energy === opt.value ? opt.color : 'bg-bg-primary/50 text-text-muted border-transparent'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Training satisfaction */}
-      <div className="mb-4">
-        <div className="text-[12px] text-text-secondary font-medium mb-2">Training satisfaction</div>
-        <div className="flex gap-2">
-          {[1, 2, 3, 4, 5].map(v => (
-            <button
-              key={v}
-              onClick={() => setSatisfaction(v)}
-              className={`flex-1 h-10 rounded-xl text-sm font-semibold transition-all ${
-                satisfaction === v
-                  ? v >= 4 ? 'bg-accent-green/20 text-accent-green border border-accent-green/40'
-                    : v === 3 ? 'bg-accent-yellow/20 text-accent-yellow border border-accent-yellow/40'
-                    : 'bg-accent-red/20 text-accent-red border border-accent-red/40'
-                  : 'bg-bg-primary/50 text-text-muted border border-transparent hover:border-border'
-              }`}
-            >
-              {v}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Optional text fields */}
-      <div className="space-y-3 mb-4">
-        <div>
-          <div className="text-[12px] text-text-dim mb-1">Week highlight (optional)</div>
-          <input
-            value={highlight}
-            onChange={e => setHighlight(e.target.value)}
-            placeholder="Best moment this week..."
-            className="w-full bg-bg-primary/50 rounded-lg px-3 py-2 text-[13px] text-text-primary border border-transparent focus:border-border outline-none"
-          />
-        </div>
-        <div>
-          <div className="text-[12px] text-text-dim mb-1">Biggest challenge (optional)</div>
-          <input
-            value={challenge}
-            onChange={e => setChallenge(e.target.value)}
-            placeholder="What held you back..."
-            className="w-full bg-bg-primary/50 rounded-lg px-3 py-2 text-[13px] text-text-primary border border-transparent focus:border-border outline-none"
-          />
-        </div>
-        <div>
-          <div className="text-[12px] text-text-dim mb-1">Next week focus (optional)</div>
-          <input
-            value={focus}
-            onChange={e => setFocus(e.target.value)}
-            placeholder="Priority for next week..."
-            className="w-full bg-bg-primary/50 rounded-lg px-3 py-2 text-[13px] text-text-primary border border-transparent focus:border-border outline-none"
-          />
-        </div>
-      </div>
-
-      <button
-        onClick={handleSubmit}
-        disabled={saving || !energy || !satisfaction}
-        className="w-full py-2.5 rounded-xl bg-accent-purple/15 text-accent-purple text-sm font-semibold
-                   disabled:opacity-30 disabled:cursor-not-allowed transition-all hover:bg-accent-purple/25"
-      >
-        {saving ? 'Saving...' : 'Submit reflection'}
-      </button>
-    </div>
-  )
-}
+import { Clock, Flame, ArrowUpRight, Heart, ChevronDown, TrendingUp, Activity as ActivityIcon, Info, Home, Dumbbell } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { format } from 'date-fns'
 
 // ═══════════════════════════════════════════════════════════════════
 
@@ -587,6 +30,7 @@ export default function TodayView() {
   const coachingLog = useCoachingLog(7)
   const [showExercises, setShowExercises] = useState(false)
   const [, setWellnessRefresh] = useState(0)
+  const [switching, setSwitching] = useState(false)
 
   const recentActivities = activities.data ?? []
 
@@ -638,6 +82,10 @@ export default function TodayView() {
 
   const loading = summary.loading || hrv.loading || metrics.loading || activities.loading
   if (loading) return <LoadingState />
+
+  if (!summary.data?.length && !metrics.data?.length) {
+    return <EmptyState icon="📡" title="No data yet" subtitle="Sync your Garmin to get started — data typically arrives within 5 minutes" />
+  }
 
   const today = summary.data?.[0]
   const todayHRV = hrv.data?.[0]
@@ -788,6 +236,59 @@ export default function TodayView() {
     coachingPoints.push({ icon: '✅', text: 'All signals green — train as planned' })
   }
 
+  const todayIsHome = isHomeWorkout(todayPlanned?.workout_definition)
+
+  const handleSwitchToHome = async () => {
+    if (!todayPlanned?.workout_definition || switching) return
+    setSwitching(true)
+    try {
+      const homeWd = buildHomeWorkout(todayPlanned.workout_definition)
+      await supabase
+        .from('planned_workouts')
+        .update({
+          workout_definition: homeWd,
+          status: 'adjusted',
+          adjustment_reason: 'Switched to home workout',
+        })
+        .eq('id', todayPlanned.id)
+      await supabase.from('coaching_log').insert({
+        date: todayStr,
+        type: 'adjustment',
+        channel: 'app',
+        message: 'Switched to home workout',
+        data_context: { action: 'switch_to_home', reason: 'User requested from app' },
+      })
+    } finally {
+      setSwitching(false)
+    }
+  }
+
+  const handleSwitchToGym = async () => {
+    if (!todayPlanned?.workout_definition || switching) return
+    const gymWd = restoreGymWorkout(todayPlanned.workout_definition)
+    if (!gymWd) return
+    setSwitching(true)
+    try {
+      await supabase
+        .from('planned_workouts')
+        .update({
+          workout_definition: gymWd,
+          status: 'adjusted',
+          adjustment_reason: 'Switched back to gym workout',
+        })
+        .eq('id', todayPlanned.id)
+      await supabase.from('coaching_log').insert({
+        date: todayStr,
+        type: 'adjustment',
+        channel: 'app',
+        message: 'Switched back to gym workout',
+        data_context: { action: 'switch_to_gym', reason: 'User requested from app' },
+      })
+    } finally {
+      setSwitching(false)
+    }
+  }
+
   return (
     <div className="space-y-3">
 
@@ -827,6 +328,31 @@ export default function TodayView() {
           </div>
         )}
 
+        {/* Home / Gym toggle */}
+        {isGymDay && todayPlanned?.workout_definition && (todayPlanned.workout_definition.exercises?.length ?? 0) > 0 && (
+          <div className="mt-3">
+            {todayIsHome ? (
+              <button
+                onClick={handleSwitchToGym}
+                disabled={switching}
+                className="flex items-center gap-1.5 text-[13px] text-text-muted hover:text-text-secondary transition-colors disabled:opacity-50"
+              >
+                <Dumbbell size={14} />
+                {switching ? 'Switching...' : 'Switch back to gym'}
+              </button>
+            ) : (
+              <button
+                onClick={handleSwitchToHome}
+                disabled={switching}
+                className="flex items-center gap-1.5 text-[13px] text-accent-blue hover:text-accent-blue/80 transition-colors disabled:opacity-50"
+              >
+                <Home size={14} />
+                {switching ? 'Switching...' : 'Train at home today'}
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Expandable workout */}
         {isAdjusted && !todayPlanned && todayAdjustment && (
           <div className="mt-3 text-[13px] text-accent-yellow">
@@ -861,15 +387,26 @@ export default function TodayView() {
                     ))}
                   </div>
                 )}
+                {todayIsHome && (
+                  <div className="flex items-center gap-1.5 text-[12px] text-accent-blue mb-2">
+                    <Home size={12} />
+                    Home workout — exercises adapted for home equipment
+                  </div>
+                )}
                 <table className="w-full text-[14px]">
                   <tbody>
-                    {(todayPlanned.workout_definition.exercises ?? []).map((ex: PlannedExercise, i: number) => (
+                    {(todayPlanned.workout_definition?.exercises ?? []).map((ex: PlannedExercise, i: number) => (
                       <tr key={i} className="border-b border-text-primary/5 last:border-0">
-                        <td className="py-2 text-text-primary">{ex.name}</td>
-                        <td className="py-2 text-right text-text-secondary font-mono text-[13px] whitespace-nowrap">
+                        <td className="py-2">
+                          <div className="text-text-primary">{ex.name}</div>
+                          {todayIsHome && ex.note && (
+                            <div className="text-[11px] text-text-dim mt-0.5">{ex.note}</div>
+                          )}
+                        </td>
+                        <td className="py-2 text-right text-text-secondary font-mono text-[13px] whitespace-nowrap align-top">
                           {ex.sets}×{ex.reps}
                         </td>
-                        <td className="py-2 text-right text-text-primary font-mono text-[13px] w-20 font-semibold">
+                        <td className="py-2 text-right text-text-primary font-mono text-[13px] w-20 font-semibold align-top">
                           {ex.weight_kg != null ? `${ex.weight_kg}kg` : '—'}
                         </td>
                       </tr>
