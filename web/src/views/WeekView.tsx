@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
 import {
   useActivities, useSleep, useBodyComposition, useHRV, useDailyMetrics,
-  usePlannedWorkouts, useTrainingSessions,
+  usePlannedWorkouts, useTrainingSessions, rescheduleWorkout,
 } from '../hooks/useSupabase'
 import type {
   Activity, SleepRow, BodyComposition, HRVRow, DailyMetrics,
@@ -11,9 +11,10 @@ import type {
 } from '../lib/types'
 import { pairHikeAndFly, formatAirtime, formatDistance } from '../lib/flying'
 import { startOfWeek, endOfWeek, format, isWithinInterval, addDays, isSameDay, isBefore, parseISO } from 'date-fns'
-import { Wind, ChevronDown, ChevronUp } from 'lucide-react'
+import { Wind, ChevronDown, ChevronUp, ArrowRightLeft } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts'
 import { formatDuration, formatActivityType } from '../lib/format'
+import { MountainActivityCard } from '../components/MountainActivityCard'
 import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES } from '../lib/constants'
 import { getProgramWeek, isDeloadWeek, getWeekSchedule, SESSION_NAMES } from '../lib/program'
 import { sleepBarColor } from '../lib/colors'
@@ -56,6 +57,8 @@ export default function WeekView() {
 
   const [activitiesExpanded, setActivitiesExpanded] = useState(false)
   const [expandedDay, setExpandedDay] = useState<string | null>(null)
+  const [rescheduleSource, setRescheduleSource] = useState<DayCell | null>(null)
+  const [rescheduleLoading, setRescheduleLoading] = useState(false)
 
   const loading = activitiesHook.loading || sleepHook.loading || bodyCompHook.loading
     || hrvHook.loading || metricsHook.loading || plannedHook.loading
@@ -162,6 +165,24 @@ export default function WeekView() {
       }
     })
   }, [weekStart, weekPlanned, weekTemplate, weekActivities, today])
+
+  // ─── Reschedule handler ───
+  const canReschedule = (cell: DayCell) =>
+    cell.planned && (cell.status === 'planned' || cell.status === 'today' || cell.status === 'adjusted')
+
+  const handleReschedule = useCallback(async (targetDateStr: string) => {
+    if (!rescheduleSource?.planned) return
+    setRescheduleLoading(true)
+    try {
+      const targetPlanned = weekPlanned.find((p) => p.scheduled_date === targetDateStr) ?? undefined
+      await rescheduleWorkout(rescheduleSource.planned.id, targetDateStr, targetPlanned)
+    } catch (err) {
+      console.error('Reschedule failed:', err)
+    } finally {
+      setRescheduleLoading(false)
+      setRescheduleSource(null)
+    }
+  }, [rescheduleSource, weekPlanned])
 
   // ─── Compliance summary ───
   const compliance = useMemo(() => {
@@ -377,7 +398,8 @@ export default function WeekView() {
         <div className="space-y-1.5">
           {dayCells.map((cell) => {
             const badge = STATUS_BADGES[cell.status]
-            const isExpandable = cell.planned?.workout_definition?.exercises?.length
+            const hasMountainActivity = cell.status === 'mountain' && cell.activities.length > 0
+            const isExpandable = cell.planned?.workout_definition?.exercises?.length || hasMountainActivity
             const isExpanded = expandedDay === cell.dateStr
             const sessionName = cell.displayLabel
               ?? cell.planned?.workout_definition?.session_name
@@ -464,6 +486,25 @@ export default function WeekView() {
                         Adjusted: {cell.planned.adjustment_reason}
                       </div>
                     )}
+                    {canReschedule(cell) && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setRescheduleSource(cell) }}
+                        className="mt-3 pt-2 border-t border-border-subtle flex items-center gap-1.5 text-[12px] text-accent-blue font-medium w-full"
+                      >
+                        <ArrowRightLeft size={13} />
+                        Move to another day
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {isExpanded && hasMountainActivity && !cell.planned?.workout_definition && (
+                  <div className="mt-3 pt-3 border-t border-border-subtle">
+                    {cell.activities
+                      .filter((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type) || MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type))
+                      .map((a, i) => (
+                        <MountainActivityCard key={a.garmin_activity_id ?? i} activity={a} showDate={false} />
+                      ))}
                   </div>
                 )}
               </div>
@@ -629,6 +670,84 @@ export default function WeekView() {
 
       {/* ═══ 8. FLYING (existing) ═══ */}
       <WeekFlights activities={weekActivities} />
+
+      {/* ═══ RESCHEDULE MODAL ═══ */}
+      {rescheduleSource && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60"
+          onClick={() => !rescheduleLoading && setRescheduleSource(null)}
+        >
+          <div
+            className="w-full max-w-lg bg-bg-card border-t border-border-subtle rounded-t-2xl p-5 pb-8 animate-slide-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold text-text-primary">
+                Move session
+              </h3>
+              <button
+                onClick={() => !rescheduleLoading && setRescheduleSource(null)}
+                className="text-text-muted text-sm px-2 py-1"
+              >
+                Cancel
+              </button>
+            </div>
+            <div className="text-[13px] text-text-secondary mb-4">
+              <span className="font-semibold text-text-primary">
+                {rescheduleSource.planned?.workout_definition?.session_name
+                  ?? rescheduleSource.planned?.session_name
+                  ?? rescheduleSource.templateSession}
+              </span>
+              {' '}from {format(rescheduleSource.date, 'EEEE, MMM d')}
+            </div>
+            <div className="grid grid-cols-7 gap-1.5">
+              {dayCells.map((cell) => {
+                const isSource = cell.dateStr === rescheduleSource.dateStr
+                const isPast = isBefore(cell.date, today) && !cell.isToday
+                const isCompleted = cell.status === 'completed'
+                const disabled = isSource || isPast || isCompleted || rescheduleLoading
+                const hasWorkout = cell.planned != null
+                return (
+                  <button
+                    key={cell.dateStr}
+                    disabled={disabled}
+                    onClick={() => handleReschedule(cell.dateStr)}
+                    className={`flex flex-col items-center py-2.5 rounded-xl border transition-colors ${
+                      isSource
+                        ? 'border-accent-blue/40 bg-accent-blue/10 opacity-50'
+                        : disabled
+                          ? 'border-border-subtle bg-bg-surface opacity-30 cursor-not-allowed'
+                          : hasWorkout
+                            ? 'border-accent-yellow/40 bg-accent-yellow/5 active:bg-accent-yellow/15'
+                            : 'border-border-subtle bg-bg-surface active:bg-accent-green/10 active:border-accent-green/40'
+                    }`}
+                  >
+                    <div className={`text-[10px] uppercase tracking-wider font-semibold ${
+                      cell.isToday ? 'text-accent-green' : 'text-text-muted'
+                    }`}>
+                      {cell.label}
+                    </div>
+                    <div className={`text-base font-bold font-data ${
+                      isSource ? 'text-accent-blue' : 'text-text-primary'
+                    }`}>
+                      {format(cell.date, 'd')}
+                    </div>
+                    {!isSource && hasWorkout && !disabled && (
+                      <div className="text-[9px] text-accent-yellow font-semibold mt-0.5">swap</div>
+                    )}
+                    {isSource && (
+                      <div className="text-[9px] text-accent-blue font-semibold mt-0.5">from</div>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+            {rescheduleLoading && (
+              <div className="text-[12px] text-text-muted text-center mt-3">Moving...</div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,8 +1,8 @@
 import { useMemo, useState, useCallback } from 'react'
 import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
-import { useHRV, useBodyComposition, useActivities, useDailyMetrics, useSleep } from '../hooks/useSupabase'
-import type { HRVRow, BodyComposition, DailyMetrics, SleepRow } from '../lib/types'
+import { useHRV, useBodyComposition, useActivities, useDailyMetrics, useSleep, usePerformanceScores } from '../hooks/useSupabase'
+import type { HRVRow, BodyComposition, DailyMetrics, SleepRow, PerformanceScore } from '../lib/types'
 import { format, startOfWeek, subDays } from 'date-fns'
 import { RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
 import { correlateLagged, loadImpact, describeR, type DayPoint } from '../lib/correlations'
@@ -76,6 +76,7 @@ export default function TrendsView() {
   const activities = useActivities(90)
   const metrics = useDailyMetrics(90)
   const sleep = useSleep(90)
+  const perfScores = usePerformanceScores(90)
 
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<string | null>(null)
@@ -123,8 +124,8 @@ export default function TrendsView() {
     })
   }, [bodyComp.data])
 
-  const loading = hrv.loading || bodyComp.loading || activities.loading || metrics.loading || sleep.loading
-  const error = hrv.error || bodyComp.error || activities.error || metrics.error || sleep.error
+  const loading = hrv.loading || bodyComp.loading || activities.loading || metrics.loading || sleep.loading || perfScores.loading
+  const error = hrv.error || bodyComp.error || activities.error || metrics.error || sleep.error || perfScores.error
 
   if (loading) return <LoadingState />
   if (error) return <div className="text-accent-red p-4">{error}</div>
@@ -202,19 +203,55 @@ export default function TrendsView() {
       ),
     }))
 
-  // --- VO2max Trend ---
-  const vo2Data = (metrics.data ?? [])
-    .slice()
-    .reverse()
-    .filter((d: DailyMetrics) => d.vo2max != null)
-    .map((d: DailyMetrics) => ({
-      date: format(new Date(d.date), 'MMM d'),
-      value: d.vo2max != null ? +d.vo2max.toFixed(1) : 0,
-    }))
-  const vo2Deduped = vo2Data.filter(
-    (d: { date: string; value: number }, i: number, arr: { date: string; value: number }[]) =>
-      i === 0 || i === arr.length - 1 || d.value !== arr[i - 1].value
-  )
+  // --- Hill Score + Endurance Score trends ---
+  const fitnessScoreData = useMemo(() => {
+    const scores = perfScores.data ?? []
+    return scores
+      .filter((d: PerformanceScore) => d.hill_score != null || d.endurance_score != null)
+      .map((d: PerformanceScore) => ({
+        date: format(new Date(d.date), 'MMM d'),
+        hill: d.hill_score,
+        endurance: d.endurance_score,
+      }))
+  }, [perfScores.data])
+
+  // Deduplicate consecutive identical values to reduce chart noise
+  const fitnessScoreDeduped = useMemo(() => {
+    return fitnessScoreData.filter(
+      (d, i, arr) =>
+        i === 0 || i === arr.length - 1 ||
+        d.hill !== arr[i - 1].hill || d.endurance !== arr[i - 1].endurance
+    )
+  }, [fitnessScoreData])
+
+  const latestScores = useMemo(() => {
+    const scores = perfScores.data ?? []
+    const withHill = scores.filter((d: PerformanceScore) => d.hill_score != null)
+    const withEnd = scores.filter((d: PerformanceScore) => d.endurance_score != null)
+    return {
+      hill: withHill.length > 0 ? withHill[withHill.length - 1].hill_score : null,
+      endurance: withEnd.length > 0 ? withEnd[withEnd.length - 1].endurance_score : null,
+      fitnessAge: scores.length > 0 ? scores[scores.length - 1].fitness_age : null,
+    }
+  }, [perfScores.data])
+
+  // --- VAM trend (vertical ascent rate from mountain activities) ---
+  const vamData = useMemo(() => {
+    const mountainActs = (activities.data ?? [])
+      .filter((a) =>
+        MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type) &&
+        a.elevation_gain != null && a.elevation_gain > 200 &&
+        a.duration_seconds != null && a.duration_seconds > 1800
+      )
+      .slice()
+      .reverse()
+      .map((a) => ({
+        date: format(new Date(a.date), 'MMM d'),
+        vam: Math.round(((a.elevation_gain ?? 0) / (a.duration_seconds ?? 1)) * 3600),
+        name: a.activity_name ?? a.activity_type,
+      }))
+    return mountainActs
+  }, [activities.data])
 
   // --- Insights / correlations ---
   const hrvSeries: DayPoint[] = (hrv.data ?? []).map((d: HRVRow) => ({ date: d.date, value: d.last_night_avg }))
@@ -615,25 +652,83 @@ export default function TrendsView() {
 
       {/* Performance */}
       <CollapsibleSection title="Performance">
-      <Card title="VO2max Trend (running-derived)" subtitle="Estimates from hiking and touring are not validated and are excluded. Values have ±5 ml/kg/min uncertainty.">
-        {vo2Deduped.length > 1 ? (
+
+      {/* Hill Score + Endurance Score */}
+      <Card title="Mountain Fitness (90d)" subtitle="Hill Score measures climbing ability. Endurance Score captures aerobic base. Both update from all activities.">
+        {latestScores.hill != null && (
+          <div className="flex gap-4 mb-3">
+            <div>
+              <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Hill Score</div>
+              <div className="text-2xl font-bold text-mountain font-data">{latestScores.hill}</div>
+            </div>
+            {latestScores.endurance != null && (
+              <div>
+                <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Endurance</div>
+                <div className="text-2xl font-bold text-accent-green font-data">{latestScores.endurance}</div>
+              </div>
+            )}
+            {latestScores.fitnessAge != null && (
+              <div>
+                <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Fitness Age</div>
+                <div className="text-2xl font-bold text-text-primary font-data">{latestScores.fitnessAge}</div>
+              </div>
+            )}
+          </div>
+        )}
+        {fitnessScoreDeduped.length > 1 ? (
           <ResponsiveContainer width="100%" height={180}>
-            <LineChart data={vo2Deduped}>
+            <LineChart data={fitnessScoreDeduped}>
               <XAxis dataKey="date" tick={{ ...axisTickStyle, fontSize: 10 }} axisLine={axisLineStyle} tickLine={false} interval="preserveStartEnd" />
-              <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={35} domain={['dataMin - 1', 'dataMax + 1']} />
+              <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={35} domain={['dataMin - 5', 'dataMax + 5']} />
               <Tooltip contentStyle={darkTooltipStyle} />
-              <Line type="monotone" dataKey="value" stroke="#34d399" strokeWidth={2} dot={{ fill: '#34d399', r: 3 }} connectNulls />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Line type="monotone" dataKey="hill" name="Hill Score" stroke="#38bdf8" strokeWidth={2} dot={false} connectNulls />
+              <Line type="monotone" dataKey="endurance" name="Endurance" stroke="#34d399" strokeWidth={2} dot={false} connectNulls />
             </LineChart>
           </ResponsiveContainer>
         ) : (
           <div className="text-text-muted text-[14px]">
-            {vo2Deduped.length === 1
-              ? `Current VO2max: ${vo2Deduped[0].value}`
-              : 'No VO2max data available'}
+            {latestScores.hill != null
+              ? 'Not enough data points for trend chart yet'
+              : 'No performance score data — check Garmin sync'}
           </div>
         )}
+        <InfoPanel title="What these scores mean">
+          <p><strong>Hill Score</strong> reflects your ability to sustain effort on steep terrain. It updates from ski touring, hiking, and any uphill activity. Higher = better climbing fitness.</p>
+          <p><strong>Endurance Score</strong> reflects your aerobic base across all activities. Consistent training (gym + mountain) drives it up.</p>
+          <p>Both are computed by Garmin from your HR response during activity relative to your personal baseline. Expect slow changes — meaningful shifts happen over 4-8 weeks.</p>
+        </InfoPanel>
       </Card>
 
+      {/* VAM trend */}
+      <Card title="Vertical Ascent Rate (VAM)" subtitle="Average m/h across entire mountain activities (>200m gain, >30min). Higher at same HR = better fitness.">
+        {vamData.length > 1 ? (
+          <ResponsiveContainer width="100%" height={160}>
+            <BarChart data={vamData}>
+              <XAxis dataKey="date" tick={{ ...axisTickStyle, fontSize: 10 }} axisLine={axisLineStyle} tickLine={false} interval="preserveStartEnd" />
+              <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={40} />
+              <Tooltip
+                contentStyle={darkTooltipStyle}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                formatter={(value: any, _name: any, props: any) => [`${value} m/h`, props?.payload?.name ?? '']}
+              />
+              <Bar dataKey="vam" radius={[4, 4, 0, 0]} fill="#38bdf8" />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="text-text-muted text-[14px]">
+            {vamData.length === 1
+              ? `Latest VAM: ${vamData[0].vam} m/h (${vamData[0].name})`
+              : 'Not enough mountain activities for VAM trend'}
+          </div>
+        )}
+        <InfoPanel title="How to read VAM">
+          <p>VAM (Velocit&agrave; Ascensionale Media) is your average climbing speed in meters per hour. It&rsquo;s influenced by terrain, snow conditions, and pack weight — so individual values vary.</p>
+          <p>The trend matters more than single values. If you see VAM increasing while HR stays the same (or drops), your mountain fitness is improving.</p>
+        </InfoPanel>
+      </Card>
+
+      {/* e1RM Progression (kept) */}
       <Card title="e1RM Progression" subtitle="Normal variation: ±3-5% per session. Plateau = flat or declining for ≥4 weeks.">
         <div className="flex items-center justify-center h-32 text-text-muted text-[14px]">
           e1RM tracking will populate after gym sessions are completed.
