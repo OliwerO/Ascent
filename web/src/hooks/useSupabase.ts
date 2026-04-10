@@ -220,3 +220,61 @@ export function usePlannedWorkouts(weeksBehind = 2, weeksAhead = 4) {
     return data ?? []
   }, [weeksBehind, weeksAhead, rt])
 }
+
+/**
+ * Reschedule a planned workout to a new date.
+ * If another workout already exists on the target date, swaps them.
+ */
+export async function rescheduleWorkout(
+  workoutId: number,
+  newDate: string,
+  existingWorkoutOnTarget?: PlannedWorkout
+): Promise<void> {
+  if (existingWorkoutOnTarget) {
+    // Swap: move the target workout to the source's old date
+    const { data: source } = await supabase
+      .from('planned_workouts')
+      .select('scheduled_date')
+      .eq('id', workoutId)
+      .single()
+    if (!source) throw new Error('Workout not found')
+
+    const { error: e1 } = await supabase
+      .from('planned_workouts')
+      .update({
+        scheduled_date: source.scheduled_date,
+        status: 'adjusted',
+        adjustment_reason: `Swapped with session on ${newDate}`,
+      })
+      .eq('id', existingWorkoutOnTarget.id)
+    if (e1) throw e1
+
+    const { error: e2 } = await supabase
+      .from('planned_workouts')
+      .update({
+        scheduled_date: newDate,
+        status: 'adjusted',
+        adjustment_reason: `Moved from ${source.scheduled_date}`,
+      })
+      .eq('id', workoutId)
+    if (e2) throw e2
+  } else {
+    // Simple move
+    const { data: source } = await supabase
+      .from('planned_workouts')
+      .select('scheduled_date')
+      .eq('id', workoutId)
+      .single()
+    if (!source) throw new Error('Workout not found')
+
+    const { error } = await supabase
+      .from('planned_workouts')
+      .update({
+        scheduled_date: newDate,
+        status: 'adjusted',
+        adjustment_reason: `Moved from ${source.scheduled_date}`,
+      })
+      .eq('id', workoutId)
+    if (error) throw error
+  }
+}
