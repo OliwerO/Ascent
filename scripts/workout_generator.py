@@ -41,6 +41,96 @@ from workout_push import (
     BLOCK_1_START, BLOCK_2_START, BLOCK_2_END, DELOAD_WEEKS,
     DAY_TO_SESSION, get_program_week, is_deload_week, calculate_weight,
 )
+import mobility_workout
+
+
+# ---------------------------------------------------------------------------
+# Program-doc self-check
+# ---------------------------------------------------------------------------
+#
+# Guards against the Tuesday-Protocol-A class of bug: silent drift between
+# DAY_TO_SESSION (workout_push.py:88) and the human-authored weekly schedule
+# in openclaw/coaching-program.md. Runs at module import so any code path
+# that touches the generator (CLI, cron, ad-hoc) trips the assertion before
+# it can write a wrong row.
+#
+# Parses the "Weekly Structure" markdown table and asserts that for every
+# weekday with a Strength session, the letter (A/B/C) matches DAY_TO_SESSION.
+# Days that are rest/mobility/mountain in the doc must be absent from the
+# dict. Mismatches raise RuntimeError with a precise diff.
+
+PROGRAM_DOC_PATH = PROJECT_ROOT / "openclaw" / "coaching-program.md"
+
+_WEEKDAY_TO_INT = {
+    "Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3,
+    "Friday": 4, "Saturday": 5, "Sunday": 6,
+}
+
+
+def _parse_program_weekly_structure(text: str) -> dict[int, str]:
+    """Return {weekday_int: 'A'|'B'|'C'} parsed from the first Weekly Structure
+    table in coaching-program.md. Only Strength rows are returned; rest /
+    mobility / mountain rows are deliberately omitted."""
+    expected: dict[int, str] = {}
+    in_table = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("### Weekly Structure"):
+            in_table = True
+            continue
+        if not in_table:
+            continue
+        if stripped.startswith("###") or stripped.startswith("## "):
+            break  # next section
+        if not stripped.startswith("|"):
+            continue
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        if not cells or cells[0] not in _WEEKDAY_TO_INT:
+            continue
+        weekday = _WEEKDAY_TO_INT[cells[0]]
+        # Cell 1 is the session label, e.g. "**Strength B: Upper + Core**"
+        label = cells[1] if len(cells) > 1 else ""
+        if "Strength A" in label:
+            expected[weekday] = "A"
+        elif "Strength B" in label:
+            expected[weekday] = "B"
+        elif "Strength C" in label:
+            expected[weekday] = "C"
+        # Mobility / Rest / Mountain rows are intentionally not added
+    return expected
+
+
+def _validate_program_doc() -> None:
+    if not PROGRAM_DOC_PATH.exists():
+        raise RuntimeError(
+            f"workout_generator self-check: coaching-program.md not found at "
+            f"{PROGRAM_DOC_PATH}. Generator refuses to run blind."
+        )
+    text = PROGRAM_DOC_PATH.read_text(encoding="utf-8")
+    expected = _parse_program_weekly_structure(text)
+    if not expected:
+        raise RuntimeError(
+            "workout_generator self-check: parsed 0 strength rows from "
+            "coaching-program.md Weekly Structure table. The table format "
+            "may have changed. Refusing to generate against unknown structure."
+        )
+    actual = dict(DAY_TO_SESSION)
+    if expected != actual:
+        diff_lines = [
+            "workout_generator self-check FAILED — DAY_TO_SESSION drifted from coaching-program.md",
+            f"  expected (from coaching-program.md): {expected}",
+            f"  actual   (from workout_push.py:88):  {actual}",
+        ]
+        for d in sorted(set(expected) | set(actual)):
+            e = expected.get(d, "<absent>")
+            a = actual.get(d, "<absent>")
+            if e != a:
+                weekday_name = [k for k, v in _WEEKDAY_TO_INT.items() if v == d][0]
+                diff_lines.append(f"  {weekday_name}: doc={e}  code={a}")
+        raise RuntimeError("\n".join(diff_lines))
+
+
+_validate_program_doc()
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +207,40 @@ def build_workout_definition(
         "estimated_duration_minutes": session["estimated_duration_minutes"],
         "rpe_range": rpe_range,
         "warmup": warmup,
+        "exercises": exercises,
+    }
+
+
+def build_mobility_definition(protocol: str) -> dict:
+    """Build the workout_definition JSONB for a mobility planned_workouts row.
+
+    Mirrors `build_workout_definition` shape so the React training-plan card
+    renders the same way as a strength session.
+    """
+    proto = protocol.upper()
+    if proto not in ("A", "B", "C", "T"):
+        raise ValueError(f"protocol must be A/B/C/T, got {protocol!r}")
+
+    steps = mobility_workout.summarize_steps(proto)  # type: ignore[arg-type]
+
+    exercises = []
+    for s in steps:
+        exercises.append({
+            "name": s["name"],
+            "sets": 1,
+            "reps": s["reps"],
+            "duration_s": s["duration_s"],
+            "side": s["side"],
+            "cue": s["cue"],
+            "equipment": "bodyweight",
+        })
+
+    return {
+        "session_label": f"mobility_{proto.lower()}",
+        "session_name": f"Mobility (Protocol {proto})",
+        "estimated_duration_minutes": mobility_workout.PROTOCOL_DURATIONS[proto],
+        "rpe_range": [3, 5],
+        "warmup": [],
         "exercises": exercises,
     }
 
@@ -220,6 +344,30 @@ def populate_full_program(sb, dry_run: bool = False) -> int:
             }
             rows.append(row)
 
+    # ---- Mobility rows: every Tuesday gets Protocol A (Protocol C on deload)
+    for week_num in range(1, 9):
+        monday = get_week_monday(week_num)
+        tuesday = monday + timedelta(days=1)
+        if tuesday < BLOCK_1_START or tuesday > BLOCK_2_END:
+            continue
+        proto = "C" if is_deload_week(week_num) else "T"
+        block = 1 if week_num <= 4 else 2
+        block_name = f"Base Rebuild Block {block}"
+        if is_deload_week(week_num):
+            block_name += " (Deload)"
+        mob_def = build_mobility_definition(proto)
+        rows.append({
+            "training_block": block_name,
+            "week_number": week_num,
+            "session_name": mob_def["session_name"],
+            "session_type": "mobility",
+            "scheduled_date": tuesday.isoformat(),
+            "scheduled_time": "07:30",
+            "estimated_duration_minutes": mob_def["estimated_duration_minutes"],
+            "workout_definition": mob_def,
+            "status": "planned",
+        })
+
     log.info("Generated %d planned workouts across 8 weeks", len(rows))
 
     if dry_run:
@@ -272,17 +420,18 @@ def populate_full_program(sb, dry_run: bool = False) -> int:
 
 
 def mark_completed_sessions(sb) -> int:
-    """Match planned_workouts to actual training_sessions by date.
+    """Mark past planned_workouts as skipped if no activity was recorded.
 
-    Sets status='completed' for past dates with matching training activity.
-    Sets status='skipped' for past dates without any activity.
+    Completion marking (status='completed') is owned by garmin_sync.py which
+    has the actual Garmin activity ID.  This function only handles the
+    'skipped' case: past-date rows still in planned/pushed/adjusted state
+    with no matching training activity.
     """
     today = date.today()
 
-    # Get all non-completed planned workouts up to today
     planned = sb.table("planned_workouts").select(
         "id,scheduled_date,session_name,status"
-    ).in_("status", ["planned", "adjusted"]).lte(
+    ).in_("status", ["planned", "pushed", "adjusted"]).lte(
         "scheduled_date", today.isoformat()
     ).execute()
 
@@ -290,39 +439,25 @@ def mark_completed_sessions(sb) -> int:
         log.info("No pending planned workouts to check")
         return 0
 
-    # Get all training sessions (strength activities) in the date range
     dates = [r["scheduled_date"] for r in planned.data]
+
+    # Check both tables to avoid marking a completed session as skipped
     sessions = sb.table("training_sessions").select(
-        "id,date,garmin_activity_id,name"
+        "date"
     ).in_("date", dates).execute()
+    session_dates = {s["date"] for s in (sessions.data or [])}
 
-    session_by_date = {}
-    for s in (sessions.data or []):
-        session_by_date[s["date"]] = s
-
-    # Also check activities table for garmin_activity_id linkage
     activities = sb.table("activities").select(
-        "date,garmin_activity_id,activity_type"
+        "date,activity_type"
     ).in_("date", dates).eq("activity_type", "strength_training").execute()
+    activity_dates = {a["date"] for a in (activities.data or [])}
 
-    activity_by_date = {}
-    for a in (activities.data or []):
-        activity_by_date[a["date"]] = a
+    has_activity = session_dates | activity_dates
 
     updated = 0
     for pw in planned.data:
         pw_date = pw["scheduled_date"]
-        session = session_by_date.get(pw_date)
-        activity = activity_by_date.get(pw_date)
-
-        if session or activity:
-            update = {"status": "completed"}
-            if activity and activity.get("garmin_activity_id"):
-                update["actual_garmin_activity_id"] = activity["garmin_activity_id"]
-            sb.table("planned_workouts").update(update).eq("id", pw["id"]).execute()
-            log.info("Marked completed: %s %s", pw_date, pw["session_name"])
-            updated += 1
-        elif pw_date < today.isoformat():
+        if pw_date < today.isoformat() and pw_date not in has_activity:
             sb.table("planned_workouts").update(
                 {"status": "skipped"}
             ).eq("id", pw["id"]).execute()

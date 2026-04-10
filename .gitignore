@@ -21,3 +21,5 @@ venv/
 bin/
 data/
 .vercel
+.garminconnect/
+supabase/

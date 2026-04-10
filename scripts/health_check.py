@@ -44,14 +44,17 @@ def check_garmin_auth() -> tuple[bool, str]:
         if locked:
             return False, f"Garmin auth locked ({hours_remaining:.1f}h remaining)"
 
-        # Check token freshness
-        token_file = Path.home() / ".garminconnect" / "garmin_tokens.json"
-        if token_file.exists():
-            age_hours = (time.time() - token_file.stat().st_mtime) / 3600
-            if age_hours > 6:
-                return False, f"Garmin tokens stale ({age_hours:.1f}h old)"
-            return True, f"Tokens OK ({age_hours:.1f}h old)"
-        return False, "No token file found"
+        # Check Playwright storage_state freshness (the new browser-session
+        # auth path; replaces the old garmin_tokens.json check).
+        storage_file = Path.home() / ".garminconnect" / "garmin_storage_state.json"
+        if storage_file.exists():
+            age_hours = (time.time() - storage_file.stat().st_mtime) / 3600
+            # Storage state lifetime is currently unknown empirically; warn
+            # past 7 days as a soft signal to re-bootstrap.
+            if age_hours > 24 * 7:
+                return False, f"Garmin storage state stale ({age_hours/24:.1f}d old)"
+            return True, f"Storage state OK ({age_hours/24:.1f}d old)"
+        return False, "No Garmin storage state — run garmin_browser_bootstrap.py"
     except Exception as e:
         return False, f"Auth check error: {e}"
 

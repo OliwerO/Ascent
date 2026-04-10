@@ -146,11 +146,15 @@ def push_workout_fit(client, workout_def: dict) -> dict | None:
 
 
 def update_planned_workout_record(sb, planned_id: int, garmin_workout_id: str):
-    """Update the planned_workouts table with the Garmin workout ID after push."""
-    sb.table("planned_workouts").update(
-        {"garmin_workout_id": garmin_workout_id}
-    ).eq("id", planned_id).execute()
-    log.info("Updated planned_workout %d with garmin_workout_id=%s", planned_id, garmin_workout_id)
+    """Update the planned_workouts table with the Garmin workout ID after push.
+
+    Delegates to workout_push.link_garmin_workout_id — the single authoritative
+    writer of garmin_workout_id to planned_workouts.
+    """
+    from workout_push import link_garmin_workout_id  # noqa: F811
+    # planned_id path doesn't need a real date — pass a sentinel; the function
+    # uses the id-based branch when planned_id is provided.
+    link_garmin_workout_id(garmin_workout_id, date.today(), sb=sb, planned_id=planned_id)
 
 
 # ---------------------------------------------------------------------------

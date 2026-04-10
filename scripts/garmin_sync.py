@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+import fcntl
 import json
 import logging
 import os
@@ -38,6 +39,7 @@ SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ["SUPABASE_KEY"]
 
 API_DELAY = 1  # seconds between Garmin API calls
+LOCK_FILE = PROJECT_ROOT / "logs" / "garmin_sync.lock"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -150,12 +152,12 @@ def validate_hrv(row: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def sync_daily_metrics(client: Garmin, sb, d: date) -> bool:
+def sync_daily_metrics(client: Garmin, sb, d: date) -> bool | None:
     ds = d.isoformat()
     stats = api_call(client.get_stats, ds)
     if not stats:
         log.warning("No daily stats for %s", ds)
-        return False
+        return None
 
     # Supplementary endpoints for fields not in get_stats
     tr = api_call(client.get_training_readiness, ds)
@@ -224,12 +226,12 @@ def sync_daily_metrics(client: Garmin, sb, d: date) -> bool:
     return True
 
 
-def sync_sleep(client: Garmin, sb, d: date) -> bool:
+def sync_sleep(client: Garmin, sb, d: date) -> bool | None:
     ds = d.isoformat()
     data = api_call(client.get_sleep_data, ds)
     if not data:
         log.warning("No sleep data for %s", ds)
-        return False
+        return None
 
     daily = data.get("dailySleepDTO", data)
     scores = data.get("sleepScores", {})
@@ -258,12 +260,12 @@ def sync_sleep(client: Garmin, sb, d: date) -> bool:
     return True
 
 
-def sync_hrv(client: Garmin, sb, d: date) -> bool:
+def sync_hrv(client: Garmin, sb, d: date) -> bool | None:
     ds = d.isoformat()
     data = api_call(client.get_hrv_data, ds)
     if not data:
         log.warning("No HRV data for %s", ds)
-        return False
+        return None
 
     summary = data.get("hrvSummary", data) if isinstance(data, dict) else data
     baseline = summary.get("baseline", {}) if isinstance(summary, dict) else {}
@@ -285,19 +287,19 @@ def sync_hrv(client: Garmin, sb, d: date) -> bool:
     return True
 
 
-def sync_body_composition(client: Garmin, sb, d: date) -> bool:
+def sync_body_composition(client: Garmin, sb, d: date) -> bool | None:
     ds = d.isoformat()
     data = api_call(client.get_body_composition, ds, ds)
     if not data:
         log.warning("No body composition data for %s", ds)
-        return False
+        return None
 
     entries = data.get("dateWeightList", data.get("totalAverage", []))
     if isinstance(entries, dict):
         entries = [entries]
     if not entries:
         log.info("No body composition entries for %s", ds)
-        return False
+        return None
 
     for entry in entries if isinstance(entries, list) else [entries]:
         weight_grams = entry.get("weight")
@@ -322,12 +324,12 @@ def sync_body_composition(client: Garmin, sb, d: date) -> bool:
     return True
 
 
-def sync_heart_rate_series(client: Garmin, sb, d: date) -> bool:
+def sync_heart_rate_series(client: Garmin, sb, d: date) -> bool | None:
     ds = d.isoformat()
     data = api_call(client.get_heart_rates, ds)
     if not data:
         log.warning("No heart rate data for %s", ds)
-        return False
+        return None
 
     readings = data.get("heartRateValues", data) if isinstance(data, dict) else data
     resting = data.get("restingHeartRate") if isinstance(data, dict) else None
@@ -342,12 +344,12 @@ def sync_heart_rate_series(client: Garmin, sb, d: date) -> bool:
     return True
 
 
-def sync_stress_series(client: Garmin, sb, d: date) -> bool:
+def sync_stress_series(client: Garmin, sb, d: date) -> bool | None:
     ds = d.isoformat()
     data = api_call(client.get_stress_data, ds)
     if not data:
         log.warning("No stress data for %s", ds)
-        return False
+        return None
 
     readings = data.get("stressValuesArray", data) if isinstance(data, dict) else data
 
@@ -360,7 +362,7 @@ def sync_stress_series(client: Garmin, sb, d: date) -> bool:
     return True
 
 
-def sync_activities(client: Garmin, sb, d: date) -> bool:
+def sync_activities(client: Garmin, sb, d: date) -> bool | None:
     """Sync activities using date-based endpoint. Deduplicates on garmin_activity_id."""
     ds = d.isoformat()
     # Use date-based endpoint for reliable backfill instead of offset-based
@@ -370,7 +372,7 @@ def sync_activities(client: Garmin, sb, d: date) -> bool:
         activities = api_call(client.get_activities, 0, 20)
     if not activities:
         log.info("No activities for %s", ds)
-        return True  # Not an error — some days have no activities
+        return None  # Empty, not a failure — distinct from True/False in summary
 
     count = 0
     for act in activities:
@@ -680,13 +682,13 @@ def _sync_training_session(client: Garmin, sb, act: dict, garmin_id: str):
              session_id, set_number, garmin_id)
 
 
-def sync_training_status(client: Garmin, sb, d: date) -> bool:
+def sync_training_status(client: Garmin, sb, d: date) -> bool | None:
     """Training status: productive/detraining labels, acute/chronic load."""
     ds = d.isoformat()
     data = api_call(client.get_training_status, ds)
     if not data:
         log.warning("No training status for %s", ds)
-        return False
+        return None
 
     # Also fetch max metrics for detailed VO2max
     max_metrics = api_call(client.get_max_metrics, ds)
@@ -724,14 +726,14 @@ def sync_training_status(client: Garmin, sb, d: date) -> bool:
         }
     else:
         log.info("Unexpected training status format for %s", ds)
-        return False
+        return None
 
     sb.table("training_status").upsert(row, on_conflict="date").execute()
     log.info("training_status upserted for %s", ds)
     return True
 
 
-def sync_performance_scores(client: Garmin, sb, d: date) -> bool:
+def sync_performance_scores(client: Garmin, sb, d: date) -> bool | None:
     """Endurance score, hill score, race predictions, fitness age."""
     ds = d.isoformat()
 
@@ -787,7 +789,7 @@ def sync_performance_scores(client: Garmin, sb, d: date) -> bool:
     # Only write if we have at least one value
     if all(v is None for v in [endurance_val, hill_val, race_5k, fitness_age_val]):
         log.info("No performance scores available for %s", ds)
-        return False
+        return None
 
     row = {
         "date": ds,
@@ -810,7 +812,7 @@ def sync_performance_scores(client: Garmin, sb, d: date) -> bool:
     return True
 
 
-def sync_body_battery_events(client: Garmin, sb, d: date) -> bool:
+def sync_body_battery_events(client: Garmin, sb, d: date) -> bool | None:
     """Full body battery timeline + charge/drain events."""
     ds = d.isoformat()
     timeline = api_call(client.get_body_battery, ds, ds)
@@ -818,7 +820,7 @@ def sync_body_battery_events(client: Garmin, sb, d: date) -> bool:
 
     if not timeline and not events:
         log.info("No body battery events for %s", ds)
-        return False
+        return None
 
     row = {
         "date": ds,
@@ -831,12 +833,12 @@ def sync_body_battery_events(client: Garmin, sb, d: date) -> bool:
     return True
 
 
-def sync_personal_records(client: Garmin, sb, d: date) -> bool:
+def sync_personal_records(client: Garmin, sb, d: date) -> bool | None:
     """Sync personal records (only once per run, not date-specific)."""
     records = api_call(client.get_personal_record)
     if not records:
         log.info("No personal records returned")
-        return False
+        return None
 
     if isinstance(records, dict):
         records = records.get("personalRecords", records.get("records", [records]))
@@ -899,7 +901,13 @@ ONESHOT_SYNC_FUNCTIONS = [
 
 
 def sync_date(client: Garmin, sb, d: date) -> dict:
-    """Run all daily sync functions for a single date. Returns {table: success}."""
+    """Run all daily sync functions for a single date.
+
+    Returns {table_name: result} where result is one of:
+      True  — wrote rows
+      None  — no data available for that date (NOT a failure)
+      False — exception or actual API failure
+    """
     log.info("=== Syncing %s ===", d.isoformat())
     results = {}
     for name, fn in DAILY_SYNC_FUNCTIONS:
@@ -914,6 +922,15 @@ def sync_date(client: Garmin, sb, d: date) -> dict:
 
 
 def main():
+    # Prevent concurrent syncs (nightly cron vs on-demand)
+    LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    lock_fd = open(LOCK_FILE, "w")
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        log.warning("Another garmin_sync is already running — exiting")
+        sys.exit(0)
+
     parser = argparse.ArgumentParser(description="Sync Garmin data to Supabase")
     parser.add_argument("--date", type=str, help="Sync a specific date (YYYY-MM-DD)")
     parser.add_argument(
@@ -1004,21 +1021,34 @@ def main():
     # Save tokens at end of session to capture any mid-session refreshes
     save_tokens(client)
 
-    # Summary
-    total_ok = sum(
-        1 for day in all_results.values() for ok in day.values() if ok
+    # Summary — three-state contract per sync function:
+    #   True  → wrote rows
+    #   None  → no data on that date (NOT a failure)
+    #   False → exception or actual API failure (set in sync_date's except)
+    failed_items: list[str] = []
+    empty_items: list[str] = []
+    ok_count = 0
+    for day_iso, day_results in all_results.items():
+        for name, v in day_results.items():
+            if v is True:
+                ok_count += 1
+            elif v is None:
+                empty_items.append(f"{name} ({day_iso})")
+            elif v is False:
+                failed_items.append(f"{name} ({day_iso})")
+    log.info(
+        "Sync complete: %d succeeded, %d empty, %d failed",
+        ok_count, len(empty_items), len(failed_items),
     )
-    total_fail = sum(
-        1 for day in all_results.values() for ok in day.values() if not ok
-    )
-    log.info("Sync complete: %d succeeded, %d failed", total_ok, total_fail)
 
-    if total_fail > 0:
-        log.warning("Some syncs failed — check warnings above")
-        alert_slack(
-            f":warning: *Garmin sync partially failed* — "
-            f"{total_ok} succeeded, {total_fail} failed. Check logs."
-        )
+    if failed_items:
+        log.warning("Failed: %s", ", ".join(failed_items))
+        lines = [":warning: *Garmin sync — partial failure*"]
+        lines.append(f"Failed: {', '.join(failed_items)}")
+        if empty_items:
+            lines.append(f"Empty (normal): {', '.join(empty_items)}")
+        lines.append(f"{ok_count} endpoints synced OK.")
+        alert_slack("\n".join(lines))
         sys.exit(1)
 
 

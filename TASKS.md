@@ -1,8 +1,32 @@
 # Ascent — Status & Next Steps
 
-> Last updated: 2026-04-02
+> Last updated: 2026-04-07
 > Single source of truth for all task status, dependencies, and next actions.
 > CLAUDE.md has architecture/context. This file has what to DO.
+
+> **2026-04-07 — Garmin auth rebuild.** Every Python HTTP-client auth path
+> (garth, garminconnect mobile SSO, browser_cookie3 + curl_cffi, JWT_WEB
+> fallback, ticket exchange) is dead. Garmin's gc-api gateway authenticates
+> via a same-origin session cookie + runtime CSRF token that can only be
+> replayed from inside a real rendered browser page. Auth was rebuilt around
+> headless Playwright Firefox + `page.evaluate("fetch(...)")`. End-to-end
+> sync verified working on real account 2026-04-07 11:48 UTC.
+>
+> Keepalive scripts (`garmin_session_keepalive.py`, `garmin_session_keeper.py`,
+> `garmin_session_refresh.sh`, `garmin_token_refresh.py`, `garmin_one_shot_login.py`,
+> `garmin_browser_login.py`) are **deleted**. The launchd `com.ascent.garmin-keepalive`
+> agent is **unloaded + removed**. References to those scripts below this note
+> are stale historical context.
+>
+> Current auth path: `garmin_browser_bootstrap.py` (one-time interactive,
+> headful Firefox + `playwright_stealth`, saves `~/.garminconnect/garmin_storage_state.json`)
+> → `garmin_browser_session.py` (headless Playwright, captures CSRF, in-page
+> fetch via `connect.garmin.com/gc-api`) → `garmin_auth.py` (monkey-patches
+> `garminconnect.Client._run_request`).
+>
+> See the `project_garmin_browser_auth.md` memory for the working recipe,
+> open questions (real session lifetime past JWT_WEB exp ~2.4h still empirical),
+> and the next-steps plan.
 
 -----
 

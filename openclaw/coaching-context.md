@@ -175,6 +175,14 @@ below for any date-specific overrides.
 |------|-----------------|-----------|--------|-----------------|
 | 2026-04-03 | Strength C: Full Body Variant | **Reduced volume:** Incline DB press 2×8, chest-supported row 2×8, landmine press 2×6/side, chin-ups 2×6, core circuit (ab wheel + bird dogs + suitcase carry). RPE 6 (conservative). Afternoon session. | Snowboarding morning + big tour Saturday. Back-to-back high-intensity mountain days. Reduce gym fatigue to preserve recovery for Saturday. Full upper + core volume would compound mountain stress. | No |
 | 2026-04-07 | Strength B: Upper + Core (Monday) | **Rescheduled to Tuesday Apr 8.** Strength A to Thursday Apr 10, Strength C to Friday Apr 11. All 3 sessions kept. | Big backcountry tour on Monday Apr 7 (4am start). Tue=B (upper only, no leg conflict with tour). Wed=rest. Thu=A (squats, legs have 3 days recovery). Fri=C (deadlift-focused, different movers from Thu). | Pending |
+| 2026-04-07 | mark_completed | Marked as completed | Performed Tuesday Mobility routine but forgot to start the workout on watch — manually marked complete | Pending |
+| 2026-04-09 | mark_rest | Marked as rest day | Training readiness 27 triggers hard override to rest (threshold <40). Body battery peaked at 30, compounded by mountain day yesterday (1228m). HRV balanced but TR and BB are clear signals to recover. | Pending |
+| 2026-04-09 | mark_rest | Marked as rest day | Hard override triggered: training readiness 27 (threshold <40). Body battery only 30, mountain day yesterday (1228m). HRV balanced but recovery metrics overwhelmingly negative. | Pending |
+| 2026-04-09 | replace_session | Replaced session with Strength B: Upper + Core | Reverting stale-data rest override. Original adjustment made on fallback data (TR=27, BB=30). Fresh sync shows BB=98, resting HR 45, HRV balanced — all green. User confirms legs sore but upper body fi | Pending |
+| 2026-04-10 | replace_session | Replaced session with Strength C: Upper + Carry (legs removed) | Legs sore from Monday mountain day (1228m backcountry snowboarding) + two tours planned Sat/Sun. Removed Trap Bar Deadlift and Bulgarian Split Squat. Kept upper body and carries to preserve training s | Pending |
+| 2026-04-13 | mark_rest | Marked as rest day | Strength B moved to Thursday 04-09 (stale-data revert). No second B needed this week. Rest before Week 3. | Pending |
+| 2026-04-09 | replace_session | Replaced session with Strength B: Upper + Core | Re-push with proper Garmin set grouping (RepeatGroupDTO fix). | Pending |
+| 2026-04-10 | replace_session | Replaced session with Strength C: Upper + Carry (legs removed) | Re-push with proper Garmin set grouping (RepeatGroupDTO fix). | Pending |
 
 -----
 

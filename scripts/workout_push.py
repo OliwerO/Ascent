@@ -36,9 +36,6 @@ SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ["SUPABASE_KE
 
 COACHING_CONTEXT_PATH = PROJECT_ROOT / "openclaw" / "coaching-context.md"
 
-TOKEN_STORE = PROJECT_ROOT / "garmin_tokens.json"  # legacy, kept for reference
-GARTH_TOKEN_DIR = PROJECT_ROOT / ".garth"
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -120,7 +117,10 @@ GARMIN_EXERCISE_MAP = {
     # Strength B (Monday)
     "Overhead Press":           ("SHOULDER_PRESS",  "OVERHEAD_BARBELL_PRESS"),
     "DB Overhead Press":        ("SHOULDER_PRESS",  "DUMBBELL_SHOULDER_PRESS"),
+    "DB/BB Overhead Press":     ("SHOULDER_PRESS",  "OVERHEAD_BARBELL_PRESS"),
     "Chin-Up":                  ("PULL_UP",         "CHIN_UP"),
+    "Chin-ups":                 ("PULL_UP",         "CHIN_UP"),
+    "DB Incline Press":         ("BENCH_PRESS",     "INCLINE_DUMBBELL_BENCH_PRESS"),
     "Lat Pulldown":             ("PULL_UP",         "LAT_PULLDOWN"),
     "Dumbbell Incline Press":   ("BENCH_PRESS",     "INCLINE_DUMBBELL_BENCH_PRESS"),
     "Cable Row":                ("ROW",             "SEATED_CABLE_ROW"),
@@ -365,11 +365,17 @@ def load_sessions_from_db(sb, block_number: int = 1) -> dict | None:
 
 
 def get_sessions(sb=None, block_number: int = 1) -> dict:
-    """Get session definitions: DB first (canonical), hardcoded fallback."""
-    if sb:
-        db_sessions = load_sessions_from_db(sb, block_number)
-        if db_sessions:
-            return db_sessions
+    """Get session definitions.
+
+    NOTE 2026-04-08: DB program_sessions is intentionally NOT consulted here.
+    The DB had drifted from the canonical static `SESSIONS` dict (different
+    exercise names, different start_kg values), causing workout_push to
+    disagree with workout_generator (which uses SESSIONS). Since the React
+    app reads `planned_workouts` written from SESSIONS, the static dict is
+    the source of truth for now. Re-enable the DB path only after the
+    program_sessions table is rebuilt from SESSIONS and a cross-check test
+    asserts they stay in sync.
+    """
     return SESSIONS
 
 
@@ -415,7 +421,10 @@ def calculate_weight(
             record_progression(sb, exercise_name, date.today().isoformat(), result,
                                planned_rpe=7.0 if block == 1 else 8.0)
 
-            return round(result.weight_kg, 1), result.note
+            w = result.weight_kg
+            if exercise_name in BARBELL_COMPOUNDS:
+                w = round_to_plates(w)
+            return round(w, 2), result.note
 
         except Exception as exc:
             log.warning("Progression engine failed for %s, using formula fallback: %s",
@@ -437,7 +446,34 @@ def calculate_weight(
         increment_per_week = 1.0
 
     target_kg = start_kg + (weeks_of_progression * increment_per_week)
-    return round(target_kg, 1), "formula fallback"
+    if exercise_name in BARBELL_COMPOUNDS:
+        target_kg = round_to_plates(target_kg)
+    return round(target_kg, 2), "formula fallback"
+
+
+BARBELL_BAR_KG = 20.0  # standard Olympic bar
+SMALLEST_PLATE_PAIR_KG = 2.5  # 1.25 kg per side, smallest pair commonly stocked
+
+
+def round_to_plates(weight_kg: float, bar_kg: float = BARBELL_BAR_KG,
+                    pair_kg: float = SMALLEST_PLATE_PAIR_KG) -> float:
+    """Round a target weight to the nearest achievable barbell load.
+
+    Assumes a standard bar plus pairs of plates of size `pair_kg`. Anything
+    below the bar weight is rounded UP to the bar (you can't load less than
+    the bar itself). Above the bar, the load above the bar is rounded to the
+    nearest multiple of `pair_kg`.
+
+    Examples (bar=20, pair=2.5):
+        47.5 → 47.5   (20 + 11×2.5 = 47.5; valid as-is)
+        46.3 → 47.5   (20 + 10.625 → round to 11 pairs)
+        18.0 → 20.0   (below bar)
+    """
+    if weight_kg < bar_kg:
+        return bar_kg
+    over_bar = weight_kg - bar_kg
+    rounded_over = round(over_bar / pair_kg) * pair_kg
+    return round(bar_kg + rounded_over, 2)
 
 
 def calculate_sets(exercise: dict, week: int) -> int:
@@ -474,7 +510,10 @@ def build_warmup_step(
     step_order: int = 0,
 ) -> dict:
     """Build a Garmin warmup step (stepTypeId: 1) for pre-session mobility."""
-    garmin_mapping = GARMIN_EXERCISE_MAP.get(exercise_name, ("WARM_UP", "OTHER"))
+    # Safe fallback: ARM_CIRCLES is a known-valid Garmin warmup exerciseName
+    # used elsewhere in GARMIN_EXERCISE_MAP for unmappable items. "OTHER"
+    # triggers Garmin API "Invalid category" 400.
+    garmin_mapping = GARMIN_EXERCISE_MAP.get(exercise_name, ("WARM_UP", "ARM_CIRCLES"))
     category = garmin_mapping[0]
     garmin_exercise_name = garmin_mapping[1]
 
@@ -510,6 +549,10 @@ def build_warmup_step(
 
     return step
 
+
+# Toggle: prepend Protocol B (Domain 9 §9.6) mobility steps before the
+# session-specific warm-up. Set False to revert to the legacy warm-up only.
+MOBILITY_PREPEND = True  # uses build_warmup_step + GARMIN_EXERCISE_MAP fallback (validated)
 
 # Warm-up protocols per session type (from Domain 9: Mobility, Protocol B)
 WARMUP_PROTOCOLS = {
@@ -663,6 +706,36 @@ def build_rest_step(rest_seconds: int, step_order: int) -> dict:
     }
 
 
+def build_repeat_group(num_iterations: int, child_steps: list[dict],
+                       step_order: int) -> dict:
+    """Wrap a list of child steps in a Garmin RepeatGroupDTO.
+
+    Garmin's strength workout schema lets you say "do these N child steps M
+    times" instead of inlining N×M ExecutableStepDTOs. The watch then renders
+    "Set 1/3", "Set 2/3" instead of N independent exercises.
+    """
+    return {
+        "type": "RepeatGroupDTO",
+        "stepOrder": step_order,
+        "stepType": {
+            "stepTypeId": 6,
+            "stepTypeKey": "repeat",
+            "displayOrder": 6,
+        },
+        "numberOfIterations": num_iterations,
+        "smartRepeat": False,
+        "endCondition": {
+            "conditionTypeId": 7,
+            "conditionTypeKey": "iterations",
+            "displayOrder": 7,
+            "displayable": False,
+        },
+        "endConditionValue": float(num_iterations),
+        "workoutSteps": child_steps,
+        "skipLastRestStep": False,
+    }
+
+
 def build_garmin_workout(
     session_key: str,
     block: int,
@@ -692,6 +765,28 @@ def build_garmin_workout(
 
     # Build workout steps — start with warm-up protocol
     workout_steps = []
+
+    # Optionally prepend Protocol B mobility steps for this session's target.
+    # We re-use build_warmup_step (and its validated GARMIN_EXERCISE_MAP) so
+    # any unknown exercise falls back to ('WARM_UP','ARM_CIRCLES') instead of
+    # crashing the entire upload with "Invalid category".
+    if MOBILITY_PREPEND:
+        try:
+            import mobility_workout  # local import keeps test-time cycles minimal
+            mob_target = session_key.rstrip("2")  # 'A2'/'B2' → 'A'/'B'
+            if mob_target in mobility_workout.PROTOCOL_B_BY_TARGET:
+                for wu_name, wu_reps, wu_duration in mobility_workout.protocol_b_warmup_tuples(mob_target):
+                    workout_steps.append(
+                        build_warmup_step(
+                            exercise_name=wu_name,
+                            reps=wu_reps,
+                            duration_s=wu_duration,
+                            step_order=make_step_order(),
+                        )
+                    )
+        except Exception as exc:
+            log.warning("mobility prepend skipped: %s", exc)
+
     warmup_exercises = WARMUP_PROTOCOLS.get(session_key, [])
     for wu_name, wu_reps, wu_duration in warmup_exercises:
         wu_step = build_warmup_step(
@@ -722,26 +817,33 @@ def build_garmin_workout(
         )
         progression_notes.append((ex["name"], weight, prog_note))
 
-        for set_num in range(num_sets):
-            # Working set
-            step_order = make_step_order()
-            step = build_exercise_step(
-                exercise_name=ex["name"],
-                weight_kg=weight,
-                reps=ex["reps"],
-                step_order=step_order,
-                duration_s=ex.get("duration_s"),
-                distance_m=ex.get("distance_m"),
-            )
-            workout_steps.append(step)
-
-            # Rest period (skip after the last set of the last exercise)
-            is_last_set = set_num == num_sets - 1
-            is_last_exercise = ex is exercises[-1]
-            if not (is_last_set and is_last_exercise):
-                rest_order = make_step_order()
-                rest = build_rest_step(ex["rest_s"], rest_order)
-                workout_steps.append(rest)
+        # Build ONE working set + ONE rest step as the child template, then
+        # wrap them in a RepeatGroupDTO with numberOfIterations = num_sets.
+        # The watch will render "Set 1/N", "Set 2/N" etc. instead of
+        # showing the same exercise N times in a flat list.
+        group_order = make_step_order()
+        child_set = build_exercise_step(
+            exercise_name=ex["name"],
+            weight_kg=weight,
+            reps=ex["reps"],
+            step_order=make_step_order(),
+            duration_s=ex.get("duration_s"),
+            distance_m=ex.get("distance_m"),
+        )
+        children = [child_set]
+        is_last_exercise = ex is exercises[-1]
+        # Include a rest step inside the group so it repeats with each set,
+        # except for the very last exercise (where the final rest is dead time).
+        if not is_last_exercise:
+            children.append(build_rest_step(ex["rest_s"], make_step_order()))
+        elif num_sets > 1:
+            # For the last exercise, we still want a rest BETWEEN its sets,
+            # but not AFTER the final set. Garmin's smartRepeat=False with a
+            # rest child will rest after every iteration including the last,
+            # so we accept one trailing rest on the last exercise as a known
+            # cosmetic blemish in exchange for proper grouping.
+            children.append(build_rest_step(ex["rest_s"], make_step_order()))
+        workout_steps.append(build_repeat_group(num_sets, children, group_order))
 
     # Calculate estimated duration
     total_work_seconds = sum(
@@ -1022,44 +1124,31 @@ def build_exception_workout(
     default_rest_s = 60
 
     for ex in parsed_exercises:
-        garmin_mapping = _fuzzy_garmin_match(ex["name"]) or ("OTHER", "OTHER")
-        category = garmin_mapping[0]
-        garmin_exercise_name = garmin_mapping[1]
+        num_sets = ex["sets"]
+        rest_s = ex.get("rest_s") or default_rest_s
+        weight_kg = ex.get("weight_kg")
+        duration_s = ex.get("duration_s")
+        distance_m = ex.get("distance_m")
 
-        for set_num in range(ex["sets"]):
-            step_order = make_step_order()
-
-            # Build description
-            desc = ex["name"] if garmin_exercise_name == "OTHER" else None
-
-            step = {
-                "type": "ExecutableStepDTO",
-                "stepOrder": step_order,
-                "stepType": {
-                    "stepTypeId": 3,
-                    "stepTypeKey": "interval",
-                    "displayOrder": 3,
-                },
-                "category": category,
-                "exerciseName": garmin_exercise_name,
-                "description": desc,
-                "endCondition": {
-                    "conditionTypeId": 10,
-                    "conditionTypeKey": "reps",
-                    "displayOrder": 10,
-                    "displayable": True,
-                },
-                "endConditionValue": float(ex["reps"]),
-            }
-            workout_steps.append(step)
-
-            # Rest between sets (skip after last set of last exercise)
-            is_last_set = set_num == ex["sets"] - 1
-            is_last_exercise = ex is parsed_exercises[-1]
-            if not (is_last_set and is_last_exercise):
-                rest_order = make_step_order()
-                rest = build_rest_step(default_rest_s, rest_order)
-                workout_steps.append(rest)
+        # Build ONE working set as the child template, then wrap in
+        # RepeatGroupDTO — same pattern as build_garmin_workout().
+        group_order = make_step_order()
+        child_set = build_exercise_step(
+            exercise_name=ex["name"],
+            weight_kg=weight_kg,
+            reps=ex["reps"],
+            step_order=make_step_order(),
+            duration_s=duration_s,
+            distance_m=distance_m,
+        )
+        children = [child_set]
+        is_last_exercise = ex is parsed_exercises[-1]
+        # Include rest inside the group so it repeats with each set
+        if not is_last_exercise:
+            children.append(build_rest_step(rest_s, make_step_order()))
+        elif num_sets > 1:
+            children.append(build_rest_step(rest_s, make_step_order()))
+        workout_steps.append(build_repeat_group(num_sets, children, group_order))
 
     # Extract label from exception text (before the parentheses)
     label_match = re.match(r"^([^(]+)", exception_info["exception"])
@@ -1124,14 +1213,69 @@ def update_exception_status(target_date: date) -> None:
 
 
 def get_garmin_client():
-    """Build a Garmin API client using safe auth (no login()).
+    """Build a Garmin API client using the browser-session auth path.
 
-    Delegates to garmin_auth.get_safe_client() which uses:
-      1. Cached cookies  2. Safari cookies  3. garth.resume()
-    NEVER calls login() or hits SSO.
+    Delegates to garmin_auth.get_safe_client() which loads a saved
+    Playwright storage_state into a headless Firefox, captures a runtime
+    CSRF token from the SPA, and monkey-patches Client._run_request to
+    route all API calls through an in-page fetch on connect.garmin.com/gc-api.
+    NEVER calls login() or hits SSO. See project_garmin_browser_auth.md.
     """
     from garmin_auth import get_safe_client
     return get_safe_client(require_garminconnect=True)
+
+
+# ---------------------------------------------------------------------------
+# planned_workouts back-link (single owner of garmin_workout_id writes)
+# ---------------------------------------------------------------------------
+
+
+def link_garmin_workout_id(
+    workout_id: str,
+    target_date: date,
+    *,
+    sb=None,
+    planned_id: int | None = None,
+) -> bool:
+    """Link a Garmin workout ID to the planned_workouts row.
+
+    This is the SINGLE authoritative writer of garmin_workout_id to
+    planned_workouts.  All scripts that push workouts to Garmin must call
+    this function instead of writing directly.
+
+    Args:
+        workout_id: Garmin workout ID returned by upload_workout().
+        target_date: The scheduled date of the workout.
+        sb: Optional Supabase client (created if not provided).
+        planned_id: If known, update by row ID instead of date lookup.
+
+    Returns True if a row was linked, False otherwise.
+    """
+    try:
+        link_sb = sb if sb else create_client(SUPABASE_URL, SUPABASE_KEY)
+        if planned_id:
+            result = link_sb.table("planned_workouts").update({
+                "garmin_workout_id": workout_id,
+                "status": "pushed",
+            }).eq("id", planned_id).in_(
+                "status", ["planned", "adjusted", "pushed"]
+            ).execute()
+        else:
+            date_str = target_date.isoformat()
+            result = link_sb.table("planned_workouts").update({
+                "garmin_workout_id": workout_id,
+                "status": "pushed",
+            }).eq("scheduled_date", date_str).in_(
+                "status", ["planned", "adjusted", "pushed"]
+            ).execute()
+        if result.data:
+            log.info("Linked garmin_workout_id=%s to planned_workout (date=%s)", workout_id, target_date)
+            return True
+        log.info("No matching planned_workout found for %s to link", target_date)
+        return False
+    except Exception as exc:
+        log.warning("Failed to link workout ID to planned_workouts: %s", exc)
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -1321,20 +1465,7 @@ def main():
             workout_id,
         )
 
-    # Link Garmin workout ID to planned_workouts so the React app can track it
-    try:
-        link_sb = sb if sb else create_client(SUPABASE_URL, SUPABASE_KEY)
-        date_str = target_date.isoformat()
-        result = link_sb.table("planned_workouts").update({
-            "garmin_workout_id": workout_id,
-            "status": "pushed",
-        }).eq("scheduled_date", date_str).in_("status", ["planned", "adjusted"]).execute()
-        if result.data:
-            log.info("Linked garmin_workout_id=%s to planned_workout (date=%s)", workout_id, date_str)
-        else:
-            log.info("No matching planned_workout found for %s to link", date_str)
-    except Exception as exc:
-        log.warning("Failed to link workout ID to planned_workouts: %s", exc)
+    link_garmin_workout_id(workout_id, target_date, sb=sb)
 
 
 if __name__ == "__main__":
