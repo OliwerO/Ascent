@@ -228,10 +228,13 @@ export default function TrendsView() {
     const scores = perfScores.data ?? []
     const withHill = scores.filter((d: PerformanceScore) => d.hill_score != null)
     const withEnd = scores.filter((d: PerformanceScore) => d.endurance_score != null)
+    const hillVal = withHill.length > 0 ? withHill[withHill.length - 1].hill_score : null
+    const endVal = withEnd.length > 0 ? withEnd[withEnd.length - 1].endurance_score : null
+    const ageVal = scores.length > 0 ? scores[scores.length - 1].fitness_age : null
     return {
-      hill: withHill.length > 0 ? withHill[withHill.length - 1].hill_score : null,
-      endurance: withEnd.length > 0 ? withEnd[withEnd.length - 1].endurance_score : null,
-      fitnessAge: scores.length > 0 ? scores[scores.length - 1].fitness_age : null,
+      hill: typeof hillVal === 'number' ? hillVal : null,
+      endurance: typeof endVal === 'number' ? endVal : null,
+      fitnessAge: typeof ageVal === 'number' ? ageVal : null,
     }
   }, [perfScores.data])
 
@@ -707,12 +710,8 @@ export default function TrendsView() {
             <BarChart data={vamData}>
               <XAxis dataKey="date" tick={{ ...axisTickStyle, fontSize: 10 }} axisLine={axisLineStyle} tickLine={false} interval="preserveStartEnd" />
               <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={40} />
-              <Tooltip
-                contentStyle={darkTooltipStyle}
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                formatter={(value: any, _name: any, props: any) => [`${value} m/h`, props?.payload?.name ?? '']}
-              />
-              <Bar dataKey="vam" radius={[4, 4, 0, 0]} fill="#38bdf8" />
+              <Tooltip contentStyle={darkTooltipStyle} />
+              <Bar dataKey="vam" name="VAM (m/h)" radius={[4, 4, 0, 0]} fill="#38bdf8" />
             </BarChart>
           </ResponsiveContainer>
         ) : (
@@ -723,7 +722,7 @@ export default function TrendsView() {
           </div>
         )}
         <InfoPanel title="How to read VAM">
-          <p>VAM (Velocit&agrave; Ascensionale Media) is your average climbing speed in meters per hour. It&rsquo;s influenced by terrain, snow conditions, and pack weight — so individual values vary.</p>
+          <p>VAM (Velocit&agrave; Ascensionale Media) is your average climbing speed in meters per hour. It{"'"}s influenced by terrain, snow conditions, and pack weight — so individual values vary.</p>
           <p>The trend matters more than single values. If you see VAM increasing while HR stays the same (or drops), your mountain fitness is improving.</p>
         </InfoPanel>
       </Card>
