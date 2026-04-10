@@ -1,3 +1,5 @@
+import { supabase } from '../lib/supabase'
+import { buildHomeWorkout, restoreGymWorkout, isHomeWorkout } from '../lib/homeWorkout'
 import { LoadingState, EmptyState } from '../components/LoadingState'
 import { WellnessInput } from '../components/WellnessInput'
 import { RPEPrompt } from '../components/RPEPrompt'
@@ -12,7 +14,7 @@ import { metricColor, hrvStatusInfo } from '../lib/colors'
 import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES } from '../lib/constants'
 import { computeCoachingState } from '../lib/coachingDecision'
 import { formatDuration, formatActivityType } from '../lib/format'
-import { Clock, Flame, ArrowUpRight, Heart, ChevronDown, TrendingUp, Activity as ActivityIcon, Info } from 'lucide-react'
+import { Clock, Flame, ArrowUpRight, Heart, ChevronDown, TrendingUp, Activity as ActivityIcon, Info, Home, Dumbbell } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { format } from 'date-fns'
 
@@ -28,6 +30,7 @@ export default function TodayView() {
   const coachingLog = useCoachingLog(7)
   const [showExercises, setShowExercises] = useState(false)
   const [, setWellnessRefresh] = useState(0)
+  const [switching, setSwitching] = useState(false)
 
   const recentActivities = activities.data ?? []
 
@@ -233,6 +236,59 @@ export default function TodayView() {
     coachingPoints.push({ icon: '✅', text: 'All signals green — train as planned' })
   }
 
+  const todayIsHome = isHomeWorkout(todayPlanned?.workout_definition)
+
+  const handleSwitchToHome = async () => {
+    if (!todayPlanned?.workout_definition || switching) return
+    setSwitching(true)
+    try {
+      const homeWd = buildHomeWorkout(todayPlanned.workout_definition)
+      await supabase
+        .from('planned_workouts')
+        .update({
+          workout_definition: homeWd,
+          status: 'adjusted',
+          adjustment_reason: 'Switched to home workout',
+        })
+        .eq('id', todayPlanned.id)
+      await supabase.from('coaching_log').insert({
+        date: todayStr,
+        type: 'adjustment',
+        channel: 'app',
+        message: 'Switched to home workout',
+        data_context: { action: 'switch_to_home', reason: 'User requested from app' },
+      })
+    } finally {
+      setSwitching(false)
+    }
+  }
+
+  const handleSwitchToGym = async () => {
+    if (!todayPlanned?.workout_definition || switching) return
+    const gymWd = restoreGymWorkout(todayPlanned.workout_definition)
+    if (!gymWd) return
+    setSwitching(true)
+    try {
+      await supabase
+        .from('planned_workouts')
+        .update({
+          workout_definition: gymWd,
+          status: 'adjusted',
+          adjustment_reason: 'Switched back to gym workout',
+        })
+        .eq('id', todayPlanned.id)
+      await supabase.from('coaching_log').insert({
+        date: todayStr,
+        type: 'adjustment',
+        channel: 'app',
+        message: 'Switched back to gym workout',
+        data_context: { action: 'switch_to_gym', reason: 'User requested from app' },
+      })
+    } finally {
+      setSwitching(false)
+    }
+  }
+
   return (
     <div className="space-y-3">
 
@@ -272,6 +328,31 @@ export default function TodayView() {
           </div>
         )}
 
+        {/* Home / Gym toggle */}
+        {isGymDay && todayPlanned?.workout_definition && (todayPlanned.workout_definition.exercises?.length ?? 0) > 0 && (
+          <div className="mt-3">
+            {todayIsHome ? (
+              <button
+                onClick={handleSwitchToGym}
+                disabled={switching}
+                className="flex items-center gap-1.5 text-[13px] text-text-muted hover:text-text-secondary transition-colors disabled:opacity-50"
+              >
+                <Dumbbell size={14} />
+                {switching ? 'Switching...' : 'Switch back to gym'}
+              </button>
+            ) : (
+              <button
+                onClick={handleSwitchToHome}
+                disabled={switching}
+                className="flex items-center gap-1.5 text-[13px] text-accent-blue hover:text-accent-blue/80 transition-colors disabled:opacity-50"
+              >
+                <Home size={14} />
+                {switching ? 'Switching...' : 'Train at home today'}
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Expandable workout */}
         {isAdjusted && !todayPlanned && todayAdjustment && (
           <div className="mt-3 text-[13px] text-accent-yellow">
@@ -306,15 +387,26 @@ export default function TodayView() {
                     ))}
                   </div>
                 )}
+                {todayIsHome && (
+                  <div className="flex items-center gap-1.5 text-[12px] text-accent-blue mb-2">
+                    <Home size={12} />
+                    Home workout — exercises adapted for home equipment
+                  </div>
+                )}
                 <table className="w-full text-[14px]">
                   <tbody>
                     {(todayPlanned.workout_definition?.exercises ?? []).map((ex: PlannedExercise, i: number) => (
                       <tr key={i} className="border-b border-text-primary/5 last:border-0">
-                        <td className="py-2 text-text-primary">{ex.name}</td>
-                        <td className="py-2 text-right text-text-secondary font-mono text-[13px] whitespace-nowrap">
+                        <td className="py-2">
+                          <div className="text-text-primary">{ex.name}</div>
+                          {todayIsHome && ex.note && (
+                            <div className="text-[11px] text-text-dim mt-0.5">{ex.note}</div>
+                          )}
+                        </td>
+                        <td className="py-2 text-right text-text-secondary font-mono text-[13px] whitespace-nowrap align-top">
                           {ex.sets}×{ex.reps}
                         </td>
-                        <td className="py-2 text-right text-text-primary font-mono text-[13px] w-20 font-semibold">
+                        <td className="py-2 text-right text-text-primary font-mono text-[13px] w-20 font-semibold align-top">
                           {ex.weight_kg != null ? `${ex.weight_kg}kg` : '—'}
                         </td>
                       </tr>

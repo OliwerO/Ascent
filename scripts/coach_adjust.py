@@ -80,6 +80,10 @@ ACTIONS = {
     # Closes the traceability hole where train-as-planned days left no audit
     # trail. See sql/021_coaching_log_traceability.sql + audit Phase 7.
     "mark_train_as_planned",
+    # Home ↔ gym switching. Converts a planned gym session to a home-equipment
+    # version (or back) using the substitution map in workout_push.py.
+    "switch_to_home",
+    "switch_to_gym",
 }
 
 # Maps an action to the typed decision_type stored in coaching_log.
@@ -94,10 +98,12 @@ DECISION_TYPE_BY_ACTION = {
     "mark_skipped":          "skipped",
     "mark_completed":        "completed",
     "mark_train_as_planned": "train_as_planned",
+    "switch_to_home":        "adjust",
+    "switch_to_gym":         "adjust",
 }
 
 # Actions that require us to re-push a workout to Garmin afterwards.
-GARMIN_REPUSH_ACTIONS = {"swap_exercise", "lighten_session", "replace_session"}
+GARMIN_REPUSH_ACTIONS = {"swap_exercise", "lighten_session", "replace_session", "switch_to_home", "switch_to_gym"}
 # Actions that push a mobility workout via mobility_workout.py instead of workout_push.py.
 GARMIN_MOBILITY_ACTIONS = {"mark_mobility"}
 
@@ -213,6 +219,10 @@ def validate_action(action: str, details: dict) -> None:
         _require_keys(details, ["reason"], action)
         # `inputs` (JSONB), `rule` (TEXT), `kb_refs` (TEXT[]) are optional but
         # strongly encouraged — they're the whole point of this action.
+    elif action == "switch_to_home":
+        _require_keys(details, ["reason"], action)
+    elif action == "switch_to_gym":
+        _require_keys(details, ["reason"], action)
 
     # Optional traceability fields are accepted on every action and stored
     # on the coaching_log row. Validate shape if present.
@@ -497,6 +507,31 @@ def apply_action_to_row(
         if "reason" in details:
             new_row["adjustment_reason"] = details["reason"]
         return new_row, "Marked as completed"
+
+    if action == "switch_to_home":
+        from workout_push import build_home_workout_definition
+        wd = row.get("workout_definition") or {}
+        if wd.get("venue") == "home":
+            raise ValidationError("session is already a home workout")
+        home_wd = build_home_workout_definition(wd)
+        new_row = deepcopy(row)
+        new_row["workout_definition"] = home_wd
+        new_row["status"] = "adjusted"
+        new_row["adjustment_reason"] = f"Switched to home: {details['reason']}"
+        return new_row, "Switched to home workout"
+
+    if action == "switch_to_gym":
+        wd = row.get("workout_definition") or {}
+        original = wd.get("original_gym_definition")
+        if not original:
+            raise ValidationError(
+                "no original gym definition found — cannot switch back"
+            )
+        new_row = deepcopy(row)
+        new_row["workout_definition"] = original
+        new_row["status"] = "adjusted"
+        new_row["adjustment_reason"] = f"Switched back to gym: {details['reason']}"
+        return new_row, "Switched back to gym workout"
 
     raise ValidationError(f"unhandled action {action}")  # pragma: no cover
 

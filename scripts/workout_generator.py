@@ -133,6 +133,26 @@ def _validate_program_doc() -> None:
 _validate_program_doc()
 
 
+def _validate_home_coverage() -> None:
+    """Warn (don't fail) if any session exercise has no home substitute."""
+    from workout_push import HOME_SUBSTITUTIONS, HOME_COMPATIBLE, SESSIONS
+    missing = []
+    for key, session in SESSIONS.items():
+        for ex in session["exercises"]:
+            name = ex["name"]
+            if name not in HOME_SUBSTITUTIONS and name not in HOME_COMPATIBLE:
+                missing.append(f"  Session {key}: {name}")
+    if missing:
+        log.warning(
+            "Home workout coverage gap — these exercises have no home substitute:\n%s\n"
+            "Add entries to HOME_SUBSTITUTIONS in workout_push.py or HOME_COMPATIBLE.",
+            "\n".join(missing),
+        )
+
+
+_validate_home_coverage()
+
+
 # ---------------------------------------------------------------------------
 # workout_definition builder
 # ---------------------------------------------------------------------------

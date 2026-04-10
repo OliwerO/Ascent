@@ -504,7 +504,7 @@ function TodaySession({
 
   const todaySession = sessions.find((s) => s.date === todayStr)
   const todaySets = todaySession ? sets.filter((s) => s.session_id === todaySession.id) : []
-  const todayNotes = coaching.filter((c) => c.date === todayStr)
+  const todayNotes = coaching.filter((c) => c.date === todayStr && c.type !== 'heartbeat')
 
   return (
     <Card>

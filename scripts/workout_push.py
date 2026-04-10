@@ -144,6 +144,21 @@ GARMIN_EXERCISE_MAP = {
     "Bird Dogs":                ("HIP_STABILITY",   "QUADRUPED_WITH_LEG_LIFT"),
     "Suitcase Carry":           ("CARRY",           "FARMERS_WALK"),
 
+    # Home workout substitutes
+    "Barbell Front Squat":      ("SQUAT",           "BARBELL_FRONT_SQUAT"),
+    "DB Floor Press":           ("BENCH_PRESS",     "DUMBBELL_BENCH_PRESS"),
+    "DB Swing":                 ("HIP_RAISE",       "KETTLEBELL_SWING"),          # Closest match
+    "DB Halo":                  ("WARM_UP",         "ARM_CIRCLES"),               # No exact match
+    "DB Turkish Get-Up":        ("CORE",            "TURKISH_GET_UP"),
+    "Band-Assisted Inverted Row": ("ROW",           "INVERTED_ROW"),
+    "Feet-Elevated Push-Up":    ("PUSH_UP",         "PUSH_UP"),
+    "Band Row":                 ("ROW",             "BARBELL_ROW"),               # Closest match
+    "Band Pallof Press":        ("CORE",            "CABLE_CORE_PRESS"),
+    "Conventional Deadlift":    ("DEADLIFT",        "BARBELL_DEADLIFT"),
+    "DB Clean & Press":         ("SANDBAG",         "CLEAN_AND_PRESS"),
+    "DB Farmer Carry":          ("CARRY",           "FARMERS_WALK"),
+    "Jump Rope":                ("CARDIO",          "JUMP_ROPE"),
+
     # Warm-up exercises
     "Foam Roll T-Spine":        ("WARM_UP",         "ARM_CIRCLES"),              # No foam rolling in Garmin DB
     "Ankle Mobilization":       ("WARM_UP",         "ANKLE_CIRCLES"),
@@ -212,6 +227,219 @@ DB_ACCESSORIES = {
     "Lateral Raise",
     "KB Farmer Carry",
 }
+
+# ---------------------------------------------------------------------------
+# Home workout substitution system
+# ---------------------------------------------------------------------------
+
+# Equipment available at home — single-user, rarely changes
+HOME_EQUIPMENT = {
+    "barbell": {
+        "bar_kg": 10.0,
+        # All plates (including those normally on dumbbells)
+        "plates_kg": [20, 20, 10, 10, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5,
+                      1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25,
+                      2, 2],
+        "max_load_kg": 100.0,
+    },
+    "dumbbell_adjustable": {
+        "max_per_hand_kg": 12.5,
+        "increments_kg": [1.25, 2.5],
+    },
+    "dumbbell_fixed": {
+        "weights_kg": [20.0],
+        "pairs": 1,
+    },
+    "bands": ["heavy", "medium", "light"],
+    "gymnastic_rings": {"mounted": False},
+    "jump_rope": True,
+}
+
+# Maps gym exercise → home substitute with weight strategy
+# weight_strategy: "same" (keep), "cap_at" (min of gym/max), "fixed" (use max), "bodyweight" (None)
+HOME_SUBSTITUTIONS: dict[str, dict] = {
+    # --- Session A exercises ---
+    "Barbell Back Squat": {
+        "name": "Barbell Front Squat",
+        "equipment": "barbell",
+        "max_weight_kg": 70.0,
+        "weight_strategy": "cap_at",
+        "note": "Clean to front rack — max ~70kg",
+    },
+    "Dumbbell Bench Press": {
+        "name": "DB Floor Press",
+        "equipment": "dumbbell",
+        "max_weight_kg": 20.0,
+        "weight_strategy": "fixed",
+        "note": "20kg fixed DBs, floor press (no bench)",
+    },
+    "Kettlebell Swing": {
+        "name": "DB Swing",
+        "equipment": "dumbbell",
+        "max_weight_kg": 20.0,
+        "weight_strategy": "fixed",
+        "note": "Single 20kg fixed DB, two-hand swing",
+    },
+    "Kettlebell Halo": {
+        "name": "DB Halo",
+        "equipment": "dumbbell",
+        "max_weight_kg": 12.5,
+        "weight_strategy": "cap_at",
+        "note": "12.5kg adjustable DB",
+    },
+    "Turkish Get-Up": {
+        "name": "DB Turkish Get-Up",
+        "equipment": "dumbbell",
+        "max_weight_kg": 20.0,
+        "weight_strategy": "cap_at",
+        "note": "Up to 20kg fixed DB",
+    },
+    # --- Session B exercises ---
+    "Chin-Up": {
+        "name": "Band-Assisted Inverted Row",
+        "equipment": "band",
+        "max_weight_kg": None,
+        "weight_strategy": "bodyweight",
+        "note": "Heavy band, table edge or sturdy bar",
+    },
+    "Dumbbell Incline Press": {
+        "name": "Feet-Elevated Push-Up",
+        "equipment": "bodyweight",
+        "max_weight_kg": None,
+        "weight_strategy": "bodyweight",
+        "note": "Feet on chair/step for upper chest emphasis",
+    },
+    "DB Incline Press": {
+        "name": "Feet-Elevated Push-Up",
+        "equipment": "bodyweight",
+        "max_weight_kg": None,
+        "weight_strategy": "bodyweight",
+        "note": "Feet on chair/step for upper chest emphasis",
+    },
+    "Cable Row": {
+        "name": "Band Row",
+        "equipment": "band",
+        "max_weight_kg": None,
+        "weight_strategy": "bodyweight",
+        "note": "Heavy resistance band, door anchor",
+    },
+    "Pallof Walkouts": {
+        "name": "Band Pallof Press",
+        "equipment": "band",
+        "max_weight_kg": None,
+        "weight_strategy": "bodyweight",
+        "note": "Medium band, door anchor at chest height",
+    },
+    # --- Session C exercises ---
+    "Trap Bar Deadlift": {
+        "name": "Conventional Deadlift",
+        "equipment": "barbell",
+        "max_weight_kg": 100.0,
+        "weight_strategy": "cap_at",
+        "note": "Conventional barbell deadlift from floor",
+    },
+    "KB Clean & Press": {
+        "name": "DB Clean & Press",
+        "equipment": "dumbbell",
+        "max_weight_kg": 20.0,
+        "weight_strategy": "fixed",
+        "note": "20kg fixed DB, single-arm",
+    },
+    "KB Farmer Carry": {
+        "name": "DB Farmer Carry",
+        "equipment": "dumbbell",
+        "max_weight_kg": 20.0,
+        "weight_strategy": "fixed",
+        "note": "20kg fixed DBs, one per hand",
+    },
+}
+
+# Exercises that work at home without any substitution
+HOME_COMPATIBLE = {
+    "Barbell Row",
+    "Overhead Press",
+    "Single-Arm DB Row",
+    "Bulgarian Split Squat",
+    "Lateral Raise",
+    "Dead Bugs",
+    "Copenhagen Plank",
+}
+
+# Weight caps for home-compatible exercises by equipment type
+_HOME_WEIGHT_CAPS = {
+    "barbell": 100.0,
+    "dumbbell": 20.0,
+}
+
+
+def _apply_home_weight(
+    exercise_name: str,
+    gym_weight: float | None,
+    equipment: str | None = None,
+) -> float | None:
+    """Apply home equipment weight constraints to an exercise."""
+    if gym_weight is None:
+        return None
+    sub = HOME_SUBSTITUTIONS.get(exercise_name)
+    if sub:
+        strategy = sub["weight_strategy"]
+        if strategy == "bodyweight":
+            return None
+        if strategy == "fixed":
+            return sub["max_weight_kg"]
+        if strategy == "cap_at":
+            return min(gym_weight, sub["max_weight_kg"])
+        return gym_weight  # "same"
+    # Home-compatible: cap based on equipment type
+    if equipment == "barbell":
+        return min(gym_weight, _HOME_WEIGHT_CAPS["barbell"])
+    if equipment == "dumbbell":
+        return min(gym_weight, _HOME_WEIGHT_CAPS["dumbbell"])
+    return gym_weight
+
+
+def build_home_workout_definition(
+    gym_definition: dict,
+    include_jump_rope: bool = True,
+) -> dict:
+    """Convert a gym workout_definition to a home-equipment version.
+
+    Pure function — no side effects. Returns a new dict.
+    The original gym definition is stored under 'original_gym_definition'
+    so the switch can be reversed.
+    """
+    from copy import deepcopy
+
+    home = deepcopy(gym_definition)
+    home["original_gym_definition"] = deepcopy(gym_definition)
+    home["venue"] = "home"
+    home["session_name"] = home.get("session_name", "") + " (Home)"
+
+    # --- Substitute exercises ---
+    substituted_count = 0
+    for ex in home.get("exercises", []):
+        name = ex.get("name", "")
+        equipment = ex.get("equipment")
+        sub = HOME_SUBSTITUTIONS.get(name)
+        if sub:
+            ex["name"] = sub["name"]
+            ex["equipment"] = sub["equipment"]
+            ex["weight_kg"] = _apply_home_weight(name, ex.get("weight_kg"), equipment)
+            ex["note"] = sub["note"]
+            substituted_count += 1
+        elif name in HOME_COMPATIBLE:
+            # Keep exercise but cap weight to home limits
+            ex["weight_kg"] = _apply_home_weight(name, ex.get("weight_kg"), equipment)
+        # Exercises not in either map are kept as-is (bodyweight core etc.)
+
+    # --- Jump rope warm-up ---
+    if include_jump_rope:
+        warmup = home.get("warmup", [])
+        warmup.insert(0, {"name": "Jump Rope", "reps": None, "duration_s": 180})
+        home["warmup"] = warmup
+
+    return home
+
 
 # ---------------------------------------------------------------------------
 # Session definitions from coaching-context.md

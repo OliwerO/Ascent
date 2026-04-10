@@ -132,10 +132,13 @@ Based on the discussion, collaboratively design the next training block:
 - Plan deload timing
 - Set assessment checkpoints
 
+**Home workout coverage:** For every new gym exercise added to the program, ensure a home substitute exists in `HOME_SUBSTITUTIONS` (scripts/workout_push.py) and the exercise is seeded in the DB. Run the validation in workout_generator.py to check for gaps.
+
 **Write the new block to:**
 1. `coaching-program.md` (the template file — you have write access in this session)
 2. Supabase `program_blocks` and `program_sessions` tables
 3. Update `coaching-context.md` with any new goals, preferences, or season changes
+4. Update `HOME_SUBSTITUTIONS` in `scripts/workout_push.py` and `web/src/lib/homeWorkout.ts` for any new exercises
 
 **IMPORTANT:** This is a collaborative session. Present data, give recommendations, but let Oliwer make the final decisions. Don't dump a finished plan — discuss each change.
 
