@@ -14,7 +14,7 @@ import {
   getWeekSchedule,
   isDeloadWeek,
 } from '../lib/program'
-import { format, startOfWeek, endOfWeek, isWithinInterval } from 'date-fns'
+import { format, startOfWeek, endOfWeek, isWithinInterval, parseISO } from 'date-fns'
 import {
   LineChart,
   Line,
@@ -406,86 +406,102 @@ function WeekExpanded({
           )
         }
 
-        const pw = item.pw
-        const def = pw.workout_definition as WorkoutDefinition | null
-        const exercises = def?.exercises ?? []
-        const warmup = def?.warmup ?? []
-        const rpeLabel = deload
-          ? 'Deload 50% vol'
-          : def?.rpe_range
-            ? `RPE ${def.rpe_range[0]}-${def.rpe_range[1]}`
-            : ''
-        const sessionLabel = def?.session_name ?? pw.session_name
-
-        return (
-          <div key={pw.id} className="bg-bg-primary/50 rounded-xl px-4 py-3">
-            <div className="flex items-center gap-2 mb-2">
-              <Dumbbell size={15} className="text-gym shrink-0" />
-              <span className="text-[15px] font-semibold text-text-primary">
-                {sessionLabel}
-              </span>
-              {pw.status === 'completed' && (
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent-green/25 text-accent-green font-semibold">
-                  Done
-                </span>
-              )}
-              {pw.status === 'adjusted' && (
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent-yellow/25 text-accent-yellow font-semibold">
-                  Adjusted
-                </span>
-              )}
-              {pw.status === 'skipped' && (
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-bg-primary/60 text-text-dim font-semibold">
-                  Skipped
-                </span>
-              )}
-            </div>
-            <div className="text-[13px] text-text-muted mb-2">
-              {pw.scheduled_date} &middot; {rpeLabel}
-              {def?.estimated_duration_minutes && (
-                <span> &middot; ~{def.estimated_duration_minutes} min</span>
-              )}
-            </div>
-
-            {pw.status === 'adjusted' && pw.adjustment_reason && (
-              <div className="text-[13px] text-accent-yellow bg-accent-yellow/10 rounded-lg px-3 py-2 mb-3">
-                {pw.adjustment_reason}
-              </div>
-            )}
-
-            {warmup.length > 0 && <WarmupSection warmup={warmup} />}
-
-            <table className="w-full text-[14px]">
-              <thead>
-                <tr className="text-text-muted border-b border-border">
-                  <th className="text-left py-2 font-semibold pr-2 text-[12px] uppercase tracking-wider">Exercise</th>
-                  <th className="text-right py-2 font-semibold px-2 whitespace-nowrap text-[12px] uppercase tracking-wider">Sets×Reps</th>
-                  <th className="text-right py-2 font-semibold pl-2 w-20 text-[12px] uppercase tracking-wider">Weight</th>
-                </tr>
-              </thead>
-              <tbody>
-                {exercises.map((ex) => {
-                  const setsReps = deload
-                    ? `${Math.ceil(ex.sets / 2)}\u00D7${ex.reps}`
-                    : `${ex.sets}\u00D7${ex.reps}`
-                  return (
-                    <tr key={ex.name} className="border-b border-border-subtle last:border-0">
-                      <td className="py-2 pr-2 text-text-primary">
-                        {ex.name}
-                        {ex.note && <span className="text-text-dim ml-1.5 text-[12px]">({ex.note})</span>}
-                      </td>
-                      <td className="py-2 px-2 text-right font-mono text-text-secondary whitespace-nowrap">{setsReps}</td>
-                      <td className="py-2 pl-2 text-right font-mono text-text-primary font-semibold w-20">
-                        {ex.weight_kg != null && ex.weight_kg > 0 ? `${ex.weight_kg}kg` : '\u2014'}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )
+        return <GymSessionCard key={item.pw.id} pw={item.pw} deload={deload} />
       })}
+    </div>
+  )
+}
+
+// ─── Collapsible gym session card ────────────────────────────────
+function GymSessionCard({ pw, deload }: { pw: PlannedWorkout; deload: boolean }) {
+  const [open, setOpen] = useState(false)
+  const def = pw.workout_definition as WorkoutDefinition | null
+  const exercises = def?.exercises ?? []
+  const warmup = def?.warmup ?? []
+  const rpeLabel = deload
+    ? 'Deload 50% vol'
+    : def?.rpe_range
+      ? `RPE ${def.rpe_range[0]}-${def.rpe_range[1]}`
+      : ''
+  const sessionLabel = def?.session_name ?? pw.session_name
+
+  return (
+    <div className="bg-bg-primary/50 rounded-xl px-4 py-3">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full text-left flex items-center gap-2"
+      >
+        {open ? <ChevronDown size={14} className="text-text-dim shrink-0" /> : <ChevronRight size={14} className="text-text-dim shrink-0" />}
+        <Dumbbell size={15} className="text-gym shrink-0" />
+        <span className="text-[15px] font-semibold text-text-primary">
+          {sessionLabel}
+        </span>
+        {pw.status === 'completed' && (
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent-green/25 text-accent-green font-semibold">
+            Done
+          </span>
+        )}
+        {pw.status === 'adjusted' && (
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent-yellow/25 text-accent-yellow font-semibold">
+            Adjusted
+          </span>
+        )}
+        {pw.status === 'skipped' && (
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-bg-primary/60 text-text-dim font-semibold">
+            Skipped
+          </span>
+        )}
+        <span className="ml-auto text-[12px] text-text-dim">
+          {format(parseISO(pw.scheduled_date), 'EEE')}
+        </span>
+      </button>
+      <div className="text-[12px] text-text-muted mt-1 ml-6">
+        {pw.scheduled_date} &middot; {rpeLabel}
+        {def?.estimated_duration_minutes && (
+          <span> &middot; ~{def.estimated_duration_minutes} min</span>
+        )}
+      </div>
+
+      {open && (
+        <div className="mt-3">
+          {pw.status === 'adjusted' && pw.adjustment_reason && (
+            <div className="text-[13px] text-accent-yellow bg-accent-yellow/10 rounded-lg px-3 py-2 mb-3">
+              {pw.adjustment_reason}
+            </div>
+          )}
+
+          {warmup.length > 0 && <WarmupSection warmup={warmup} />}
+
+          <table className="w-full text-[14px]">
+            <thead>
+              <tr className="text-text-muted border-b border-border">
+                <th className="text-left py-2 font-semibold pr-2 text-[12px] uppercase tracking-wider">Exercise</th>
+                <th className="text-right py-2 font-semibold px-2 whitespace-nowrap text-[12px] uppercase tracking-wider">Sets×Reps</th>
+                <th className="text-right py-2 font-semibold pl-2 w-20 text-[12px] uppercase tracking-wider">Weight</th>
+              </tr>
+            </thead>
+            <tbody>
+              {exercises.map((ex) => {
+                const setsReps = deload
+                  ? `${Math.ceil(ex.sets / 2)}\u00D7${ex.reps}`
+                  : `${ex.sets}\u00D7${ex.reps}`
+                return (
+                  <tr key={ex.name} className="border-b border-border-subtle last:border-0">
+                    <td className="py-2 pr-2 text-text-primary">
+                      {ex.name}
+                      {ex.note && <span className="text-text-dim ml-1.5 text-[12px]">({ex.note})</span>}
+                    </td>
+                    <td className="py-2 px-2 text-right font-mono text-text-secondary whitespace-nowrap">{setsReps}</td>
+                    <td className="py-2 pl-2 text-right font-mono text-text-primary font-semibold w-20">
+                      {ex.weight_kg != null && ex.weight_kg > 0 ? `${ex.weight_kg}kg` : '\u2014'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

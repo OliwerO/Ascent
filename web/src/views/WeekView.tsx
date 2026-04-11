@@ -208,17 +208,31 @@ export default function WeekView() {
   }, [rescheduleSource, rescheduleTarget, weekPlanned, plannedHook])
 
   // ─── Compliance summary ───
+  // "Done" includes anything that actually happened today: completed gym sessions,
+  // self-powered mountain days, and past 'adjusted' sessions. Future 'adjusted'
+  // sessions count as 'planned' instead.
   const compliance = useMemo(() => {
-    const completed = dayCells.filter((d) => d.status === 'completed').length
+    const isPastOrToday = (d: DayCell) => !isBefore(today, d.date)
+    const done = dayCells.filter((d) =>
+      d.status === 'completed'
+      || d.status === 'mountain'
+      || (d.status === 'adjusted' && isPastOrToday(d) && d.dateStr !== format(today, 'yyyy-MM-dd'))
+    ).length
+    const planned = dayCells.filter((d) =>
+      (d.status === 'planned' || d.status === 'today' || d.status === 'adjusted')
+      && d.dateStr >= format(today, 'yyyy-MM-dd')
+      && d.planned != null
+    ).length
     const adjusted = dayCells.filter((d) => d.status === 'adjusted').length
     const skipped = dayCells.filter((d) => d.status === 'skipped').length
     const missed = dayCells.filter((d) => d.status === 'missed').length
-    const scheduled = dayCells.filter((d) => d.planned != null || (d.templateSession != null && d.templateDayType === 'gym')).length
+    // Total scheduled = done + planned + missed (excludes pure rest days and moved-away days)
+    const scheduled = done + planned + missed
     const lastAdjustment = weekPlanned
       .filter((p) => p.adjustment_reason)
       .sort((a, b) => b.scheduled_date.localeCompare(a.scheduled_date))[0]
-    return { completed, adjusted, skipped, missed, scheduled, lastAdjustment }
-  }, [dayCells, weekPlanned])
+    return { completed: done, adjusted, skipped, missed, scheduled, lastAdjustment, planned }
+  }, [dayCells, weekPlanned, today])
 
   // ─── Load accumulation ───
   const strengthVolume = useMemo(() => {
@@ -372,11 +386,11 @@ export default function WeekView() {
 
       {/* ═══ 2. COMPLIANCE SUMMARY ═══ */}
       {compliance.scheduled > 0 && (
-        <Card glow={compliance.missed > 0 ? 'red' : compliance.adjusted > 0 ? 'yellow' : 'green'}>
+        <Card glow={compliance.missed > 0 ? 'red' : compliance.planned > 0 ? 'yellow' : 'green'}>
           <div className="flex items-baseline justify-between mb-2">
             <div>
               <span className="text-2xl font-bold text-text-primary font-data">
-                {compliance.completed + compliance.adjusted}
+                {compliance.completed}
               </span>
               <span className="text-sm text-text-muted ml-1">
                 / {compliance.scheduled} sessions
@@ -390,11 +404,8 @@ export default function WeekView() {
             {compliance.completed > 0 && (
               <span className="text-accent-green">✓ {compliance.completed} done</span>
             )}
-            {compliance.adjusted > 0 && (
-              <span className="text-accent-blue">~ {compliance.adjusted} adjusted</span>
-            )}
-            {compliance.skipped > 0 && (
-              <span className="text-text-muted">– {compliance.skipped} skipped</span>
+            {compliance.planned > 0 && (
+              <span className="text-accent-blue">→ {compliance.planned} planned</span>
             )}
             {compliance.missed > 0 && (
               <span className="text-accent-red">! {compliance.missed} missed</span>
