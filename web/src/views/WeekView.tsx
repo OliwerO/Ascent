@@ -120,6 +120,13 @@ export default function WeekView() {
       const isToday = isSameDay(date, today)
       const isPast = isBefore(date, today) && !isToday
 
+      // Detect "moved away": if any planned workout has an adjustment_reason
+      // saying it was moved from THIS date, the cell should be rest, not missed.
+      // Matches reasons like "Moved from 2026-04-10" or "rescheduled from ...".
+      const movedAway = (plannedHook.data ?? []).some(
+        (p) => p.adjustment_reason?.includes(`from ${dateStr}`)
+      )
+
       // Reality wins over plan: if a self-powered mountain activity happened
       // this day, surface it regardless of what was planned. The DB will be
       // reconciled by the daily coach_adjust pass; this is the view-time fix.
@@ -140,6 +147,10 @@ export default function WeekView() {
       } else if (dayActivities.some((a) => MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type))) {
         // Resort/lift-served mountain — not a self-powered tour, but still mountain context
         status = 'mountain'
+      } else if (movedAway) {
+        // Workout was rescheduled away from this day
+        status = 'rest'
+        displayLabel = 'Moved'
       } else if (templateDay?.dayType === 'rest') {
         status = 'rest'
       } else if (isToday) {
@@ -165,7 +176,7 @@ export default function WeekView() {
         displayLabel,
       }
     })
-  }, [weekStart, weekPlanned, weekTemplate, weekActivities, today])
+  }, [weekStart, weekPlanned, weekTemplate, weekActivities, today, plannedHook.data])
 
   // ─── Reschedule handler ───
   // Past 'missed' workouts can be rescheduled to a future date.

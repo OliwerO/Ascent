@@ -71,7 +71,11 @@ function AppShell() {
   }, [refreshKey])
 
   const handleRefresh = useCallback(() => {
+    // Force a full re-fetch of all data by reloading the page.
+    // useFetch hooks only re-run on dep changes; without exposing refetch
+    // to every consumer, the heavy-handed reload is the most reliable.
     setRefreshKey((k) => k + 1)
+    window.location.reload()
   }, [])
 
   const handleSync = useCallback(async () => {
