@@ -16,7 +16,7 @@ import logging
 import os
 import sys
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -219,6 +219,9 @@ def sync_daily_metrics(client: Garmin, sb, d: date) -> bool | None:
         "spo2_avg": spo2_avg,
         "respiration_avg": resp_avg,
         "raw_json": safe_json(stats),
+        # Explicit synced_at so upserts update the timestamp on every sync
+        # (the column default only fires on INSERT, not UPDATE)
+        "synced_at": datetime.now(timezone.utc).isoformat(),
     }
     row = validate_daily_metrics(row)
     sb.table("daily_metrics").upsert(row, on_conflict="date").execute()
@@ -267,8 +270,13 @@ def sync_hrv(client: Garmin, sb, d: date) -> bool | None:
         log.warning("No HRV data for %s", ds)
         return None
 
-    summary = data.get("hrvSummary", data) if isinstance(data, dict) else data
-    baseline = summary.get("baseline", {}) if isinstance(summary, dict) else {}
+    # Garmin sometimes returns {"hrvSummary": null}; .get() default doesn't apply
+    # to explicit None values, so use `or` to fall through to the data dict.
+    if isinstance(data, dict):
+        summary = data.get("hrvSummary") or data
+    else:
+        summary = data
+    baseline = (summary.get("baseline") if isinstance(summary, dict) else None) or {}
 
     row = {
         "date": ds,
