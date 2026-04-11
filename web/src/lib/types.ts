@@ -210,6 +210,7 @@ export interface PlannedWorkout {
   actual_garmin_activity_id: string | null
   compliance_score: number | null
   adjustment_reason: string | null
+  updated_at: string | null
 }
 
 export interface WorkoutDefinition {

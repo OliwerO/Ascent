@@ -26,7 +26,7 @@ import {
   Bar,
   Cell,
 } from 'recharts'
-import { ChevronDown, ChevronRight, Mountain, Dumbbell } from 'lucide-react'
+import { ChevronDown, ChevronRight, Mountain, Dumbbell, Info } from 'lucide-react'
 import { formatDuration } from '../lib/format'
 import { loadChangeColor } from '../lib/colors'
 import { MOUNTAIN_ACTIVITY_TYPES } from '../lib/constants'
@@ -462,14 +462,24 @@ function GymSessionCard({ pw, deload }: { pw: PlannedWorkout; deload: boolean })
         )}
       </div>
 
+      {/* Always show coach justification for adjusted sessions, even when collapsed */}
+      {pw.status === 'adjusted' && pw.adjustment_reason && (
+        <div className="mt-2 text-[12px] text-accent-yellow bg-accent-yellow/10 rounded-lg px-3 py-2">
+          <div className="flex items-center gap-1.5 text-[10px] text-accent-yellow/70 uppercase tracking-wider font-semibold mb-1">
+            <Info size={11} />
+            Coach decision
+            {pw.updated_at && (
+              <span className="text-text-dim normal-case tracking-normal font-normal ml-1">
+                {format(parseISO(pw.updated_at), 'MMM d')}
+              </span>
+            )}
+          </div>
+          {pw.adjustment_reason}
+        </div>
+      )}
+
       {open && (
         <div className="mt-3">
-          {pw.status === 'adjusted' && pw.adjustment_reason && (
-            <div className="text-[13px] text-accent-yellow bg-accent-yellow/10 rounded-lg px-3 py-2 mb-3">
-              {pw.adjustment_reason}
-            </div>
-          )}
-
           {warmup.length > 0 && <WarmupSection warmup={warmup} />}
 
           <table className="w-full text-[14px]">

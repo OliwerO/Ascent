@@ -218,7 +218,7 @@ export function usePlannedWorkouts(weeksBehind = 2, weeksAhead = 4) {
     const to = fmt(new Date(today().getTime() + weeksAhead * 7 * 86400000))
     const { data, error } = await supabase
       .from('planned_workouts')
-      .select('id,training_block,week_number,session_name,session_type,scheduled_date,scheduled_time,estimated_duration_minutes,workout_definition,status,actual_garmin_activity_id,compliance_score,adjustment_reason')
+      .select('id,training_block,week_number,session_name,session_type,scheduled_date,scheduled_time,estimated_duration_minutes,workout_definition,status,actual_garmin_activity_id,compliance_score,adjustment_reason,updated_at')
       .gte('scheduled_date', from)
       .lte('scheduled_date', to)
       .order('scheduled_date', { ascending: true })
