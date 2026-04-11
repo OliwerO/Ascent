@@ -168,8 +168,14 @@ export default function WeekView() {
   }, [weekStart, weekPlanned, weekTemplate, weekActivities, today])
 
   // ─── Reschedule handler ───
+  // Past 'missed' workouts can be rescheduled to a future date.
   const canReschedule = (cell: DayCell) =>
-    cell.planned && (cell.status === 'planned' || cell.status === 'today' || cell.status === 'adjusted')
+    cell.planned && (
+      cell.status === 'planned'
+      || cell.status === 'today'
+      || cell.status === 'adjusted'
+      || cell.status === 'missed'
+    )
 
   const handleRescheduleConfirm = useCallback(async () => {
     if (!rescheduleSource?.planned || !rescheduleTarget) return
