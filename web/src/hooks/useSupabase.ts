@@ -15,6 +15,7 @@ function useFetch<T>(
   const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [manualTick, setManualTick] = useState(0)
   const hasFetched = useRef(false)
 
   useEffect(() => {
@@ -26,9 +27,12 @@ function useFetch<T>(
       .catch((e) => { if (!cancelled) setError(e.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, deps)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [...deps, manualTick])
 
-  return { data, loading, error }
+  const refetch = () => setManualTick((t) => t + 1)
+
+  return { data, loading, error, refetch }
 }
 
 /**

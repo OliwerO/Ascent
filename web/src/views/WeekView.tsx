@@ -185,6 +185,8 @@ export default function WeekView() {
         (p) => p.scheduled_date === rescheduleTarget && p.status !== 'skipped' && p.status !== 'completed'
       ) ?? undefined
       await rescheduleWorkout(rescheduleSource.planned.id, rescheduleTarget, targetPlanned)
+      // Force a refetch — Realtime may not fire on planned_workouts updates
+      plannedHook.refetch?.()
     } catch (err) {
       console.error('Reschedule failed:', err)
     } finally {
@@ -192,7 +194,7 @@ export default function WeekView() {
       setRescheduleSource(null)
       setRescheduleTarget(null)
     }
-  }, [rescheduleSource, rescheduleTarget, weekPlanned])
+  }, [rescheduleSource, rescheduleTarget, weekPlanned, plannedHook])
 
   // ─── Compliance summary ───
   const compliance = useMemo(() => {
