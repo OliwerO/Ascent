@@ -1,4 +1,3 @@
-import { useMemo } from 'react'
 import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
 import { useBodyComposition, useDailyMetrics, useActivities, useGoals, usePerformanceScores } from '../hooks/useSupabase'
@@ -33,15 +32,12 @@ export default function GoalsView() {
   const weekStart = startOfWeek(now, { weekStartsOn: 1 })
   const weekEnd = endOfWeek(now, { weekStartsOn: 1 })
 
-  const weeklyElevation = useMemo(
-    () => Math.round((activitiesHook.data ?? [])
-      .filter((a: Activity) => {
-        const d = new Date(a.date)
-        return isWithinInterval(d, { start: weekStart, end: weekEnd }) && a.activity_type !== 'hang_gliding'
-      })
-      .reduce((sum: number, a: Activity) => sum + (a.elevation_gain || 0), 0)),
-    [activitiesHook.data, weekStart.getTime(), weekEnd.getTime()]
-  )
+  const weeklyElevation = Math.round((activitiesHook.data ?? [])
+    .filter((a: Activity) => {
+      const d = new Date(a.date)
+      return isWithinInterval(d, { start: weekStart, end: weekEnd }) && a.activity_type !== 'hang_gliding'
+    })
+    .reduce((sum: number, a: Activity) => sum + (a.elevation_gain || 0), 0))
 
   if (loading) return <LoadingState />
   if (error) return <div className="text-accent-red p-4">{error}</div>

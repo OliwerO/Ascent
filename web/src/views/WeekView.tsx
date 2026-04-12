@@ -67,18 +67,19 @@ export default function WeekView() {
     || hrvHook.error || metricsHook.error || plannedHook.error
 
   const now = new Date()
+  const todayStr = now.toDateString()
   const today = useMemo(() => {
     const t = new Date()
     t.setHours(0, 0, 0, 0)
     return t
   }, [])
-  const weekStart = useMemo(() => startOfWeek(now, { weekStartsOn: 1 }), [now.toDateString()])
-  const weekEnd = useMemo(() => endOfWeek(now, { weekStartsOn: 1 }), [now.toDateString()])
+  const weekStart = useMemo(() => startOfWeek(now, { weekStartsOn: 1 }), [todayStr]) // eslint-disable-line react-hooks/exhaustive-deps
+  const weekEnd = useMemo(() => endOfWeek(now, { weekStartsOn: 1 }), [todayStr]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const prevWeekStart = useMemo(() => addDays(weekStart, -7), [weekStart])
   const prevWeekEnd = useMemo(() => addDays(weekEnd, -7), [weekEnd])
 
-  const { block, week, ended } = useMemo(() => getProgramWeek(now), [now.toDateString()])
+  const { block, week, ended } = useMemo(() => getProgramWeek(now), [todayStr]) // eslint-disable-line react-hooks/exhaustive-deps
   const deload = isDeloadWeek(week)
 
   // ─── Filter activities to weeks ───
