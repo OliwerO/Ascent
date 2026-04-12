@@ -44,15 +44,20 @@ logging.basicConfig(
 log = logging.getLogger("workout_push")
 
 # ---------------------------------------------------------------------------
-# Block / week determination
+# Block / week determination — loaded from config/training_constants.json
 # ---------------------------------------------------------------------------
 
-BLOCK_1_START = date(2026, 4, 1)   # Wednesday
-BLOCK_1_END = date(2026, 4, 28)
-BLOCK_2_START = date(2026, 4, 29)
-BLOCK_2_END = date(2026, 5, 26)
+_CONSTANTS_PATH = PROJECT_ROOT / "config" / "training_constants.json"
+with open(_CONSTANTS_PATH) as _f:
+    _CONSTANTS = json.load(_f)
 
-DELOAD_WEEKS = {4, 8}  # Week 4 and Week 8 are deloads
+_block_dates = _CONSTANTS["block_dates"]
+BLOCK_1_START = date.fromisoformat(_block_dates["block_1_start"])
+BLOCK_1_END = date.fromisoformat(_block_dates["block_1_end"])
+BLOCK_2_START = date.fromisoformat(_block_dates["block_2_start"])
+BLOCK_2_END = date.fromisoformat(_block_dates["block_2_end"])
+
+DELOAD_WEEKS = set(_CONSTANTS["deload_weeks"])
 
 
 def get_program_week(target_date: date) -> tuple[int, int]:
@@ -173,22 +178,9 @@ GARMIN_EXERCISE_MAP = {
     "Thread the Needle":        ("WARM_UP",         "ARM_CIRCLES"),              # No exact match
 }
 
-# Garmin benchmark e1RMs (from user's Garmin Connect, as of Feb 2026)
+# Garmin benchmark e1RMs — loaded from config/training_constants.json
 # Used for benchmarkPercentage approach — Garmin calculates weight from these
-GARMIN_BENCHMARKS = {
-    "BARBELL_BACK_SQUAT": 133.3,
-    "BARBELL_BENCH_PRESS": 102.9,
-    "DUMBBELL_BENCH_PRESS": 33.8,      # per hand
-    "BARBELL_ROW": 30.0,
-    "OVERHEAD_BARBELL_PRESS": 66.7,
-    "TRAP_BAR_DEADLIFT": 120.0,         # using barbell deadlift benchmark
-    "DUMBBELL_LATERAL_RAISE": None,     # not set
-    "CHIN_UP": None,                     # bodyweight
-    "INCLINE_DUMBBELL_BENCH_PRESS": None,  # not set
-    "SEATED_CABLE_ROW": None,            # not set
-    "ONE_ARM_DUMBBELL_ROW": 80.0,        # per hand
-    "DUMBBELL_BULGARIAN_SPLIT_SQUAT": None,  # not set
-}
+GARMIN_BENCHMARKS: dict[str, float | None] = _CONSTANTS["garmin_benchmarks"]
 
 # Exercises where the Garmin name doesn't match the actual exercise
 # These get a note in the description field

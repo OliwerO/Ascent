@@ -14,26 +14,28 @@ Usage:
     # result.note = "+2.5kg — all sets hit 8+ reps last session"
 """
 
+import json
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 
 log = logging.getLogger("progression")
 
 # ---------------------------------------------------------------------------
-# Equipment config — plate-aware increments
+# Equipment config — loaded from config/training_constants.json
 # ---------------------------------------------------------------------------
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_CONSTANTS_PATH = _PROJECT_ROOT / "config" / "training_constants.json"
+with open(_CONSTANTS_PATH) as _f:
+    _CONSTANTS = json.load(_f)
+
 # Valid kettlebell weights (standard competition KBs)
-KB_WEIGHTS = [4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 36, 40, 44, 48]
+KB_WEIGHTS: list[int] = _CONSTANTS["kb_weights"]
 
 # Equipment type → minimum weight increment
-PLATE_INCREMENTS = {
-    "barbell": 5.0,     # 2.5kg plates × 2 sides (smallest available)
-    "dumbbell": 2.5,    # DB pairs go in 2.5kg steps
-    "kettlebell": 4.0,  # snapped to KB_WEIGHTS
-    "cable": 2.5,       # cable stack steps (gym-dependent)
-    "machine": 2.5,
-    "bodyweight": 0,
+PLATE_INCREMENTS: dict[str, float] = {
+    k: float(v) for k, v in _CONSTANTS["plate_increments"].items()
 }
 
 def resolve_exercise_name(name: str) -> str:

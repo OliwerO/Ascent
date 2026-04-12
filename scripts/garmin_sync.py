@@ -124,19 +124,33 @@ def _safe_int(v):
 
 # ---------------------------------------------------------------------------
 # Data validation — reject/flag rules from CLAUDE.md
+# Ranges loaded from config/training_constants.json
 # ---------------------------------------------------------------------------
+
+_CONSTANTS_PATH = PROJECT_ROOT / "config" / "training_constants.json"
+with open(_CONSTANTS_PATH) as _f:
+    _CONSTANTS = json.load(_f)
+
+_VALIDATION_RANGES = _CONSTANTS["validation_ranges"]
+
+
+def _range_check(field: str):
+    """Build a reject-check lambda from validation_ranges config."""
+    r = _VALIDATION_RANGES[field]
+    return lambda v: v is not None and (v < r["min"] or v > r["max"])
+
 
 # Reject-level rules: data is physiologically impossible, discard before writing
 REJECT_RULES = {
-    "resting_hr": lambda v: v is not None and (v < 25 or v > 120),
-    "avg_hr": lambda v: v is not None and (v < 30 or v > 230),
-    "max_hr": lambda v: v is not None and (v < 30 or v > 230),
-    "min_hr": lambda v: v is not None and (v < 25 or v > 200),
+    "resting_hr": _range_check("resting_hr"),
+    "avg_hr": _range_check("avg_hr"),
+    "max_hr": _range_check("max_hr"),
+    "min_hr": _range_check("min_hr"),
 }
 
 # Sleep-specific reject rules
 SLEEP_REJECT_RULES = {
-    "total_sleep_seconds": lambda v: v is not None and (v < 7200 or v > 57600),  # <2h or >16h
+    "total_sleep_seconds": _range_check("total_sleep_seconds"),
 }
 
 
@@ -159,11 +173,12 @@ def validate_sleep(row: dict) -> dict:
 
 
 def validate_hrv(row: dict) -> dict:
-    """Validate HRV row. rMSSD outside 5-250 is rejected."""
+    """Validate HRV row. rMSSD outside configured range is rejected."""
+    _rmssd = _VALIDATION_RANGES["rmssd"]
     for field in ("weekly_avg", "last_night_avg", "last_night_5min_high"):
         val = row.get(field)
-        if val is not None and (val < 5 or val > 250):
-            log.warning("REJECT %s=%s (rMSSD out of 5-250 range)", field, val)
+        if val is not None and (val < _rmssd["min"] or val > _rmssd["max"]):
+            log.warning("REJECT %s=%s (rMSSD out of %s-%s range)", field, val, _rmssd["min"], _rmssd["max"])
             row[field] = None
     return row
 
