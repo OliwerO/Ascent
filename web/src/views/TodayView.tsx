@@ -35,6 +35,7 @@ export default function TodayView() {
   const [showHomePreview, setShowHomePreview] = useState(false)
   const [pushing, setPushing] = useState(false)
   const [pushMsg, setPushMsg] = useState<string | null>(null)
+  const [showRationale, setShowRationale] = useState(false)
 
   const recentActivities = activities.data ?? []
 
@@ -116,8 +117,6 @@ export default function TodayView() {
   const todayRationale = (coachingLog.data ?? []).find(
     (entry) => entry.date === todayStr && entry.rule != null
   )
-  const [showRationale, setShowRationale] = useState(false)
-
   const todaySession = todayPlanned
     ? todayPlanned.workout_definition?.session_label
     : (adjustedSessionName ? null : getSessionForDate(new Date()))
