@@ -247,8 +247,8 @@ export default function TodayView() {
 
   const todayIsHome = isHomeWorkout(todayPlanned?.workout_definition)
 
-  // Home workout preview diff
-  const homePreviewDiff = useMemo(() => {
+  // Home workout preview diff — computed inline (not a hook)
+  const homePreviewDiff = (() => {
     if (!todayPlanned?.workout_definition || todayIsHome) return []
     const homeWd = buildHomeWorkout(todayPlanned.workout_definition)
     const gymExercises = todayPlanned.workout_definition.exercises ?? []
@@ -262,7 +262,7 @@ export default function TodayView() {
         note: home.note,
       }
     }).filter(Boolean) as { gym: string; home: string; note?: string }[]
-  }, [todayPlanned?.workout_definition, todayIsHome])
+  })()
 
   const handlePushToGarmin = async () => {
     if (pushing) return
