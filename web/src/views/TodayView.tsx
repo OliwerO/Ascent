@@ -2,8 +2,7 @@ import { supabase } from '../lib/supabase'
 import { buildHomeWorkout, restoreGymWorkout, isHomeWorkout, countSubstitutions } from '../lib/homeWorkout'
 import { LoadingState, EmptyState } from '../components/LoadingState'
 import { WellnessInput } from '../components/WellnessInput'
-import { RPEPrompt } from '../components/RPEPrompt'
-import { ExerciseFeedbackPrompt } from '../components/ExerciseFeedbackPrompt'
+import { PostSessionLog } from '../components/PostSessionLog'
 import { WeeklyReflection } from '../components/WeeklyReflection'
 import { useDailySummary, useHRV, useDailyMetrics, useActivities, useSubjectiveWellness, usePlannedWorkouts, useCoachingLog } from '../hooks/useSupabase'
 import type { WarmupExercise, PlannedExercise } from '../lib/types'
@@ -734,16 +733,13 @@ export default function TodayView() {
         </div>
       )}
 
-      {/* ═══ 7. SESSION RPE PROMPT ═══ */}
-      {lastActivity && lastActivity.activity_type === 'strength_training' && (
-        <RPEPrompt activity={lastActivity} />
-      )}
-
-      {/* ═══ 7b. EXERCISE FEEDBACK ═══ */}
+      {/* ═══ 7. POST-SESSION LOG (RPE + Exercise Feel + Wellness combined) ═══ */}
       {lastActivity && lastActivity.activity_type === 'strength_training' && todayPlanned?.workout_definition?.exercises && (
-        <ExerciseFeedbackPrompt
+        <PostSessionLog
+          activity={lastActivity}
           exercises={todayPlanned.workout_definition.exercises}
-          sessionDate={lastActivity.date}
+          todayWellness={todayWellness}
+          onComplete={() => setWellnessRefresh(r => r + 1)}
         />
       )}
 
