@@ -19,7 +19,7 @@ import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES, CYCLING_ACTIVITY_
 import { getProgramWeek, isDeloadWeek, getWeekSchedule, SESSION_NAMES } from '../lib/program'
 import { sleepBarColor } from '../lib/colors'
 
-type DayStatus = 'completed' | 'adjusted' | 'skipped' | 'planned' | 'missed' | 'today' | 'rest' | 'mountain'
+type DayStatus = 'completed' | 'adjusted' | 'skipped' | 'planned' | 'missed' | 'today' | 'rest' | 'mountain' | 'cycling'
 
 interface DayCell {
   date: Date
@@ -44,6 +44,7 @@ const STATUS_BADGES: Record<DayStatus, { icon: string; label: string; color: str
   today: { icon: '>', label: 'Today', color: 'text-accent-green' },
   rest: { icon: '-', label: 'Rest', color: 'text-text-dim' },
   mountain: { icon: '^', label: 'Mountain', color: 'text-mountain' },
+  cycling: { icon: '🚲', label: 'Cycling', color: 'text-accent-blue' },
 }
 
 export default function WeekView() {
@@ -132,12 +133,16 @@ export default function WeekView() {
       // this day, surface it regardless of what was planned. The DB will be
       // reconciled by the daily coach_adjust pass; this is the view-time fix.
       const mountainAct = dayActivities.find((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type))
+      const cyclingAct = dayActivities.find((a) => CYCLING_ACTIVITY_TYPES.has(a.activity_type))
 
       let status: DayStatus
       let displayLabel: string | null = null
       if (mountainAct) {
         status = 'mountain'
         displayLabel = mountainAct.activity_name || formatActivityType(mountainAct.activity_type)
+      } else if (cyclingAct && !planned) {
+        status = 'cycling'
+        displayLabel = cyclingAct.activity_name || formatActivityType(cyclingAct.activity_type)
       } else if (planned) {
         if (planned.status === 'completed') status = 'completed'
         else if (planned.status === 'adjusted') status = 'adjusted'
@@ -434,7 +439,8 @@ export default function WeekView() {
           {dayCells.map((cell) => {
             const badge = STATUS_BADGES[cell.status]
             const hasMountainActivity = cell.status === 'mountain' && cell.activities.length > 0
-            const isExpandable = cell.planned?.workout_definition?.exercises?.length || hasMountainActivity
+            const hasCyclingActivity = cell.status === 'cycling' && cell.activities.length > 0
+            const isExpandable = cell.planned?.workout_definition?.exercises?.length || hasMountainActivity || hasCyclingActivity
             const isExpanded = expandedDay === cell.dateStr
             const sessionName = cell.displayLabel
               ?? cell.planned?.workout_definition?.session_name
@@ -474,7 +480,7 @@ export default function WeekView() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="text-[13px] font-semibold text-text-primary truncate">
-                      {sessionName}
+                      {cell.status === 'cycling' && '🚲 '}{sessionName}
                     </div>
                     {completedActivity && (
                       <div className="text-[11px] text-text-muted truncate">
@@ -553,6 +559,35 @@ export default function WeekView() {
                       .filter((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type) || MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type))
                       .map((a, i) => (
                         <MountainActivityCard key={a.garmin_activity_id ?? i} activity={a} showDate={false} />
+                      ))}
+                  </div>
+                )}
+
+                {isExpanded && hasCyclingActivity && (
+                  <div className="mt-3 pt-3 border-t border-border-subtle space-y-2">
+                    {cell.activities
+                      .filter((a) => CYCLING_ACTIVITY_TYPES.has(a.activity_type))
+                      .map((a, i) => (
+                        <div key={a.garmin_activity_id ?? i} className="text-[12px]">
+                          <div className="font-semibold text-text-primary">
+                            {a.activity_name || formatActivityType(a.activity_type)}
+                          </div>
+                          <div className="flex flex-wrap gap-3 text-text-secondary mt-1">
+                            <span>{formatDuration(a.duration_seconds)}</span>
+                            {a.distance_meters != null && a.distance_meters > 0 && (
+                              <span>{(a.distance_meters / 1000).toFixed(1)} km</span>
+                            )}
+                            {a.avg_speed != null && a.avg_speed > 0 && (
+                              <span>{(a.avg_speed * 3.6).toFixed(1)} km/h avg</span>
+                            )}
+                            {a.elevation_gain != null && a.elevation_gain > 0 && (
+                              <span className="text-mountain">{Math.round(a.elevation_gain)}m ↑</span>
+                            )}
+                            {a.avg_hr != null && (
+                              <span>{a.avg_hr} bpm avg</span>
+                            )}
+                          </div>
+                        </div>
                       ))}
                   </div>
                 )}
@@ -707,8 +742,19 @@ export default function WeekView() {
                 </div>
                 <div className="flex gap-2 text-[11px] text-text-secondary shrink-0 ml-3 font-medium">
                   <span>{formatDuration(a.duration_seconds)}</span>
-                  {a.elevation_gain != null && a.elevation_gain > 0 && (
-                    <span className="text-mountain">{Math.round(a.elevation_gain)}m</span>
+                  {CYCLING_ACTIVITY_TYPES.has(a.activity_type) ? (
+                    <>
+                      {a.distance_meters != null && a.distance_meters > 0 && (
+                        <span>{(a.distance_meters / 1000).toFixed(1)}km</span>
+                      )}
+                      {a.avg_speed != null && a.avg_speed > 0 && (
+                        <span>{(a.avg_speed * 3.6).toFixed(1)}km/h</span>
+                      )}
+                    </>
+                  ) : (
+                    a.elevation_gain != null && a.elevation_gain > 0 && (
+                      <span className="text-mountain">{Math.round(a.elevation_gain)}m</span>
+                    )
                   )}
                 </div>
               </div>

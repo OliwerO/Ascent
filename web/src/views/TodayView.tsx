@@ -11,7 +11,7 @@ import {
   getProgramWeek, isDeloadWeek, getSessionForDate, SESSION_NAMES,
 } from '../lib/program'
 import { metricColor, hrvStatusInfo } from '../lib/colors'
-import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES, CYCLING_ACTIVITY_TYPES } from '../lib/constants'
+import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES, CYCLING_ACTIVITY_TYPES } from '../lib/activityTypes'
 import { computeCoachingState } from '../lib/coachingDecision'
 import { formatDuration, formatActivityType } from '../lib/format'
 import { Clock, Flame, ArrowUpRight, Heart, ChevronDown, TrendingUp, Activity as ActivityIcon, Info, Home, Dumbbell, Send } from 'lucide-react'
