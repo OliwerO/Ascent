@@ -1,22 +1,11 @@
 import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
+import { ProgressBar } from '../components/ProgressBar'
 import { useBodyComposition, useDailyMetrics, useActivities, useGoals, usePerformanceScores } from '../hooks/useSupabase'
 import type { BodyComposition, Activity, Goal, PerformanceScore } from '../lib/types'
 import { getProgramWeek } from '../lib/program'
 import { startOfWeek, endOfWeek, isWithinInterval, differenceInDays } from 'date-fns'
 import { Target, Mountain, Dumbbell, Calendar, TrendingDown, TrendingUp, Minus } from 'lucide-react'
-
-function ProgressBar({ value, max, color }: { value: number; max: number; color: string }) {
-  const pct = Math.min(100, Math.max(0, (value / max) * 100))
-  return (
-    <div className="w-full bg-border rounded-full h-2 mt-2">
-      <div
-        className="rounded-full h-2 transition-all"
-        style={{ width: `${pct}%`, backgroundColor: color }}
-      />
-    </div>
-  )
-}
 
 export default function GoalsView() {
   const bodyComp = useBodyComposition(90)
@@ -287,7 +276,7 @@ export default function GoalsView() {
             </div>
           </Card>
         ) : week < 4 ? (
-          <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-bg-card border border-border-subtle">
+          <div className="flex items-center gap-3 px-4 py-3 glass-card">
             <Dumbbell size={16} className="text-accent-blue shrink-0" />
             <span className="text-[14px] text-text-muted">Strength targets set after Week 4 assessment (Apr 27)</span>
           </div>
