@@ -54,16 +54,37 @@ log = logging.getLogger("garmin_sync")
 # ---------------------------------------------------------------------------
 
 
+MAX_RETRIES = 3
+BACKOFF_BASE = 2  # seconds — retries at 2s, 4s, 8s
+
+
 def api_call(fn, *args, **kwargs):
-    """Call a Garmin API function with rate limiting; return None on failure."""
+    """Call a Garmin API function with rate limiting and exponential backoff.
+
+    Retries on 429 (TooManyRequests) up to MAX_RETRIES times with exponential
+    backoff. Re-raises AuthExpiredError immediately (can't retry auth issues).
+    Returns None on other transient failures.
+    """
     time.sleep(API_DELAY)
-    try:
-        return fn(*args, **kwargs)
-    except (GarminConnectTooManyRequestsError, RateLimitCooldownError, AuthExpiredError):
-        raise  # must abort — continuing would deepen rate limit ban
-    except Exception as exc:
-        log.warning("API call %s failed: %s", fn.__name__, exc)
-        return None
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            return fn(*args, **kwargs)
+        except AuthExpiredError:
+            raise  # auth is dead, can't retry
+        except (GarminConnectTooManyRequestsError, RateLimitCooldownError) as exc:
+            if attempt < MAX_RETRIES:
+                wait = BACKOFF_BASE ** (attempt + 1)
+                log.warning("Rate limited on %s (attempt %d/%d), retrying in %ds...",
+                            fn.__name__, attempt + 1, MAX_RETRIES, wait)
+                time.sleep(wait)
+            else:
+                log.error("Rate limited on %s after %d retries, skipping",
+                          fn.__name__, MAX_RETRIES)
+                return None
+        except Exception as exc:
+            log.warning("API call %s failed: %s", fn.__name__, exc)
+            return None
+    return None
 
 
 def safe_json(obj):
