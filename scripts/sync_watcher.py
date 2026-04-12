@@ -30,12 +30,14 @@ SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", os.environ["SUPABASE_KEY"])
 SYNC_SCRIPT = PROJECT_ROOT / "scripts" / "garmin_sync.py"
 EGYM_SCRIPT = PROJECT_ROOT / "scripts" / "egym_sync.py"
+PUSH_SCRIPT = PROJECT_ROOT / "scripts" / "workout_push.py"
 VENV_PYTHON = PROJECT_ROOT / "venv" / "bin" / "python"
 
 # Map request types to scripts
 REQUEST_SCRIPTS = {
     "sync_request": SYNC_SCRIPT,
     "egym_sync_request": EGYM_SCRIPT,
+    "workout_push_request": PUSH_SCRIPT,
 }
 
 HEADERS = {
@@ -87,8 +89,18 @@ def check_and_run():
         log.info("%s found (id=%s), running %s...", req_type, req_id, script.name)
 
         python = str(VENV_PYTHON) if VENV_PYTHON.exists() else sys.executable
+        cmd = [python, str(script)]
+
+        # Pass extra arguments from data_context for push requests
+        ctx = req.get("data_context") or {}
+        if req_type == "workout_push_request":
+            if ctx.get("date"):
+                cmd.extend(["--date", ctx["date"]])
+            if ctx.get("session"):
+                cmd.extend(["--session", ctx["session"]])
+
         result = subprocess.run(
-            [python, str(script)],
+            cmd,
             capture_output=True,
             text=True,
             timeout=300,

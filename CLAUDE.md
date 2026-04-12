@@ -61,7 +61,7 @@ These are locked. Do not change without an explicit Opus session.
 5. **Body Battery and Training Readiness are safety guardrails only** — hard rest override at BB<30 or TR<40, gated on data freshness (<12h). Not used for graduated decisions.
 6. **Mountain activities ARE training** — never flag as "missed gym." Treat elevation + zone time as cardio load.
 7. **Autonomy-supportive language only** — no "should," "must," "need to" in coaching messages.
-8. **Home workout substitution map** must be updated when new exercises are added to any block (see `HOME_SUBSTITUTIONS` in `workout_push.py` and `web/src/lib/homeWorkout.ts`).
+8. **Home workout substitution map** must be updated when new exercises are added to any block. Single source of truth: `config/home_substitutions.json` (consumed by both `workout_push.py` and `web/src/lib/homeWorkout.ts`).
 
 ## Development Standards
 

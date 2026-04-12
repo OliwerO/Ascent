@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase'
-import { buildHomeWorkout, restoreGymWorkout, isHomeWorkout } from '../lib/homeWorkout'
+import { buildHomeWorkout, restoreGymWorkout, isHomeWorkout, countSubstitutions } from '../lib/homeWorkout'
 import { LoadingState, EmptyState } from '../components/LoadingState'
 import { WellnessInput } from '../components/WellnessInput'
 import { RPEPrompt } from '../components/RPEPrompt'
@@ -14,7 +14,7 @@ import { metricColor, hrvStatusInfo } from '../lib/colors'
 import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES } from '../lib/constants'
 import { computeCoachingState } from '../lib/coachingDecision'
 import { formatDuration, formatActivityType } from '../lib/format'
-import { Clock, Flame, ArrowUpRight, Heart, ChevronDown, TrendingUp, Activity as ActivityIcon, Info, Home, Dumbbell } from 'lucide-react'
+import { Clock, Flame, ArrowUpRight, Heart, ChevronDown, TrendingUp, Activity as ActivityIcon, Info, Home, Dumbbell, Send } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { format } from 'date-fns'
 
@@ -32,6 +32,9 @@ export default function TodayView() {
   const [, setWellnessRefresh] = useState(0)
   const [switching, setSwitching] = useState(false)
   const [switchError, setSwitchError] = useState<string | null>(null)
+  const [showHomePreview, setShowHomePreview] = useState(false)
+  const [pushing, setPushing] = useState(false)
+  const [pushMsg, setPushMsg] = useState<string | null>(null)
 
   const recentActivities = activities.data ?? []
 
@@ -245,6 +248,47 @@ export default function TodayView() {
 
   const todayIsHome = isHomeWorkout(todayPlanned?.workout_definition)
 
+  // Home workout preview diff
+  const homePreviewDiff = useMemo(() => {
+    if (!todayPlanned?.workout_definition || todayIsHome) return []
+    const homeWd = buildHomeWorkout(todayPlanned.workout_definition)
+    const gymExercises = todayPlanned.workout_definition.exercises ?? []
+    const homeExercises = homeWd.exercises ?? []
+    return gymExercises.map((gym: PlannedExercise, i: number) => {
+      const home = homeExercises[i]
+      if (!home || (gym.name === home.name && gym.weight_kg === home.weight_kg)) return null
+      return {
+        gym: `${gym.name}${gym.weight_kg != null ? ` ${gym.weight_kg}kg` : ''}`,
+        home: `${home.name}${home.weight_kg != null ? ` ${home.weight_kg}kg` : ' (BW)'}`,
+        note: home.note,
+      }
+    }).filter(Boolean) as { gym: string; home: string; note?: string }[]
+  }, [todayPlanned?.workout_definition, todayIsHome])
+
+  const handlePushToGarmin = async () => {
+    if (pushing) return
+    setPushing(true)
+    setPushMsg(null)
+    try {
+      const resp = await fetch('/api/garmin-push-trigger', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-ascent-token': import.meta.env.VITE_SUPABASE_KEY ?? '',
+        },
+        body: JSON.stringify({ date: todayStr }),
+      })
+      const data = await resp.json()
+      setPushMsg(data.ok ? 'Push queued — check your watch in ~2 min' : (data.error || 'Failed'))
+      setTimeout(() => setPushMsg(null), 5000)
+    } catch {
+      setPushMsg('Push request failed')
+      setTimeout(() => setPushMsg(null), 5000)
+    } finally {
+      setPushing(false)
+    }
+  }
+
   const handleSwitchToHome = async () => {
     if (!todayPlanned?.workout_definition || switching) return
     setSwitching(true)
@@ -345,9 +389,9 @@ export default function TodayView() {
           </div>
         )}
 
-        {/* Home / Gym toggle */}
+        {/* Action buttons: Home/Gym toggle + Push to Garmin */}
         {isGymDay && todayPlanned?.workout_definition && (todayPlanned.workout_definition.exercises?.length ?? 0) > 0 && (
-          <div className="mt-3">
+          <div className="mt-3 flex items-center gap-4">
             {todayIsHome ? (
               <button
                 onClick={handleSwitchToGym}
@@ -359,12 +403,25 @@ export default function TodayView() {
               </button>
             ) : (
               <button
-                onClick={handleSwitchToHome}
+                onClick={() => setShowHomePreview(true)}
                 disabled={switching}
                 className="flex items-center gap-1.5 text-[13px] text-accent-blue hover:text-accent-blue/80 transition-colors disabled:opacity-50"
               >
                 <Home size={14} />
-                {switching ? 'Switching...' : 'Train at home today'}
+                Train at home
+                {countSubstitutions(todayPlanned.workout_definition) > 0 && (
+                  <span className="text-[10px] text-text-dim">({countSubstitutions(todayPlanned.workout_definition)} swaps)</span>
+                )}
+              </button>
+            )}
+            {todayPlanned.status !== 'pushed' && (
+              <button
+                onClick={handlePushToGarmin}
+                disabled={pushing}
+                className="flex items-center gap-1.5 text-[13px] text-accent-green hover:text-accent-green/80 transition-colors disabled:opacity-50"
+              >
+                <Send size={13} />
+                {pushing ? 'Pushing...' : 'Push to Garmin'}
               </button>
             )}
           </div>
@@ -372,6 +429,50 @@ export default function TodayView() {
         {switchError && (
           <div className="mt-2 text-[12px] text-accent-red bg-accent-red/10 rounded-lg px-2.5 py-1.5">
             {switchError}
+          </div>
+        )}
+        {pushMsg && (
+          <div className={`mt-2 text-[12px] rounded-lg px-2.5 py-1.5 ${
+            pushMsg.includes('queued') ? 'bg-accent-green/10 text-accent-green' : 'bg-accent-red/10 text-accent-red'
+          }`}>
+            {pushMsg}
+          </div>
+        )}
+
+        {/* Home workout preview modal */}
+        {showHomePreview && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setShowHomePreview(false)}>
+            <div className="w-full max-w-lg bg-bg-card rounded-t-2xl p-5 pb-8 max-h-[70vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="text-[15px] font-semibold text-text-primary mb-3">Home workout preview</div>
+              {homePreviewDiff.length > 0 ? (
+                <div className="space-y-2 mb-4">
+                  {homePreviewDiff.map((d, i) => (
+                    <div key={i} className="text-[12px] bg-bg-primary rounded-lg px-3 py-2">
+                      <div className="text-text-dim line-through">{d.gym}</div>
+                      <div className="text-accent-blue">{d.home}</div>
+                      {d.note && <div className="text-text-dim text-[11px] mt-0.5">{d.note}</div>}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-[13px] text-text-muted mb-4">No exercise changes needed — all exercises are home-compatible.</div>
+              )}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowHomePreview(false)}
+                  className="flex-1 text-[13px] text-text-muted py-2.5 rounded-xl border border-border-subtle"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => { setShowHomePreview(false); await handleSwitchToHome() }}
+                  disabled={switching}
+                  className="flex-1 text-[13px] text-white bg-accent-blue py-2.5 rounded-xl font-semibold disabled:opacity-50"
+                >
+                  {switching ? 'Switching...' : 'Switch to home'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

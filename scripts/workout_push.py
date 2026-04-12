@@ -255,121 +255,15 @@ HOME_EQUIPMENT = {
     "jump_rope": True,
 }
 
-# Maps gym exercise → home substitute with weight strategy
-# weight_strategy: "same" (keep), "cap_at" (min of gym/max), "fixed" (use max), "bodyweight" (None)
-HOME_SUBSTITUTIONS: dict[str, dict] = {
-    # --- Session A exercises ---
-    "Barbell Back Squat": {
-        "name": "Barbell Front Squat",
-        "equipment": "barbell",
-        "max_weight_kg": 70.0,
-        "weight_strategy": "cap_at",
-        "note": "Clean to front rack — max ~70kg",
-    },
-    "Dumbbell Bench Press": {
-        "name": "DB Floor Press",
-        "equipment": "dumbbell",
-        "max_weight_kg": 20.0,
-        "weight_strategy": "fixed",
-        "note": "20kg fixed DBs, floor press (no bench)",
-    },
-    "Kettlebell Swing": {
-        "name": "DB Swing",
-        "equipment": "dumbbell",
-        "max_weight_kg": 20.0,
-        "weight_strategy": "fixed",
-        "note": "Single 20kg fixed DB, two-hand swing",
-    },
-    "Kettlebell Halo": {
-        "name": "DB Halo",
-        "equipment": "dumbbell",
-        "max_weight_kg": 12.5,
-        "weight_strategy": "cap_at",
-        "note": "12.5kg adjustable DB",
-    },
-    "Turkish Get-Up": {
-        "name": "DB Turkish Get-Up",
-        "equipment": "dumbbell",
-        "max_weight_kg": 20.0,
-        "weight_strategy": "cap_at",
-        "note": "Up to 20kg fixed DB",
-    },
-    # --- Session B exercises ---
-    "Chin-Up": {
-        "name": "Band-Assisted Inverted Row",
-        "equipment": "band",
-        "max_weight_kg": None,
-        "weight_strategy": "bodyweight",
-        "note": "Heavy band, table edge or sturdy bar",
-    },
-    "Dumbbell Incline Press": {
-        "name": "Feet-Elevated Push-Up",
-        "equipment": "bodyweight",
-        "max_weight_kg": None,
-        "weight_strategy": "bodyweight",
-        "note": "Feet on chair/step for upper chest emphasis",
-    },
-    "DB Incline Press": {
-        "name": "Feet-Elevated Push-Up",
-        "equipment": "bodyweight",
-        "max_weight_kg": None,
-        "weight_strategy": "bodyweight",
-        "note": "Feet on chair/step for upper chest emphasis",
-    },
-    "Cable Row": {
-        "name": "Band Row",
-        "equipment": "band",
-        "max_weight_kg": None,
-        "weight_strategy": "bodyweight",
-        "note": "Heavy resistance band, door anchor",
-    },
-    "Pallof Walkouts": {
-        "name": "Band Pallof Press",
-        "equipment": "band",
-        "max_weight_kg": None,
-        "weight_strategy": "bodyweight",
-        "note": "Medium band, door anchor at chest height",
-    },
-    # --- Session C exercises ---
-    "Trap Bar Deadlift": {
-        "name": "Conventional Deadlift",
-        "equipment": "barbell",
-        "max_weight_kg": 100.0,
-        "weight_strategy": "cap_at",
-        "note": "Conventional barbell deadlift from floor",
-    },
-    "KB Clean & Press": {
-        "name": "DB Clean & Press",
-        "equipment": "dumbbell",
-        "max_weight_kg": 20.0,
-        "weight_strategy": "fixed",
-        "note": "20kg fixed DB, single-arm",
-    },
-    "KB Farmer Carry": {
-        "name": "DB Farmer Carry",
-        "equipment": "dumbbell",
-        "max_weight_kg": 20.0,
-        "weight_strategy": "fixed",
-        "note": "20kg fixed DBs, one per hand",
-    },
-}
+# Home workout substitution map — loaded from shared config
+# Both this file and web/src/lib/homeWorkout.ts consume the same JSON
+_HOME_CONFIG_PATH = PROJECT_ROOT / "config" / "home_substitutions.json"
+with open(_HOME_CONFIG_PATH) as _f:
+    _home_config = json.load(_f)
 
-# Exercises that work at home without any substitution
-HOME_COMPATIBLE = {
-    "Barbell Row",
-    "Overhead Press",
-    "Single-Arm DB Row",
-    "Bulgarian Split Squat",
-    "Lateral Raise",
-    "Dead Bugs",
-    "Copenhagen Plank",
-}
-
-# Weight caps for home-compatible exercises by equipment type
-_HOME_WEIGHT_CAPS = {
-    "barbell": 100.0,
-    "dumbbell": 20.0,
-}
+HOME_SUBSTITUTIONS: dict[str, dict] = _home_config["substitutions"]
+HOME_COMPATIBLE = set(_home_config["home_compatible"])
+_HOME_WEIGHT_CAPS: dict[str, float] = _home_config["weight_caps"]
 
 
 def _apply_home_weight(
