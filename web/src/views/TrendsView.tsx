@@ -221,27 +221,22 @@ export default function TrendsView() {
     }))
 
   // --- Hill Score + Endurance Score trends ---
-  const fitnessScoreData = useMemo(() => {
-    const scores = perfScores.data ?? []
-    return scores
-      .filter((d: PerformanceScore) => d.hill_score != null || d.endurance_score != null)
-      .map((d: PerformanceScore) => ({
-        date: format(new Date(d.date), 'MMM d'),
-        hill: d.hill_score,
-        endurance: d.endurance_score,
-      }))
-  }, [perfScores.data])
+  const fitnessScoreData = (perfScores.data ?? [])
+    .filter((d: PerformanceScore) => d.hill_score != null || d.endurance_score != null)
+    .map((d: PerformanceScore) => ({
+      date: format(new Date(d.date), 'MMM d'),
+      hill: d.hill_score,
+      endurance: d.endurance_score,
+    }))
 
   // Deduplicate consecutive identical values to reduce chart noise
-  const fitnessScoreDeduped = useMemo(() => {
-    return fitnessScoreData.filter(
-      (d, i, arr) =>
-        i === 0 || i === arr.length - 1 ||
-        d.hill !== arr[i - 1].hill || d.endurance !== arr[i - 1].endurance
-    )
-  }, [fitnessScoreData])
+  const fitnessScoreDeduped = fitnessScoreData.filter(
+    (d, i, arr) =>
+      i === 0 || i === arr.length - 1 ||
+      d.hill !== arr[i - 1].hill || d.endurance !== arr[i - 1].endurance
+  )
 
-  const latestScores = useMemo(() => {
+  const latestScores = (() => {
     const scores = perfScores.data ?? []
     const withHill = scores.filter((d: PerformanceScore) => d.hill_score != null)
     const withEnd = scores.filter((d: PerformanceScore) => d.endurance_score != null)
@@ -253,25 +248,22 @@ export default function TrendsView() {
       endurance: typeof endVal === 'number' ? endVal : null,
       fitnessAge: typeof ageVal === 'number' ? ageVal : null,
     }
-  }, [perfScores.data])
+  })()
 
   // --- VAM trend (vertical ascent rate from mountain activities) ---
-  const vamData = useMemo(() => {
-    const mountainActs = (activities.data ?? [])
-      .filter((a) =>
-        MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type) &&
-        a.elevation_gain != null && a.elevation_gain > 200 &&
-        a.duration_seconds != null && a.duration_seconds > 1800
-      )
-      .slice()
-      .reverse()
-      .map((a) => ({
-        date: format(new Date(a.date), 'MMM d'),
-        vam: Math.round(((a.elevation_gain ?? 0) / (a.duration_seconds ?? 1)) * 3600),
-        name: String(a.activity_name ?? a.activity_type),
-      }))
-    return mountainActs
-  }, [activities.data])
+  const vamData = (activities.data ?? [])
+    .filter((a) =>
+      MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type) &&
+      a.elevation_gain != null && a.elevation_gain > 200 &&
+      a.duration_seconds != null && a.duration_seconds > 1800
+    )
+    .slice()
+    .reverse()
+    .map((a) => ({
+      date: format(new Date(a.date), 'MMM d'),
+      vam: Math.round(((a.elevation_gain ?? 0) / (a.duration_seconds ?? 1)) * 3600),
+      name: String(a.activity_name ?? a.activity_type),
+    }))
 
   // --- Insights / correlations ---
   const hrvSeries: DayPoint[] = (hrv.data ?? []).map((d: HRVRow) => ({ date: d.date, value: d.last_night_avg }))
