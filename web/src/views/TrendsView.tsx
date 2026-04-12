@@ -7,7 +7,7 @@ import type { HRVRow, BodyComposition, DailyMetrics, SleepRow, PerformanceScore 
 import { format, startOfWeek, subDays } from 'date-fns'
 import { RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
 import { correlateLagged, loadImpact, describeR, type DayPoint } from '../lib/correlations'
-import { MOUNTAIN_ACTIVITY_TYPES } from '../lib/activityTypes'
+import { MOUNTAIN_ACTIVITY_TYPES, CYCLING_ACTIVITY_TYPES } from '../lib/activityTypes'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, ResponsiveContainer, Tooltip, Legend,
@@ -73,18 +73,20 @@ const darkTooltipStyle = {
 const axisTickStyle = { fill: '#646478', fontSize: 11 }
 const axisLineStyle = { stroke: '#262636' }
 
-function classifyActivity(type: string | null | undefined): 'ski' | 'hike' | 'fly' | null {
+function classifyActivity(type: string | null | undefined): 'ski' | 'hike' | 'fly' | 'bike' | null {
   if (!type) return null
   const t = type.toLowerCase()
   if (t.includes('ski') || t.includes('snowboard') || t.includes('backcountry')) return 'ski'
   if (t.includes('hik') || t.includes('trail') || t.includes('mountaineering')) return 'hike'
   if (t.includes('hang_gliding') || t.includes('paraglid')) return 'fly'
+  if (CYCLING_ACTIVITY_TYPES.has(type)) return 'bike'
   return null
 }
 
 const elevationColors: Record<string, string> = {
   ski: '#38bdf8',
   hike: '#22c55e',
+  bike: '#f59e0b',
 }
 
 export default function TrendsView() {
@@ -209,7 +211,7 @@ export default function TrendsView() {
       (weeklyElevation[weekKey].byType[actType] || 0) + a.elevation_gain
   }
 
-  const elevationTypes = ['ski', 'hike']
+  const elevationTypes = ['ski', 'hike', 'bike']
   const elevationChartData = Object.entries(weeklyElevation)
     .sort(([a], [b]) => (weekDates[a]?.getTime() ?? 0) - (weekDates[b]?.getTime() ?? 0))
     .map(([week, data]) => ({
@@ -264,6 +266,32 @@ export default function TrendsView() {
       vam: Math.round(((a.elevation_gain ?? 0) / (a.duration_seconds ?? 1)) * 3600),
       name: String(a.activity_name ?? a.activity_type),
     }))
+
+  // --- Cycling performance ---
+  const cyclingData = (activities.data ?? [])
+    .filter((a) =>
+      CYCLING_ACTIVITY_TYPES.has(a.activity_type) &&
+      (a.duration_seconds ?? 0) > 300 &&
+      (a.distance_meters ?? 0) > 1000
+    )
+    .slice()
+    .reverse()
+    .map((a) => {
+      const speedKmh = (a.avg_speed ?? 0) * 3.6
+      const elevGain = a.elevation_gain ?? 0
+      const durH = (a.duration_seconds ?? 1) / 3600
+      const vam = elevGain > 0 ? Math.round(elevGain / durH) : null
+      const hrEff = a.avg_hr && a.avg_hr > 0 ? +(speedKmh / a.avg_hr).toFixed(3) : null
+      return {
+        date: format(new Date(a.date), 'MMM d'),
+        speed: +speedKmh.toFixed(1),
+        vam,
+        hrEff,
+        name: String(a.activity_name ?? a.activity_type),
+        distKm: +((a.distance_meters ?? 0) / 1000).toFixed(1),
+        elevGain: Math.round(elevGain),
+      }
+    })
 
   // --- Insights / correlations ---
   const hrvSeries: DayPoint[] = (hrv.data ?? []).map((d: HRVRow) => ({ date: d.date, value: d.last_night_avg }))
@@ -734,6 +762,31 @@ export default function TrendsView() {
           <p>VAM (Velocit&agrave; Ascensionale Media) is your average climbing speed in meters per hour. It{"'"}s influenced by terrain, snow conditions, and pack weight — so individual values vary.</p>
           <p>The trend matters more than single values. If you see VAM increasing while HR stays the same (or drops), your mountain fitness is improving.</p>
         </InfoPanel>
+      </Card>
+
+      {/* Cycling Performance */}
+      <Card title="Cycling Performance" subtitle="Avg speed trend across rides (>5 min, >1 km). Increasing speed at same HR = better fitness.">
+        {cyclingData.length > 1 ? (
+          <ResponsiveContainer width="100%" height={160}>
+            <LineChart data={cyclingData}>
+              <XAxis dataKey="date" tick={{ ...axisTickStyle, fontSize: 10 }} axisLine={axisLineStyle} tickLine={false} interval="preserveStartEnd" />
+              <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={40} unit=" km/h" />
+              <Tooltip contentStyle={darkTooltipStyle} />
+              <Line type="monotone" dataKey="speed" name="Avg speed (km/h)" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: '#f59e0b' }} />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : cyclingData.length === 1 ? (
+          <div className="space-y-1 text-[13px]">
+            <div className="text-text-primary font-semibold">{cyclingData[0].name}</div>
+            <div className="text-text-muted">
+              {cyclingData[0].distKm} km · {cyclingData[0].speed} km/h avg
+              {cyclingData[0].elevGain > 0 && <span className="ml-2">{cyclingData[0].elevGain}m elev</span>}
+              {cyclingData[0].vam != null && <span className="ml-2">VAM {cyclingData[0].vam} m/h</span>}
+            </div>
+          </div>
+        ) : (
+          <div className="text-text-muted text-[14px]">No cycling activities yet</div>
+        )}
       </Card>
 
       </SectionErrorBoundary>

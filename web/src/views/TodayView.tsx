@@ -11,7 +11,7 @@ import {
   getProgramWeek, isDeloadWeek, getSessionForDate, SESSION_NAMES,
 } from '../lib/program'
 import { metricColor, hrvStatusInfo } from '../lib/colors'
-import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES } from '../lib/constants'
+import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES, CYCLING_ACTIVITY_TYPES } from '../lib/constants'
 import { computeCoachingState } from '../lib/coachingDecision'
 import { formatDuration, formatActivityType } from '../lib/format'
 import { Clock, Flame, ArrowUpRight, Heart, ChevronDown, TrendingUp, Activity as ActivityIcon, Info, Home, Dumbbell, Send } from 'lucide-react'
@@ -153,14 +153,15 @@ export default function TodayView() {
     : null
 
   const splitLoad = (acts: typeof thisWeekActivities) => {
-    let gym = 0, mountain = 0, resort = 0
+    let gym = 0, mountain = 0, resort = 0, cycling = 0
     for (const a of acts) {
       const dur = a.duration_seconds ?? 0
       if (a.activity_type === 'strength_training') gym += dur
       else if (SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type)) mountain += dur
       else if (MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type)) resort += dur
+      else if (CYCLING_ACTIVITY_TYPES.has(a.activity_type)) cycling += dur
     }
-    return { gym, mountain, resort }
+    return { gym, mountain, resort, cycling }
   }
   const thisWeekLoad = splitLoad(thisWeekActivities)
   const lastWeekLoad = splitLoad(lastWeekActivities)
@@ -170,8 +171,8 @@ export default function TodayView() {
   const lastWeekElev = lastWeekActivities
     .filter((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type))
     .reduce((s: number, a) => s + (a.elevation_gain ?? 0), 0)
-  const trainingLoad = thisWeekLoad.gym + thisWeekLoad.mountain
-  const prevTrainingLoad = lastWeekLoad.gym + lastWeekLoad.mountain
+  const trainingLoad = thisWeekLoad.gym + thisWeekLoad.mountain + thisWeekLoad.cycling
+  const prevTrainingLoad = lastWeekLoad.gym + lastWeekLoad.mountain + lastWeekLoad.cycling
   const loadChangePct = prevTrainingLoad > 0
     ? Math.round(((trainingLoad - prevTrainingLoad) / prevTrainingLoad) * 100) : null
 
@@ -661,6 +662,12 @@ export default function TodayView() {
             <span className="text-text-primary font-semibold">{formatDuration(thisWeekLoad.mountain)}</span>
             <span className="text-text-muted text-[12px] ml-1">mountain</span>
           </div>
+          {thisWeekLoad.cycling > 0 && (
+            <div>
+              <span className="text-text-primary font-semibold">{formatDuration(thisWeekLoad.cycling)}</span>
+              <span className="text-text-muted text-[12px] ml-1">cycling</span>
+            </div>
+          )}
           <div>
             <span className="text-text-primary font-semibold">{Math.round(thisWeekElev).toLocaleString()}m</span>
             <span className="text-text-muted text-[12px] ml-1">elev</span>
@@ -675,7 +682,7 @@ export default function TodayView() {
         </div>
         {prevTrainingLoad > 0 && (
           <div className="text-[12px] text-text-muted mt-1.5">
-            Last week: {formatDuration(lastWeekLoad.gym)} gym · {formatDuration(lastWeekLoad.mountain)} mountain · {Math.round(lastWeekElev).toLocaleString()}m
+            Last week: {formatDuration(lastWeekLoad.gym)} gym · {formatDuration(lastWeekLoad.mountain)} mountain{lastWeekLoad.cycling > 0 ? ` · ${formatDuration(lastWeekLoad.cycling)} cycling` : ''} · {Math.round(lastWeekElev).toLocaleString()}m
           </div>
         )}
       </div>

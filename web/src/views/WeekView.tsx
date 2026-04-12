@@ -15,7 +15,7 @@ import { Wind, ChevronDown, ChevronUp, ArrowRightLeft } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts'
 import { formatDuration, formatActivityType } from '../lib/format'
 import { MountainActivityCard } from '../components/MountainActivityCard'
-import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES } from '../lib/constants'
+import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES, CYCLING_ACTIVITY_TYPES } from '../lib/constants'
 import { getProgramWeek, isDeloadWeek, getWeekSchedule, SESSION_NAMES } from '../lib/program'
 import { sleepBarColor } from '../lib/colors'
 
@@ -255,7 +255,7 @@ export default function WeekView() {
   // Elevation and training hours count strength + self-powered mountain only.
   // Resort skiing/snowboarding is recovery context, not training load.
   const isTrainingActivity = (a: Activity) =>
-    a.activity_type === 'strength_training' || SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type)
+    a.activity_type === 'strength_training' || SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type) || CYCLING_ACTIVITY_TYPES.has(a.activity_type)
 
   const totalElevation = useMemo(
     () => weekActivities
@@ -479,8 +479,22 @@ export default function WeekView() {
                     {completedActivity && (
                       <div className="text-[11px] text-text-muted truncate">
                         {formatDuration(completedActivity.duration_seconds)}
-                        {completedActivity.elevation_gain != null && completedActivity.elevation_gain > 0 && (
-                          <span className="text-mountain ml-2">{Math.round(completedActivity.elevation_gain)}m</span>
+                        {CYCLING_ACTIVITY_TYPES.has(completedActivity.activity_type) ? (
+                          <>
+                            {completedActivity.distance_meters != null && completedActivity.distance_meters > 0 && (
+                              <span className="ml-2">{(completedActivity.distance_meters / 1000).toFixed(1)} km</span>
+                            )}
+                            {completedActivity.avg_speed != null && completedActivity.avg_speed > 0 && (
+                              <span className="ml-2">{(completedActivity.avg_speed * 3.6).toFixed(1)} km/h</span>
+                            )}
+                            {completedActivity.elevation_gain != null && completedActivity.elevation_gain > 0 && (
+                              <span className="text-mountain ml-2">{Math.round(completedActivity.elevation_gain)}m</span>
+                            )}
+                          </>
+                        ) : (
+                          completedActivity.elevation_gain != null && completedActivity.elevation_gain > 0 && (
+                            <span className="text-mountain ml-2">{Math.round(completedActivity.elevation_gain)}m</span>
+                          )
                         )}
                       </div>
                     )}
