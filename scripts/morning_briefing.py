@@ -281,7 +281,7 @@ def _recommendation(readiness: float | None, hrv_avg: float | None,
     """One-line training recommendation based on recovery signals."""
     # Wellness self-report is the highest-trust signal (never gated on data freshness)
     if wellness_composite is not None and wellness_composite < 2.5:
-        return ":zzz: Rest day recommended. Self-reported wellness is low — listen to your body."
+        return ":zzz: A recovery day looks like a good fit — self-reported wellness is low."
 
     scores = []
     # When data is stale, exclude device-only metrics (readiness, BB) from scoring
@@ -326,13 +326,13 @@ def _recommendation(readiness: float | None, hrv_avg: float | None,
                 red += 1
 
     if red >= 2:
-        return ":zzz: Rest day or very light movement. Multiple recovery signals are low."
+        return ":zzz: Multiple recovery signals are low — a rest day or light movement could be a good call."
     elif red >= 1:
-        return ":walking: Moderate session — keep intensity in check. One recovery signal flagged."
+        return ":walking: One recovery signal is flagged — a moderate session with controlled intensity is an option."
     elif green >= 2:
-        return ":fire: Green light for a hard session. Recovery looks solid."
+        return ":fire: Recovery looks solid — a hard session is on the table if it fits the plan."
     else:
-        return ":person_running: Moderate training is fine. Recovery is acceptable."
+        return ":person_running: Recovery is in an acceptable range — moderate training looks like a good fit."
 
 
 def _format_activity(act: dict) -> str:

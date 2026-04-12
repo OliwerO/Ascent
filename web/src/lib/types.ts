@@ -178,6 +178,10 @@ export interface CoachingLogEntry {
   data_context: Record<string, unknown> | null
   acknowledged: boolean
   created_at: string
+  decision_type: string | null
+  rule: string | null
+  kb_refs: string[] | null
+  inputs: Record<string, unknown> | null
 }
 
 // --- Subjective wellness

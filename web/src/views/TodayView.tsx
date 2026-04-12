@@ -31,6 +31,7 @@ export default function TodayView() {
   const [showExercises, setShowExercises] = useState(false)
   const [, setWellnessRefresh] = useState(0)
   const [switching, setSwitching] = useState(false)
+  const [switchError, setSwitchError] = useState<string | null>(null)
 
   const recentActivities = activities.data ?? []
 
@@ -107,6 +108,12 @@ export default function TodayView() {
       (entry.type === 'adjustment' || entry.type === 'daily_adjustment')
   )
   const adjustedSessionName = todayAdjustment?.data_context?.session_name as string | undefined
+
+  // Find coaching rationale (rule + inputs) for today
+  const todayRationale = (coachingLog.data ?? []).find(
+    (entry) => entry.date === todayStr && entry.rule != null
+  )
+  const [showRationale, setShowRationale] = useState(false)
 
   const todaySession = todayPlanned
     ? todayPlanned.workout_definition?.session_label
@@ -241,9 +248,10 @@ export default function TodayView() {
   const handleSwitchToHome = async () => {
     if (!todayPlanned?.workout_definition || switching) return
     setSwitching(true)
+    setSwitchError(null)
     try {
       const homeWd = buildHomeWorkout(todayPlanned.workout_definition)
-      await supabase
+      const { error } = await supabase
         .from('planned_workouts')
         .update({
           workout_definition: homeWd,
@@ -251,6 +259,7 @@ export default function TodayView() {
           adjustment_reason: 'Switched to home workout',
         })
         .eq('id', todayPlanned.id)
+      if (error) throw error
       await supabase.from('coaching_log').insert({
         date: todayStr,
         type: 'adjustment',
@@ -258,6 +267,9 @@ export default function TodayView() {
         message: 'Switched to home workout',
         data_context: { action: 'switch_to_home', reason: 'User requested from app' },
       })
+    } catch (err) {
+      setSwitchError(`Switch failed: ${err instanceof Error ? err.message : 'unknown error'}`)
+      setTimeout(() => setSwitchError(null), 5000)
     } finally {
       setSwitching(false)
     }
@@ -268,8 +280,9 @@ export default function TodayView() {
     const gymWd = restoreGymWorkout(todayPlanned.workout_definition)
     if (!gymWd) return
     setSwitching(true)
+    setSwitchError(null)
     try {
-      await supabase
+      const { error } = await supabase
         .from('planned_workouts')
         .update({
           workout_definition: gymWd,
@@ -277,6 +290,7 @@ export default function TodayView() {
           adjustment_reason: 'Switched back to gym workout',
         })
         .eq('id', todayPlanned.id)
+      if (error) throw error
       await supabase.from('coaching_log').insert({
         date: todayStr,
         type: 'adjustment',
@@ -284,6 +298,9 @@ export default function TodayView() {
         message: 'Switched back to gym workout',
         data_context: { action: 'switch_to_gym', reason: 'User requested from app' },
       })
+    } catch (err) {
+      setSwitchError(`Switch failed: ${err instanceof Error ? err.message : 'unknown error'}`)
+      setTimeout(() => setSwitchError(null), 5000)
     } finally {
       setSwitching(false)
     }
@@ -352,11 +369,47 @@ export default function TodayView() {
             )}
           </div>
         )}
+        {switchError && (
+          <div className="mt-2 text-[12px] text-accent-red bg-accent-red/10 rounded-lg px-2.5 py-1.5">
+            {switchError}
+          </div>
+        )}
 
         {/* Expandable workout */}
         {isAdjusted && !todayPlanned && todayAdjustment && (
           <div className="mt-3 text-[13px] text-accent-yellow">
             Coach: {todayAdjustment.message}
+          </div>
+        )}
+
+        {/* Coaching rationale — collapsible "Why?" */}
+        {todayRationale && (
+          <div className="mt-2">
+            <button
+              onClick={() => setShowRationale(!showRationale)}
+              className="flex items-center gap-1 text-[11px] text-text-muted hover:text-text-secondary transition-colors"
+            >
+              <Info size={11} />
+              {showRationale ? 'Hide rationale' : 'Why?'}
+            </button>
+            {showRationale && (
+              <div className="mt-1.5 text-[11px] text-text-muted bg-bg-primary/50 rounded-lg px-2.5 py-2 space-y-1">
+                {todayRationale.rule && (
+                  <div><span className="text-text-dim">Rule:</span> {todayRationale.rule.replace(/[._]/g, ' ')}</div>
+                )}
+                {todayRationale.inputs && (
+                  <div><span className="text-text-dim">Inputs:</span> {
+                    Object.entries(todayRationale.inputs)
+                      .filter(([, v]) => v != null)
+                      .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`)
+                      .join(' · ')
+                  }</div>
+                )}
+                {todayRationale.kb_refs && todayRationale.kb_refs.length > 0 && (
+                  <div><span className="text-text-dim">Ref:</span> {todayRationale.kb_refs.join(', ')}</div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

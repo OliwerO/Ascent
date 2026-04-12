@@ -47,6 +47,7 @@ function AppShell() {
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
   const [lastSync, setLastSync] = useState<string | null>(null)
+  const [syncAgeHours, setSyncAgeHours] = useState<number | null>(null)
   const navigate = useNavigate()
 
   // Fetch latest data timestamp
@@ -62,6 +63,7 @@ function AppShell() {
           const ago = Date.now() - new Date(data[0].synced_at).getTime()
           const hours = Math.floor(ago / 3600000)
           const mins = Math.floor((ago % 3600000) / 60000)
+          setSyncAgeHours(hours + mins / 60)
           if (hours > 24) setLastSync(`${Math.floor(hours / 24)}d ago`)
           else if (hours > 0) setLastSync(`${hours}h ago`)
           else setLastSync(`${mins}m ago`)
@@ -137,6 +139,20 @@ function AppShell() {
           </div>
         )}
       </header>
+
+      {/* Stale data warning */}
+      {syncAgeHours !== null && syncAgeHours >= 6 && (
+        <div className="max-w-2xl mx-auto px-5 pt-2">
+          <div className={`text-[12px] px-3 py-2 rounded-xl flex items-center gap-2 ${
+            syncAgeHours >= 24
+              ? 'bg-accent-red/10 text-accent-red'
+              : 'bg-yellow-500/10 text-yellow-500'
+          }`}>
+            <span>{syncAgeHours >= 24 ? '!!' : '!'}</span>
+            <span>Data last synced {lastSync} — numbers may be outdated</span>
+          </div>
+        </div>
+      )}
 
       {/* Content */}
       <main
