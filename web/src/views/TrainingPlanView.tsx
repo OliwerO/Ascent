@@ -31,14 +31,7 @@ import { formatDuration } from '../lib/format'
 import { loadChangeColor } from '../lib/colors'
 import { MOUNTAIN_ACTIVITY_TYPES } from '../lib/constants'
 import { MountainActivityCard } from '../components/MountainActivityCard'
-
-const darkTooltipStyle = {
-  background: '#16161e',
-  border: '1px solid #262636',
-  borderRadius: 12,
-  fontSize: 12,
-  color: '#f0f0f5',
-}
+import { glassTooltipStyle } from '../lib/chartConfig'
 
 // ─── Helpers ───────────────────────────────────────────────────────
 function fmtDate(d: Date): string {
@@ -952,7 +945,7 @@ function LiftProgressionTracker({
             <LineChart data={chartData} margin={{ top: 5, right: 10, left: 5, bottom: 0 }}>
               <XAxis dataKey="week" tick={{ fontSize: 11, fill: '#646478' }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11, fill: '#646478' }} axisLine={false} tickLine={false} domain={['auto', 'auto']} width={52} unit="kg" />
-              <Tooltip contentStyle={darkTooltipStyle} />
+              <Tooltip contentStyle={glassTooltipStyle} />
               <Line type="monotone" dataKey="planned" stroke="#646478" strokeDasharray="4 4" strokeWidth={1.5} dot={false} name="Planned" />
               <Line type="monotone" dataKey="actual" stroke="#a78bfa" strokeWidth={2.5} dot={{ r: 5, fill: '#a78bfa', stroke: '#16161e', strokeWidth: 2 }} connectNulls={false} name="Actual" />
             </LineChart>
@@ -1090,7 +1083,7 @@ function EnduranceLoadTracker({ activities }: { activities: Activity[] }) {
             <BarChart data={weeklyData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
               <XAxis dataKey="weekNum" tick={{ fontSize: 11, fill: '#646478' }} tickFormatter={(w) => `Wk${w}`} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11, fill: '#646478' }} axisLine={false} tickLine={false} width={45} tickFormatter={(v) => `${v}m`} />
-              <Tooltip contentStyle={darkTooltipStyle} formatter={(value: unknown) => [`${Number(value).toLocaleString()}m`, 'Elevation']} labelFormatter={(w: unknown) => `Week ${w}`} />
+              <Tooltip contentStyle={glassTooltipStyle} formatter={(value: unknown) => [`${Number(value).toLocaleString()}m`, 'Elevation']} labelFormatter={(w: unknown) => `Week ${w}`} />
               <Bar dataKey="elevation" radius={[4, 4, 0, 0]}>
                 {weeklyData.map((_, idx) => (
                   <Cell key={idx} fill={idx === currentIdx ? '#38bdf8' : '#262636'} opacity={idx === currentIdx ? 1 : 0.7} />
