@@ -1,3 +1,5 @@
+import type { Activity } from './types'
+
 export type FlightType = 'xc' | 'soaring' | 'glide_down' | 'hike_and_fly'
 
 export interface FlightData {
@@ -29,24 +31,27 @@ export function classifyFlight(elevationGain: number, distance: number): FlightT
   return 'soaring'
 }
 
-export function parseFlightFromActivity(activity: any): FlightData {
+export function parseFlightFromActivity(activity: Activity): FlightData {
   const raw = activity.raw_json ?? {}
   const gain = activity.elevation_gain ?? 0
   const dist = activity.distance_meters ?? 0
+
+  const num = (v: unknown): number | null =>
+    typeof v === 'number' ? v : null
 
   return {
     date: activity.date,
     activityName: activity.activity_name,
     flightType: classifyFlight(gain, dist),
-    airtime: raw.movingDuration ?? activity.duration_seconds ?? 0,
+    airtime: num(raw.movingDuration) ?? activity.duration_seconds ?? 0,
     distance: dist,
     thermalGain: gain,
     elevationLoss: activity.elevation_loss ?? 0,
-    maxAltitude: raw.maxElevation ?? null,
-    minAltitude: raw.minElevation ?? null,
-    maxClimbRate: raw.maxVerticalSpeed ?? null,
-    maxSpeed: raw.maxSpeed ?? activity.max_speed ?? null,
-    avgSpeed: raw.averageSpeed ?? activity.avg_speed ?? null,
+    maxAltitude: num(raw.maxElevation),
+    minAltitude: num(raw.minElevation),
+    maxClimbRate: num(raw.maxVerticalSpeed),
+    maxSpeed: num(raw.maxSpeed) ?? activity.max_speed ?? null,
+    avgSpeed: num(raw.averageSpeed) ?? activity.avg_speed ?? null,
     avgHR: activity.avg_hr,
     maxHR: activity.max_hr,
     hikeActivity: null, // filled by pairing logic
@@ -54,8 +59,8 @@ export function parseFlightFromActivity(activity: any): FlightData {
 }
 
 export function pairHikeAndFly(
-  flights: any[],
-  allActivities: any[]
+  flights: Activity[],
+  allActivities: Activity[]
 ): FlightData[] {
   return flights.map((flight) => {
     const fd = parseFlightFromActivity(flight)

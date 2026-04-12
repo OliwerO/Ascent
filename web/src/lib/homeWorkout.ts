@@ -1,134 +1,34 @@
 import type { WorkoutDefinition, PlannedExercise, WarmupExercise } from './types'
+import homeConfig from '../../../config/home_substitutions.json'
 
 // ---------------------------------------------------------------------------
-// Home exercise substitution map — mirrors workout_push.py HOME_SUBSTITUTIONS
+// Home exercise substitution map — loaded from shared config/home_substitutions.json
+// Both this file and scripts/workout_push.py consume the same JSON
 // ---------------------------------------------------------------------------
 
 interface HomeSubstitution {
   name: string
   equipment: string
-  maxWeightKg: number | null
-  weightStrategy: 'same' | 'cap_at' | 'fixed' | 'bodyweight'
+  max_weight_kg: number | null
+  weight_strategy: 'same' | 'cap_at' | 'fixed' | 'bodyweight'
   note: string
 }
 
-const HOME_SUBSTITUTIONS: Record<string, HomeSubstitution> = {
-  // --- Session A ---
-  'Barbell Back Squat': {
-    name: 'Barbell Front Squat',
-    equipment: 'barbell',
-    maxWeightKg: 70.0,
-    weightStrategy: 'cap_at',
-    note: 'Clean to front rack — max ~70kg',
-  },
-  'Dumbbell Bench Press': {
-    name: 'DB Floor Press',
-    equipment: 'dumbbell',
-    maxWeightKg: 20.0,
-    weightStrategy: 'fixed',
-    note: '20kg fixed DBs, floor press (no bench)',
-  },
-  'Kettlebell Swing': {
-    name: 'DB Swing',
-    equipment: 'dumbbell',
-    maxWeightKg: 20.0,
-    weightStrategy: 'fixed',
-    note: 'Single 20kg fixed DB, two-hand swing',
-  },
-  'Kettlebell Halo': {
-    name: 'DB Halo',
-    equipment: 'dumbbell',
-    maxWeightKg: 12.5,
-    weightStrategy: 'cap_at',
-    note: '12.5kg adjustable DB',
-  },
-  'Turkish Get-Up': {
-    name: 'DB Turkish Get-Up',
-    equipment: 'dumbbell',
-    maxWeightKg: 20.0,
-    weightStrategy: 'cap_at',
-    note: 'Up to 20kg fixed DB',
-  },
-  // --- Session B ---
-  'Chin-Up': {
-    name: 'Band-Assisted Inverted Row',
-    equipment: 'band',
-    maxWeightKg: null,
-    weightStrategy: 'bodyweight',
-    note: 'Heavy band, table edge or sturdy bar',
-  },
-  'Dumbbell Incline Press': {
-    name: 'Feet-Elevated Push-Up',
-    equipment: 'bodyweight',
-    maxWeightKg: null,
-    weightStrategy: 'bodyweight',
-    note: 'Feet on chair/step for upper chest emphasis',
-  },
-  'DB Incline Press': {
-    name: 'Feet-Elevated Push-Up',
-    equipment: 'bodyweight',
-    maxWeightKg: null,
-    weightStrategy: 'bodyweight',
-    note: 'Feet on chair/step for upper chest emphasis',
-  },
-  'Cable Row': {
-    name: 'Band Row',
-    equipment: 'band',
-    maxWeightKg: null,
-    weightStrategy: 'bodyweight',
-    note: 'Heavy resistance band, door anchor',
-  },
-  'Pallof Walkouts': {
-    name: 'Band Pallof Press',
-    equipment: 'band',
-    maxWeightKg: null,
-    weightStrategy: 'bodyweight',
-    note: 'Medium band, door anchor at chest height',
-  },
-  // --- Session C ---
-  'Trap Bar Deadlift': {
-    name: 'Conventional Deadlift',
-    equipment: 'barbell',
-    maxWeightKg: 100.0,
-    weightStrategy: 'cap_at',
-    note: 'Conventional barbell deadlift from floor',
-  },
-  'KB Clean & Press': {
-    name: 'DB Clean & Press',
-    equipment: 'dumbbell',
-    maxWeightKg: 20.0,
-    weightStrategy: 'fixed',
-    note: '20kg fixed DB, single-arm',
-  },
-  'KB Farmer Carry': {
-    name: 'DB Farmer Carry',
-    equipment: 'dumbbell',
-    maxWeightKg: 20.0,
-    weightStrategy: 'fixed',
-    note: '20kg fixed DBs, one per hand',
-  },
-}
+const HOME_SUBSTITUTIONS: Record<string, HomeSubstitution> =
+  homeConfig.substitutions as Record<string, HomeSubstitution>
 
-const HOME_COMPATIBLE = new Set([
-  'Barbell Row',
-  'Overhead Press',
-  'Single-Arm DB Row',
-  'Bulgarian Split Squat',
-  'Lateral Raise',
-  'Dead Bugs',
-  'Copenhagen Plank',
-])
+const HOME_COMPATIBLE = new Set(homeConfig.home_compatible)
 
-const BARBELL_WEIGHT_CAP = 100.0
-const DB_WEIGHT_CAP = 20.0
+const BARBELL_WEIGHT_CAP = homeConfig.weight_caps.barbell
+const DB_WEIGHT_CAP = homeConfig.weight_caps.dumbbell
 
 function applyHomeWeight(exerciseName: string, gymWeight: number | null, equipment?: string): number | null {
   if (gymWeight == null) return null
   const sub = HOME_SUBSTITUTIONS[exerciseName]
   if (sub) {
-    if (sub.weightStrategy === 'bodyweight') return null
-    if (sub.weightStrategy === 'fixed') return sub.maxWeightKg
-    if (sub.weightStrategy === 'cap_at') return Math.min(gymWeight, sub.maxWeightKg!)
+    if (sub.weight_strategy === 'bodyweight') return null
+    if (sub.weight_strategy === 'fixed') return sub.max_weight_kg
+    if (sub.weight_strategy === 'cap_at') return Math.min(gymWeight, sub.max_weight_kg!)
     return gymWeight
   }
   if (HOME_COMPATIBLE.has(exerciseName)) {

@@ -57,11 +57,11 @@ These are locked. Do not change without an explicit Opus session.
 1. **Coach executes plans, never creates them.** Plan creation/redesign is Opus's role in interactive sessions.
 2. **`coach_adjust.py` is the only write-path** for `planned_workouts`, `coaching_log`, and session exceptions. No other script or UI component writes coaching decisions to the DB outside this path (React app may write user-initiated actions like RPE, wellness, and home/gym switching directly).
 3. **`planned_workouts` is the single source of truth** for workout display in the React app.
-4. **Micro-adjustments (<=15% volume) happen at Claude Code tier.** Structural changes (split, progression scheme, block design) require Opus.
+4. **Micro-adjustments (<=15% per-session volume) happen at Claude Code tier.** Structural changes (split, progression scheme, block design) require Opus. Note: this is per-session adjustment authority (e.g. drop 1 set), distinct from KB Domain 1.1's <=10% week-over-week total volume progression cap.
 5. **Body Battery and Training Readiness are safety guardrails only** — hard rest override at BB<30 or TR<40, gated on data freshness (<12h). Not used for graduated decisions.
 6. **Mountain activities ARE training** — never flag as "missed gym." Treat elevation + zone time as cardio load.
 7. **Autonomy-supportive language only** — no "should," "must," "need to" in coaching messages.
-8. **Home workout substitution map** must be updated when new exercises are added to any block (see `HOME_SUBSTITUTIONS` in `workout_push.py` and `web/src/lib/homeWorkout.ts`).
+8. **Home workout substitution map** must be updated when new exercises are added to any block. Single source of truth: `config/home_substitutions.json` (consumed by both `workout_push.py` and `web/src/lib/homeWorkout.ts`).
 
 ## Development Standards
 

@@ -1,0 +1,108 @@
+{
+  "substitutions": {
+    "Barbell Back Squat": {
+      "name": "Barbell Front Squat",
+      "equipment": "barbell",
+      "max_weight_kg": 70.0,
+      "weight_strategy": "cap_at",
+      "note": "Clean to front rack — max ~70kg"
+    },
+    "Dumbbell Bench Press": {
+      "name": "DB Floor Press",
+      "equipment": "dumbbell",
+      "max_weight_kg": 20.0,
+      "weight_strategy": "fixed",
+      "note": "20kg fixed DBs, floor press (no bench)"
+    },
+    "Kettlebell Swing": {
+      "name": "DB Swing",
+      "equipment": "dumbbell",
+      "max_weight_kg": 20.0,
+      "weight_strategy": "fixed",
+      "note": "Single 20kg fixed DB, two-hand swing"
+    },
+    "Kettlebell Halo": {
+      "name": "DB Halo",
+      "equipment": "dumbbell",
+      "max_weight_kg": 12.5,
+      "weight_strategy": "cap_at",
+      "note": "12.5kg adjustable DB"
+    },
+    "Turkish Get-Up": {
+      "name": "DB Turkish Get-Up",
+      "equipment": "dumbbell",
+      "max_weight_kg": 20.0,
+      "weight_strategy": "cap_at",
+      "note": "Up to 20kg fixed DB"
+    },
+    "Chin-Up": {
+      "name": "Band-Assisted Inverted Row",
+      "equipment": "band",
+      "max_weight_kg": null,
+      "weight_strategy": "bodyweight",
+      "note": "Heavy band, table edge or sturdy bar"
+    },
+    "Dumbbell Incline Press": {
+      "name": "Feet-Elevated Push-Up",
+      "equipment": "bodyweight",
+      "max_weight_kg": null,
+      "weight_strategy": "bodyweight",
+      "note": "Feet on chair/step for upper chest emphasis"
+    },
+    "DB Incline Press": {
+      "name": "Feet-Elevated Push-Up",
+      "equipment": "bodyweight",
+      "max_weight_kg": null,
+      "weight_strategy": "bodyweight",
+      "note": "Feet on chair/step for upper chest emphasis"
+    },
+    "Cable Row": {
+      "name": "Band Row",
+      "equipment": "band",
+      "max_weight_kg": null,
+      "weight_strategy": "bodyweight",
+      "note": "Heavy resistance band, door anchor"
+    },
+    "Pallof Walkouts": {
+      "name": "Band Pallof Press",
+      "equipment": "band",
+      "max_weight_kg": null,
+      "weight_strategy": "bodyweight",
+      "note": "Medium band, door anchor at chest height"
+    },
+    "Trap Bar Deadlift": {
+      "name": "Conventional Deadlift",
+      "equipment": "barbell",
+      "max_weight_kg": 100.0,
+      "weight_strategy": "cap_at",
+      "note": "Conventional barbell deadlift from floor"
+    },
+    "KB Clean & Press": {
+      "name": "DB Clean & Press",
+      "equipment": "dumbbell",
+      "max_weight_kg": 20.0,
+      "weight_strategy": "fixed",
+      "note": "20kg fixed DB, single-arm"
+    },
+    "KB Farmer Carry": {
+      "name": "DB Farmer Carry",
+      "equipment": "dumbbell",
+      "max_weight_kg": 20.0,
+      "weight_strategy": "fixed",
+      "note": "20kg fixed DBs, one per hand"
+    }
+  },
+  "home_compatible": [
+    "Barbell Row",
+    "Overhead Press",
+    "Single-Arm DB Row",
+    "Bulgarian Split Squat",
+    "Lateral Raise",
+    "Dead Bugs",
+    "Copenhagen Plank"
+  ],
+  "weight_caps": {
+    "barbell": 100.0,
+    "dumbbell": 20.0
+  }
+}
