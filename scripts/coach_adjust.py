@@ -760,22 +760,15 @@ def run_coaching_log_insert(
         },
     }
     # Phase 7 traceability columns (sql/021_coaching_log_traceability.sql).
-    # Only include them if the caller supplied any of the optional fields OR
-    # the action is mark_train_as_planned (where the columns are the whole
-    # point). This keeps existing call sites working even before the migration
-    # has been applied to prod — if any of decision_type/rule/kb_refs/inputs
-    # show up here, the migration MUST be applied first.
-    has_traceability = (
-        action == "mark_train_as_planned"
-        or "rule" in details
-        or "kb_refs" in details
-        or "inputs" in details
-    )
-    if has_traceability:
-        row["decision_type"] = DECISION_TYPE_BY_ACTION.get(action, "adjust")
-        row["rule"] = details.get("rule")
-        row["kb_refs"] = details.get("kb_refs")
-        row["inputs"] = details.get("inputs")
+    # Always populate decision_type so every coaching_log entry is typed.
+    # rule/kb_refs/inputs are included when the caller supplies them.
+    row["decision_type"] = DECISION_TYPE_BY_ACTION.get(action, "adjust")
+    if "rule" in details:
+        row["rule"] = details["rule"]
+    if "kb_refs" in details:
+        row["kb_refs"] = details["kb_refs"]
+    if "inputs" in details:
+        row["inputs"] = details["inputs"]
     try:
         res = sb.table("coaching_log").insert(row).execute()
         if not res.data:

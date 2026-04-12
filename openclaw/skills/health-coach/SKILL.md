@@ -197,6 +197,11 @@ If `ok: false`, surface `user_message` verbatim.
 | `mark_completed` | Status → completed. | (none required). Optional: `compliance_score`, `reason` |
 | `mark_train_as_planned` | Log decision to coaching_log only (no mutation). | `reason`, `rule`, `kb_refs`, `inputs` |
 
+**Traceability (required for ALL actions):** Always include these keys in `--details` so every decision is auditable in the app's "Why?" panel:
+- `rule`: short identifier of the decision rule applied (e.g. `"recovery.hrv_low.lighten"`, `"all_green.train_as_planned"`)
+- `inputs`: JSONB snapshot of key signals: `{"hrv_status": "...", "sleep_hours": N, "body_battery_highest": N, "mountain_days_3d": N, "wellness_composite": N}`
+- `kb_refs`: array of knowledge-base citations (e.g. `["domain-1.1", "domain-9-mobility"]`)
+
 ### Decision → Action Mapping
 
 | Coach decision | action |
