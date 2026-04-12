@@ -1,77 +1,20 @@
-import { useMemo, useState, useCallback, Component } from 'react'
-import type { ReactNode, ErrorInfo } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
+import { CollapsibleSection } from '../components/CollapsibleSection'
+import { InfoPanel } from '../components/InfoPanel'
+import { SectionErrorBoundary } from '../components/SectionErrorBoundary'
+import { glassTooltipStyle, axisTickStyle, axisLineStyle } from '../lib/chartConfig'
 import { useHRV, useBodyComposition, useActivities, useDailyMetrics, useSleep, usePerformanceScores } from '../hooks/useSupabase'
 import type { HRVRow, BodyComposition, DailyMetrics, SleepRow, PerformanceScore } from '../lib/types'
 import { format, startOfWeek, subDays } from 'date-fns'
-import { RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { correlateLagged, loadImpact, describeR, type DayPoint } from '../lib/correlations'
 import { MOUNTAIN_ACTIVITY_TYPES, CYCLING_ACTIVITY_TYPES } from '../lib/activityTypes'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, ResponsiveContainer, Tooltip, Legend,
 } from 'recharts'
-
-class SectionErrorBoundary extends Component<{ name: string; children: ReactNode }, { error: Error | null }> {
-  state = { error: null as Error | null }
-  static getDerivedStateFromError(error: Error) { return { error } }
-  componentDidCatch(error: Error, info: ErrorInfo) { console.error(`${this.props.name} crash:`, error, info) }
-  render() {
-    if (this.state.error) {
-      return (
-        <Card title={this.props.name}>
-          <div className="text-accent-red text-[13px]">Failed to render: {this.state.error.message}</div>
-        </Card>
-      )
-    }
-    return this.props.children
-  }
-}
-
-function CollapsibleSection({ title, defaultOpen = false, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
-  const [open, setOpen] = useState(defaultOpen)
-  return (
-    <div>
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between py-2 text-[11px] uppercase tracking-[0.06em] text-text-muted font-semibold"
-      >
-        {title}
-        <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && <div className="space-y-3">{children}</div>}
-    </div>
-  )
-}
-
-function InfoPanel({ title, children }: { title: string; children: React.ReactNode }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="mt-2">
-      <button onClick={() => setOpen(!open)} className="flex items-center gap-1 text-[12px] text-text-dim hover:text-text-muted transition-colors">
-        {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-        {title}
-      </button>
-      {open && (
-        <div className="mt-2 text-[12px] text-text-muted leading-relaxed bg-bg-primary/50 rounded-xl px-3 py-2.5 space-y-2">
-          {children}
-        </div>
-      )}
-    </div>
-  )
-}
-
-const darkTooltipStyle = {
-  backgroundColor: '#16161e',
-  border: '1px solid #262636',
-  borderRadius: '12px',
-  color: '#f0f0f5',
-  fontSize: '12px',
-}
-
-const axisTickStyle = { fill: '#646478', fontSize: 11 }
-const axisLineStyle = { stroke: '#262636' }
 
 function classifyActivity(type: string | null | undefined): 'ski' | 'hike' | 'fly' | 'bike' | null {
   if (!type) return null
@@ -399,7 +342,7 @@ export default function TrendsView() {
               </defs>
               <XAxis dataKey="date" tick={{ ...axisTickStyle, fontSize: 10 }} axisLine={axisLineStyle} tickLine={false} interval="preserveStartEnd" />
               <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={35} domain={['dataMin - 10', 'dataMax + 10']} />
-              <Tooltip contentStyle={darkTooltipStyle} />
+              <Tooltip contentStyle={glassTooltipStyle} />
               <Area type="monotone" dataKey="baselineHigh" stroke="none" fill="url(#baselineGrad90)" fillOpacity={1} stackId="baseline" connectNulls />
               <Area type="monotone" dataKey="baselineLow" stroke="none" fill="#0a0a0f" fillOpacity={1} stackId="baseline" connectNulls />
               <Area type="monotone" dataKey="value" stroke="#60a5fa" fill="url(#hrvGrad90)" strokeWidth={2} dot={false} connectNulls />
@@ -482,7 +425,7 @@ export default function TrendsView() {
               <XAxis dataKey="date" tick={{ ...axisTickStyle, fontSize: 10 }} axisLine={axisLineStyle} tickLine={false} interval="preserveStartEnd" />
               <YAxis yAxisId="w" tick={axisTickStyle} axisLine={false} tickLine={false} width={40} unit=" kg" domain={['dataMin - 1', 'dataMax + 1']} />
               <YAxis yAxisId="m" orientation="right" tick={axisTickStyle} axisLine={false} tickLine={false} width={40} unit=" kg" domain={['dataMin - 1', 'dataMax + 1']} />
-              <Tooltip contentStyle={darkTooltipStyle} />
+              <Tooltip contentStyle={glassTooltipStyle} />
               <Legend wrapperStyle={{ color: '#a0a0b8', fontSize: 11 }} />
               <Line yAxisId="w" type="monotone" dataKey="weight" stroke="none" dot={{ fill: '#60a5fa', r: 2, opacity: 0.3 }} name="Daily weight" connectNulls legendType="none" />
               <Line yAxisId="w" type="monotone" dataKey="weightEWMA" stroke="#60a5fa" strokeWidth={2.5} dot={false} name="Weight (trend)" connectNulls />
@@ -505,7 +448,7 @@ export default function TrendsView() {
               </defs>
               <XAxis dataKey="date" tick={{ ...axisTickStyle, fontSize: 10 }} axisLine={axisLineStyle} tickLine={false} interval="preserveStartEnd" />
               <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={35} unit="%" domain={['dataMin - 1', 'dataMax + 1']} />
-              <Tooltip contentStyle={darkTooltipStyle} />
+              <Tooltip contentStyle={glassTooltipStyle} />
               <Area type="monotone" dataKey="bodyFat" stroke="#a78bfa" fill="url(#bfGrad)" strokeWidth={2} dot={{ fill: '#a78bfa', r: 3 }} name="Body Fat %" connectNulls />
             </AreaChart>
           </ResponsiveContainer>
@@ -546,7 +489,7 @@ export default function TrendsView() {
           </div>
 
           {hasSegmental && (
-            <div className="border-t border-border pt-3">
+            <div className="border-t border-border-subtle pt-3">
               <div className="text-[11px] text-text-muted mb-2.5 uppercase tracking-[0.06em] font-semibold">Segmental Muscle Mass</div>
               <div className="space-y-2.5">
                 {/* Arms */}
@@ -637,7 +580,7 @@ export default function TrendsView() {
           </InfoPanel>
 
           {latestComp && (
-            <div className="grid grid-cols-3 gap-3 pt-3 border-t border-border">
+            <div className="grid grid-cols-3 gap-3 pt-3 border-t border-border-subtle">
               <div>
                 <div className="text-[11px] text-text-muted font-semibold">Lean Mass</div>
                 <div className="data-value-sm text-text-primary mt-0.5">
@@ -670,7 +613,7 @@ export default function TrendsView() {
             <BarChart data={elevationChartData}>
               <XAxis dataKey="week" tick={{ ...axisTickStyle, fontSize: 10 }} axisLine={axisLineStyle} tickLine={false} />
               <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={45} unit="m" />
-              <Tooltip contentStyle={darkTooltipStyle} />
+              <Tooltip contentStyle={glassTooltipStyle} />
               <Legend wrapperStyle={{ color: '#a0a0b8', fontSize: 12 }} />
               {elevationTypes.map((type) => (
                 <Bar
@@ -720,7 +663,7 @@ export default function TrendsView() {
             <LineChart data={fitnessScoreDeduped}>
               <XAxis dataKey="date" tick={{ ...axisTickStyle, fontSize: 10 }} axisLine={axisLineStyle} tickLine={false} interval="preserveStartEnd" />
               <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={35} domain={['dataMin - 5', 'dataMax + 5']} />
-              <Tooltip contentStyle={darkTooltipStyle} />
+              <Tooltip contentStyle={glassTooltipStyle} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <Line type="monotone" dataKey="hill" name="Hill Score" stroke="#38bdf8" strokeWidth={2} dot={false} connectNulls />
               <Line type="monotone" dataKey="endurance" name="Endurance" stroke="#34d399" strokeWidth={2} dot={false} connectNulls />
@@ -747,7 +690,7 @@ export default function TrendsView() {
             <BarChart data={vamData}>
               <XAxis dataKey="date" tick={{ ...axisTickStyle, fontSize: 10 }} axisLine={axisLineStyle} tickLine={false} interval="preserveStartEnd" />
               <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={40} />
-              <Tooltip contentStyle={darkTooltipStyle} />
+              <Tooltip contentStyle={glassTooltipStyle} />
               <Bar dataKey="vam" name="VAM (m/h)" radius={[4, 4, 0, 0]} fill="#38bdf8" />
             </BarChart>
           </ResponsiveContainer>
@@ -771,7 +714,7 @@ export default function TrendsView() {
             <LineChart data={cyclingData}>
               <XAxis dataKey="date" tick={{ ...axisTickStyle, fontSize: 10 }} axisLine={axisLineStyle} tickLine={false} interval="preserveStartEnd" />
               <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={40} unit=" km/h" />
-              <Tooltip contentStyle={darkTooltipStyle} />
+              <Tooltip contentStyle={glassTooltipStyle} />
               <Line type="monotone" dataKey="speed" name="Avg speed (km/h)" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: '#f59e0b' }} />
             </LineChart>
           </ResponsiveContainer>
