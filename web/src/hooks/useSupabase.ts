@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { format, subDays } from 'date-fns'
 import type {
@@ -6,6 +6,33 @@ import type {
   BodyComposition, TrainingSession, TrainingSet, SubjectiveWellness,
   Goal, CoachingLogEntry, PlannedWorkout, PerformanceScore,
 } from '../lib/types'
+
+const MAX_RETRIES = 2
+const RETRY_DELAY_MS = 1000
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** Track online/offline state globally so all hooks share one listener pair. */
+function useOnlineStatus(): boolean {
+  const [online, setOnline] = useState(
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  )
+
+  useEffect(() => {
+    const goOnline = () => setOnline(true)
+    const goOffline = () => setOnline(false)
+    window.addEventListener('online', goOnline)
+    window.addEventListener('offline', goOffline)
+    return () => {
+      window.removeEventListener('online', goOnline)
+      window.removeEventListener('offline', goOffline)
+    }
+  }, [])
+
+  return online
+}
 
 function useFetch<T>(
   _key: string,
@@ -15,24 +42,70 @@ function useFetch<T>(
   const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [offline, setOffline] = useState(false)
   const [manualTick, setManualTick] = useState(0)
   const hasFetched = useRef(false)
+  const online = useOnlineStatus()
+
+  // Retry-when-back-online: bump manualTick so the effect re-runs
+  const prevOnlineRef = useRef(online)
+  useEffect(() => {
+    if (online && !prevOnlineRef.current) {
+      // Just came back online — trigger a refetch
+      setManualTick((t) => t + 1)
+    }
+    prevOnlineRef.current = online
+  }, [online])
 
   useEffect(() => {
     let cancelled = false
-    // Only show loading spinner on initial fetch, not on realtime refetches
+
+    // If offline and we already have data, keep showing stale data
+    if (!online) {
+      setOffline(true)
+      if (!hasFetched.current) setLoading(false)
+      return
+    }
+
+    setOffline(false)
+
+    // Only show loading spinner on initial fetch (stale-while-revalidate)
     if (!hasFetched.current) setLoading(true)
-    fetcher()
-      .then((d) => { if (!cancelled) { setData(d); hasFetched.current = true } })
-      .catch((e) => { if (!cancelled) setError(e.message) })
-      .finally(() => { if (!cancelled) setLoading(false) })
+
+    const fetchWithRetry = async (): Promise<void> => {
+      let lastError: string | null = null
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (cancelled) return
+        try {
+          const d = await fetcher()
+          if (!cancelled) {
+            setData(d)
+            setError(null)
+            hasFetched.current = true
+          }
+          return
+        } catch (e: unknown) {
+          lastError = e instanceof Error ? e.message : String(e)
+          if (attempt < MAX_RETRIES) {
+            await delay(RETRY_DELAY_MS)
+          }
+        }
+      }
+      // All retries exhausted
+      if (!cancelled) setError(lastError)
+    }
+
+    fetchWithRetry().finally(() => {
+      if (!cancelled) setLoading(false)
+    })
+
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, manualTick])
+  }, [...deps, manualTick, online])
 
-  const refetch = () => setManualTick((t) => t + 1)
+  const refetch = useCallback(() => setManualTick((t) => t + 1), [])
 
-  return { data, loading, error, refetch }
+  return { data, loading, error, offline, refetch }
 }
 
 /**
