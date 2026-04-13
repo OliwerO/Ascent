@@ -71,6 +71,34 @@ Block/week calculation:
 - Weeks 4 and 8 are deload weeks
 - `daily_coaching_context` provides `current_week` and `is_deload_week`
 
+## Signal Credibility Tiers
+
+Not all Garmin metrics deserve equal decision-making weight.
+See `docs/knowledge-base/garmin-metrics-credibility.md` for the full analysis.
+
+### PRIMARY signals (drive decisions)
+- **Overnight HRV 7-day trend** — most reliable recovery indicator
+- **Resting HR 7-day trend** — elevated RHR signals incomplete recovery
+- **Sleep duration** — hours of sleep, highly reliable
+- **Subjective wellness composite** — athlete self-report overrides wearable data
+
+### SUPPORTING signals (context, not decisive)
+- **VO2max trend** — directional over weeks, noisy day-to-day
+- **Sleep stages (deep/REM split)** — useful for recovery recommendations
+- **Stress score (daily average)** — correlates with HRV but noisier
+- **Respiration rate** — elevated rate can signal illness or incomplete recovery
+- **Recovery time estimate** — directional guidance only
+
+### DEMOTED signals (guardrails only or ignore)
+- **Body Battery** — proprietary composite, used only as hard override at <30
+- **Training Readiness** — used only as hard override at <40
+- **Training Status** — too slow to react, not used in daily decisions
+- **ACWR** — not computed (insufficient structured load data)
+- **SpO2** — too noisy for daily use
+
+When signals conflict, trust the PRIMARY tier. SUPPORTING signals add context
+but do not override PRIMARY. DEMOTED signals only fire as safety guardrails.
+
 ## Feedback Loop Data
 
 The `daily_coaching_context` view includes these feedback-loop columns.
@@ -106,13 +134,54 @@ Session-level RPE from the most recent training session.
   hold that exercise's weight. Surface this.
 - **sRPE <= 7** — no constraint from session RPE.
 
-### `mountain_interference_patterns` (JSONB array)
+### `learned_patterns` (JSONB array)
 
-Each entry: `{pattern, confidence, key, sample_size}`
+Each entry: `{type, key, pattern, confidence, sample_size, effect_size}`
 
-Learned patterns from the athlete's own data (e.g., "Upper body volume drops 12%
-within 48h of mountain days with >1500m elevation"). When `mountain_days_3d > 0`,
-include relevant patterns in the coaching card as context.
+All learned patterns from the athlete's own data, across three categories:
+
+- **`mountain_interference`** — how mountain activity affects gym performance
+  (e.g., "Gym volume drops 12% within 48h of >1500m elevation"). When
+  `mountain_days_3d > 0`, include relevant mountain patterns in the card.
+- **`recovery_response`** — how the athlete responds to coaching decisions
+  (e.g., "Rest on HRV LOW days led to good outcomes 80% of the time").
+  Use these to calibrate confidence in rest vs train decisions.
+- **`progression_velocity`** — load progression patterns
+  (e.g., "3+ exercises stalled simultaneously — consider program redesign").
+  Cross-reference with `progression_alerts` for today's exercises.
+
+Only medium/high confidence patterns appear. Use them as context, not overrides.
+
+### `decision_quality_30d` (JSONB object)
+
+Fields: `{total, good, neutral, poor, poor_decisions}`
+
+Summary of coaching decision outcomes from the last 30 days. `poor_decisions`
+is an array of the 3 most recent poor outcomes with date, type, and notes.
+
+- If `good/total < 60%`, mention calibration concern in the coaching card.
+- Review `poor_decisions` to avoid repeating the same mistake.
+
+### `mountain_interference_patterns` (JSONB array, backwards-compat)
+
+Filtered subset of `learned_patterns` where `type = 'mountain_interference'`.
+Same format as before: `{pattern, confidence, key, sample_size}`.
+
+### Sleep Quality Signals
+
+- **`deep_sleep_pct`** — percentage of total sleep in deep sleep stage. Below
+  15% indicates poor deep sleep quality (recovery recommendations trigger).
+- **`rem_sleep_pct`** — percentage of total sleep in REM. Below 18% sustained
+  across multiple nights suggests disruption (alcohol, caffeine, irregular schedule).
+- **`poor_sleep_nights_7d`** — count of nights with <6h sleep in the last 7 days.
+  3+ is a pattern, not a blip — surface in recovery recommendations.
+
+### Stress and Respiration
+
+- **`avg_stress_level`** — Garmin daily stress average (0-100). Above 50
+  sustained suggests elevated sympathetic load. Supporting signal only.
+- **`respiration_avg`** — overnight breathing rate (breaths/min). Elevated 2+
+  brpm above baseline can signal incomplete recovery or early illness.
 
 ## Auto-Adjustment Triggers
 
@@ -157,6 +226,48 @@ Hard overrides regardless of HRV/sleep. Swap any planned gym session.
 ### 6. Multi-signal convergence → force rest day
 
 See Decision Matrix section above. No exceptions.
+
+## Recovery Recommendations
+
+The coach optimizes training load going in AND recovery coming out. Include
+up to 1 recovery tip per daily coaching card when signals warrant it.
+
+All tips use autonomy-supportive language (no "should", "must", "need to").
+Priority order — pick the first that applies:
+
+| Trigger | Recovery tip |
+|---------|-------------|
+| `deep_sleep_pct < 15` for 2+ nights | "Deep sleep has been low — cooler room, earlier screen cutoff, and consistent bedtime tend to help" |
+| `rem_sleep_pct < 18` for 2+ nights | "REM sleep trending low — alcohol, late caffeine, and irregular sleep times are common culprits" |
+| `sleep_hours < 6` (last night) | "Short sleep tonight — a 20-min nap before training can partially compensate" |
+| `mountain_days_3d > 0` | "Hydration and protein intake support recovery after mountain days — 1.6-2.2g/kg/day protein target" |
+| `is_deload_week = true` | "Deload week — extra sleep and light mobility maximize adaptation from the training block" |
+| `avg_stress_level > 50` sustained | "Stress has been elevated — even 10 min of walking or breathing exercises can shift the balance" |
+| `respiration_avg` elevated 2+ above baseline | "Overnight breathing rate is up — could signal incomplete recovery or early illness" |
+| `last_srpe >= 8` | "Yesterday was a grinder — extra carbs and protein in the next 24h support recovery" |
+| `poor_sleep_nights_7d >= 3` | "Sleep has been short this week — even 30min earlier to bed compounds" |
+
+Max 1 tip per card to avoid spam. If multiple triggers fire, pick the
+highest-priority one (sleep stages > acute sleep > mountain > deload > stress).
+
+## Injury-Aware Exercise Selection
+
+When `active_injuries` is non-empty, cross-reference each injury's `body_area`
+and `accommodations` against today's `session_exercises`.
+
+- If any exercise targets an injured body area, apply the accommodation
+  (e.g., "avoid overhead pressing" → flag shoulder press, suggest alternative)
+- Surface in the coaching card: "Active: [issue] — [accommodation applied]"
+- This is advisory — the coach flags and adjusts, never skips silently
+- If the injury has `severity: 'severe'`, strongly recommend swapping the
+  exercise entirely rather than modifying
+
+Common body area → exercise mapping:
+- shoulder → pressing movements, lateral raises, overhead work
+- knee → squats, lunges, leg press, step-ups
+- lower back → deadlifts, rows, heavy bracing movements
+- wrist → pressing, curls, front rack positions
+- elbow → curls, tricep work, pressing
 
 ## Session Adjustments — Single Write Path
 

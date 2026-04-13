@@ -171,12 +171,26 @@ export default function TodayView() {
   const loadChangePct = prevTrainingLoad > 0
     ? Math.round(((trainingLoad - prevTrainingLoad) / prevTrainingLoad) * 100) : null
 
+  // ─── Sleep quality (deep/REM) ───
+  const todaySleep = (sleepHook.data ?? []).find((s) => s.date === todayStr) ?? (sleepHook.data ?? [])[0] ?? null
+  const deepSleepPct = todaySleep?.deep_sleep_seconds != null && todaySleep?.total_sleep_seconds
+    ? (todaySleep.deep_sleep_seconds / todaySleep.total_sleep_seconds) * 100 : null
+  const remSleepPct = todaySleep?.rem_sleep_seconds != null && todaySleep?.total_sleep_seconds
+    ? (todaySleep.rem_sleep_seconds / todaySleep.total_sleep_seconds) * 100 : null
+
   // ─── Coaching decision ───
   const decision = computeCoachingState({
     hrvStatus: todayHRV?.status, hrvVal, hrvWeeklyAvg,
     sleepHoursLastNight: sleepHours, sleep7dAvg,
     wellnessComposite: todayWellness?.composite_score ?? null,
     bodyBattery: bbHigh, trainingReadiness: readiness, rhrElevated,
+    deepSleepPct,
+    remSleepPct,
+    poorSleepNights7d: sleepBelowCount,
+    mountainDays3d: mountainLoad72h?.days ?? 0,
+    isDeload: deload,
+    lastSrpe: null, // sRPE lives in training_sessions, not fetched here; CCD handles this
+    soreness: todayWellness?.muscle_soreness ?? null,
   })
   const cardState = decision.state
   const rpeRange = todayPlanned?.workout_definition?.rpe_range
@@ -210,6 +224,8 @@ export default function TodayView() {
   }
   if (!todayWellness && cardState === 'green') coachingPoints.push({ icon: 'ℹ️', text: 'Complete wellness check-in for full assessment', color: 'text-text-muted' })
   if (coachingPoints.length === 0 && isGymDay) coachingPoints.push({ icon: '✅', text: 'All signals green — train as planned' })
+  // Recovery tip (max 1, from coaching decision)
+  if (decision.recoveryTip) coachingPoints.push({ icon: '💤', text: decision.recoveryTip, color: 'text-text-muted' })
 
   return (
     <div className="space-y-3">

@@ -212,6 +212,16 @@ export default function RecoveryView() {
   const sleepHoursLastNight = todaySleep?.total_sleep_seconds
     ? todaySleep.total_sleep_seconds / 3600
     : null
+  const deepSleepPctRV = todaySleep?.deep_sleep_seconds != null && todaySleep?.total_sleep_seconds
+    ? (todaySleep.deep_sleep_seconds / todaySleep.total_sleep_seconds) * 100 : null
+  const remSleepPctRV = todaySleep?.rem_sleep_seconds != null && todaySleep?.total_sleep_seconds
+    ? (todaySleep.rem_sleep_seconds / todaySleep.total_sleep_seconds) * 100 : null
+  const poorSleepNights7dRV = (sleep.data ?? []).slice(0, 7).filter(
+    (s) => s.total_sleep_seconds != null && s.total_sleep_seconds / 3600 < 6
+  ).length
+  const mountainDays3dRV = (activities.data ?? []).filter(
+    (a) => MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type) && a.date >= format(new Date(Date.now() - 3 * 86400000), 'yyyy-MM-dd')
+  ).length
   const decision = computeCoachingState({
     hrvStatus: todayHRV?.status,
     hrvVal: todayHRV?.last_night_avg ?? null,
@@ -222,6 +232,13 @@ export default function RecoveryView() {
     bodyBattery,
     trainingReadiness,
     rhrElevated: flagHRElevated,
+    deepSleepPct: deepSleepPctRV,
+    remSleepPct: remSleepPctRV,
+    poorSleepNights7d: poorSleepNights7dRV,
+    mountainDays3d: mountainDays3dRV,
+    isDeload: false,
+    lastSrpe: null,
+    soreness: todayWellness?.muscle_soreness ?? null,
   })
 
   // ─── Days since last rest day ───
