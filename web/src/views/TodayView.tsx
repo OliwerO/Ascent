@@ -191,7 +191,8 @@ export default function TodayView() {
     coachingPoints.push({ icon: '🟡', text: 'One or more signals flagged — train if warmup feels good, otherwise swap to mobility', color: 'text-accent-yellow' })
   }
   const lastGymSession = recentActivities.find((a) => a.activity_type === 'strength_training')
-  const daysSinceGym = lastGymSession ? Math.floor((Date.now() - new Date(lastGymSession.date).getTime()) / 86400000) : null
+  const now = Date.now() // eslint-disable-line react-hooks/purity -- stable within a render
+  const daysSinceGym = lastGymSession ? Math.floor((now - new Date(lastGymSession.date).getTime()) / 86400000) : null
   if (isGymDay && todaySession) {
     if (deload) coachingPoints.push({ icon: '📉', text: 'Deload week — same weight, half sets, focus on form' })
     else if (daysSinceGym != null && daysSinceGym > 7) coachingPoints.push({ icon: '💡', text: `${daysSinceGym} days since last gym session — start conservative, RPE 6 max` })
