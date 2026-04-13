@@ -13,7 +13,7 @@ export default function TodayView() {
   const summary = useDailySummary(7)
   const hrv = useHRV(14)
   const metrics = useDailyMetrics(28)
-  const activities = useActivities(14)
+  const activities = useActivities(28)
   const sleepHook = useSleep(14)
   const wellness = useSubjectiveWellness(30)
   const planned = usePlannedWorkouts()
@@ -51,18 +51,20 @@ export default function TodayView() {
     })
   }, [recentActivities])
 
-  // ─── Strain: 7d vs 28d vigorous+moderate intensity minutes ───
+  // ─── Strain: EPOC-weighted load (training_effect × duration) 7d vs 28d ───
   const { strain7d, strain28d } = useMemo(() => {
-    const all = metrics.data ?? []
-    const intensityOf = (d: typeof all[0]) => (d.vigorous_intensity_minutes ?? 0) + (d.moderate_intensity_minutes ?? 0)
-    const last7 = all.slice(0, 7)
-    const last28 = all.slice(0, 28)
-    const sum7 = last7.reduce((s, d) => s + intensityOf(d), 0)
-    const sum28 = last28.reduce((s, d) => s + intensityOf(d), 0)
-    // 28d avg per 7-day window = total / (days/7)
-    const weeks28 = Math.max(1, last28.length / 7)
-    return { strain7d: sum7, strain28d: sum28 / weeks28 }
-  }, [metrics.data])
+    const all = recentActivities
+    const now = new Date()
+    const daysAgo = (d: number) => { const r = new Date(now); r.setDate(r.getDate() - d); return format(r, 'yyyy-MM-dd') }
+    const d7 = daysAgo(7)
+    const d28 = daysAgo(28)
+    const load = (a: typeof all[0]) => (a.training_effect_aerobic ?? 0) * ((a.duration_seconds ?? 0) / 60)
+    const sum7 = all.filter(a => a.date >= d7).reduce((s, a) => s + load(a), 0)
+    const sum28 = all.filter(a => a.date >= d28).reduce((s, a) => s + load(a), 0)
+    // 28d avg per 7-day window
+    const weeks28 = Math.max(1, all.filter(a => a.date >= d28).length > 0 ? (new Date().getTime() - new Date(d28).getTime()) / (7 * 86400000) : 1)
+    return { strain7d: Math.round(sum7), strain28d: Math.round(sum28 / weeks28) }
+  }, [recentActivities])
 
   const mountainLoad72h = useMemo(() => {
     const threeDaysAgo = new Date()
@@ -220,12 +222,7 @@ export default function TodayView() {
         strain28d={strain28d}
         hrvData={hrv.data ?? []}
         sleepData={sleepHook.data ?? []}
-        metricsData={metrics.data ?? []}
-        latestActivity={lastActivity ? {
-          training_effect_aerobic: lastActivity.training_effect_aerobic,
-          training_effect_anaerobic: lastActivity.training_effect_anaerobic,
-          activity_type: lastActivity.activity_type,
-        } : null}
+        recentActivities={recentActivities}
       />
 
       {/* Coaching card with accent strip */}

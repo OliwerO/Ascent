@@ -1,22 +1,18 @@
 import { useState } from 'react'
 import { RadialGauge } from '../../components/RadialGauge'
 import { MetricDetailSheet } from '../../components/MetricDetailSheet'
-import type { DailyMetrics, SleepRow, HRVRow } from '../../lib/types'
+import type { Activity, SleepRow, HRVRow } from '../../lib/types'
 
 interface Props {
   hrvVal: number | null
   hrvWeeklyAvg: number | null
   cardState: 'green' | 'amber' | 'red'
   sleepHours: number | null
-  /** Rolling 7d vigorous intensity minutes */
   strain7d: number
-  /** Rolling 28d average vigorous intensity minutes (per 7d window) */
   strain28d: number
-  /** Detail data for sheets */
   hrvData: HRVRow[]
   sleepData: SleepRow[]
-  metricsData: DailyMetrics[]
-  latestActivity: { training_effect_aerobic?: number | null; training_effect_anaerobic?: number | null; activity_type?: string } | null
+  recentActivities: Activity[]
 }
 
 const stateColors = { green: '#34d399', amber: '#fbbf24', red: '#f87171' }
@@ -39,7 +35,7 @@ function strainColor(ratio: number | null): string {
 
 export function HeroGauges({
   hrvVal, hrvWeeklyAvg, cardState, sleepHours,
-  strain7d, strain28d, hrvData, sleepData, metricsData, latestActivity,
+  strain7d, strain28d, hrvData, sleepData, recentActivities,
 }: Props) {
   const [activeSheet, setActiveSheet] = useState<'hrv' | 'sleep' | 'strain' | null>(null)
 
@@ -222,13 +218,14 @@ export function HeroGauges({
             <div>
               <div className="text-[11px] text-text-muted uppercase tracking-wider font-semibold">7-day load</div>
               <div className="text-2xl font-bold font-data text-accent-orange mt-1">
-                {strain7d} <span className="text-[13px] font-normal text-text-muted">min</span>
+                {strain7d}
               </div>
+              <div className="text-[10px] text-text-dim mt-0.5">TE × duration</div>
             </div>
             <div>
               <div className="text-[11px] text-text-muted uppercase tracking-wider font-semibold">28-day avg</div>
               <div className="text-lg font-bold font-data text-text-primary mt-1">
-                {strain28d > 0 ? Math.round(strain28d) : '—'} <span className="text-[13px] font-normal text-text-muted">min/wk</span>
+                {strain28d > 0 ? Math.round(strain28d) : '—'} <span className="text-[13px] font-normal text-text-muted">/wk</span>
               </div>
             </div>
           </div>
@@ -243,46 +240,50 @@ export function HeroGauges({
               <span className="px-2 py-0.5 rounded-full bg-accent-red/15 text-accent-red">&gt;1.5x overreach</span>
             </div>
           </div>
-          {latestActivity && (latestActivity.training_effect_aerobic != null || latestActivity.training_effect_anaerobic != null) && (
+          {recentActivities[0] && (recentActivities[0].training_effect_aerobic != null || recentActivities[0].training_effect_anaerobic != null) && (
             <div>
               <div className="text-[11px] text-text-muted uppercase tracking-wider font-semibold mb-1">Last activity training effect</div>
               <div className="flex gap-4 text-[14px]">
-                {latestActivity.training_effect_aerobic != null && (
+                {recentActivities[0].training_effect_aerobic != null && (
                   <div>
-                    <span className="text-text-primary font-bold">{latestActivity.training_effect_aerobic.toFixed(1)}</span>
+                    <span className="text-text-primary font-bold">{recentActivities[0].training_effect_aerobic.toFixed(1)}</span>
                     <span className="text-text-muted text-[12px] ml-1">aerobic</span>
                   </div>
                 )}
-                {latestActivity.training_effect_anaerobic != null && (
+                {recentActivities[0].training_effect_anaerobic != null && (
                   <div>
-                    <span className="text-text-primary font-bold">{latestActivity.training_effect_anaerobic.toFixed(1)}</span>
+                    <span className="text-text-primary font-bold">{recentActivities[0].training_effect_anaerobic.toFixed(1)}</span>
                     <span className="text-text-muted text-[12px] ml-1">anaerobic</span>
                   </div>
                 )}
               </div>
             </div>
           )}
-          {/* Daily intensity breakdown */}
+          {/* Recent activities with load scores */}
           <div>
-            <div className="text-[11px] text-text-muted uppercase tracking-wider font-semibold mb-2">Daily intensity (7d)</div>
-            <div className="flex gap-1">
-              {metricsData.slice(0, 7).reverse().map((d, i) => {
-                const v = (d.vigorous_intensity_minutes ?? 0) + (d.moderate_intensity_minutes ?? 0)
-                const maxH = 40
-                const h = Math.min(maxH, Math.max(2, (v / 120) * maxH))
+            <div className="text-[11px] text-text-muted uppercase tracking-wider font-semibold mb-2">Recent activities</div>
+            <div className="space-y-1.5">
+              {recentActivities.slice(0, 5).map((a, i) => {
+                const te = a.training_effect_aerobic ?? 0
+                const dur = Math.round((a.duration_seconds ?? 0) / 60)
+                const load = Math.round(te * dur)
                 return (
-                  <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
-                    <div className="w-full flex items-end justify-center" style={{ height: maxH }}>
-                      <div className="w-full rounded-t bg-accent-orange/60" style={{ height: h }} />
+                  <div key={i} className="flex items-center justify-between text-[12px]">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-text-dim w-10 shrink-0">{a.date.slice(5)}</span>
+                      <span className="text-text-secondary truncate">{a.activity_name ?? a.activity_type.replace(/_/g, ' ')}</span>
                     </div>
-                    <span className="text-[9px] text-text-dim">{d.date.slice(5)}</span>
+                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                      <span className="text-accent-orange font-bold font-data">{load}</span>
+                      <span className="text-text-dim text-[10px]">TE {te.toFixed(1)} × {dur}m</span>
+                    </div>
                   </div>
                 )
               })}
             </div>
           </div>
           <div className="text-[12px] text-text-muted leading-relaxed bg-bg-inset rounded-xl px-3 py-2.5">
-            <strong className="text-text-secondary">What this means:</strong> Strain shows your recent training load (vigorous + moderate intensity minutes) compared to your 4-week baseline. The 0.8–1.3x range is the sweet spot — enough stimulus for adaptation without overreaching. Below 0.5x risks detraining; above 1.5x increases injury and fatigue risk.
+            <strong className="text-text-secondary">What this means:</strong> Strain measures your EPOC-weighted training load — each activity's Training Effect (Garmin's physiological intensity score, 0–5) multiplied by duration. The 7d/28d ratio shows whether you're training harder or lighter than your recent baseline. The 0.8–1.3x range is the sweet spot for adaptation without overreaching.
           </div>
         </div>
       </MetricDetailSheet>
