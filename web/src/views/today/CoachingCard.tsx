@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Card } from '../../components/Card'
 import { supabase } from '../../lib/supabase'
 import { buildHomeWorkout, restoreGymWorkout, countSubstitutions } from '../../lib/homeWorkout'
@@ -210,34 +211,14 @@ export function CoachingCard({
         </div>
       )}
 
-      {/* Home workout preview modal */}
+      {/* Home workout preview modal — rendered via portal-like fixed overlay */}
       {showHomePreview && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setShowHomePreview(false)}>
-          <div className="w-full max-w-lg glass-card rounded-t-[20px] rounded-b-none p-5 pb-8 max-h-[70vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="text-[15px] font-[590] text-text-primary mb-3">Home workout preview</div>
-            {homePreviewDiff.length > 0 ? (
-              <div className="space-y-2 mb-4">
-                {homePreviewDiff.map((d, i) => (
-                  <div key={i} className="text-[12px] bg-bg-inset rounded-lg px-3 py-2">
-                    <div className="text-text-dim line-through">{d.gym}</div>
-                    <div className="text-accent-blue">{d.home}</div>
-                    {d.note && <div className="text-text-dim text-[11px] mt-0.5">{d.note}</div>}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-[13px] text-text-muted mb-4">No exercise changes needed — all exercises are home-compatible.</div>
-            )}
-            <div className="flex gap-3">
-              <button onClick={() => setShowHomePreview(false)}
-                className="flex-1 text-[13px] text-text-muted py-2.5 rounded-xl border border-border">Cancel</button>
-              <button onClick={async () => { setShowHomePreview(false); await handleSwitchToHome() }} disabled={switching}
-                className="flex-1 text-[13px] text-white bg-accent-blue py-2.5 rounded-xl font-semibold disabled:opacity-50">
-                {switching ? 'Switching...' : 'Switch to home'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <HomePreviewModal
+          diffs={homePreviewDiff}
+          switching={switching}
+          onClose={() => setShowHomePreview(false)}
+          onConfirm={async () => { setShowHomePreview(false); await handleSwitchToHome() }}
+        />
       )}
 
       {/* Adjustment note */}
@@ -335,5 +316,45 @@ export function CoachingCard({
         </div>
       )}
     </Card>
+  )
+}
+
+function HomePreviewModal({ diffs, switching, onClose, onConfirm }: {
+  diffs: { gym: string; home: string; note?: string }[]
+  switching: boolean
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60" onClick={onClose}>
+      <div
+        className="w-full max-w-[480px] bg-bg-secondary border-t border-border rounded-t-[20px] p-5 pb-8 max-h-[70vh] overflow-auto animate-slide-up"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="text-[15px] font-[590] text-text-primary mb-3">Home workout preview</div>
+        {diffs.length > 0 ? (
+          <div className="space-y-2 mb-4">
+            {diffs.map((d, i) => (
+              <div key={i} className="text-[12px] bg-bg-inset rounded-lg px-3 py-2">
+                <div className="text-text-dim line-through">{d.gym}</div>
+                <div className="text-accent-blue">{d.home}</div>
+                {d.note && <div className="text-text-dim text-[11px] mt-0.5">{d.note}</div>}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-[13px] text-text-muted mb-4">No exercise changes needed — all exercises are home-compatible.</div>
+        )}
+        <div className="flex gap-3">
+          <button onClick={onClose}
+            className="flex-1 text-[13px] text-text-muted py-2.5 rounded-xl border border-border">Cancel</button>
+          <button onClick={onConfirm} disabled={switching}
+            className="flex-1 text-[13px] text-white bg-accent-blue py-2.5 rounded-xl font-semibold disabled:opacity-50">
+            {switching ? 'Switching...' : 'Switch to home'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
   )
 }

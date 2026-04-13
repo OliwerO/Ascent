@@ -1,55 +1,71 @@
 import { RadialGauge } from '../../components/RadialGauge'
 
 interface Props {
-  /** HRV-based recovery: 0-100 mapped from coaching state */
-  recoveryScore: number | null
-  recoveryState: 'green' | 'amber' | 'red'
-  /** Weekly training load as hours */
-  strainHours: number
-  /** Target weekly training hours (gym + mountain + cycling) */
-  strainTarget: number
+  /** Last night HRV in ms */
+  hrvVal: number | null
+  /** HRV weekly average for context */
+  hrvWeeklyAvg: number | null
+  /** Coaching state drives the HRV gauge color */
+  cardState: 'green' | 'amber' | 'red'
   /** Last night sleep in hours */
   sleepHours: number | null
+  /** Garmin body battery high (0-100) */
+  bodyBattery: number | null
 }
 
-const recoveryColors = {
+const stateColors = {
   green: '#34d399',
   amber: '#fbbf24',
   red: '#f87171',
 }
 
-export function HeroGauges({ recoveryScore, recoveryState, strainHours, strainTarget, sleepHours }: Props) {
-  const strainPct = strainTarget > 0 ? (strainHours / strainTarget) * 100 : 0
+function bbColor(bb: number | null): string {
+  if (bb == null) return '#6a6a82'
+  if (bb >= 60) return '#34d399'
+  if (bb >= 30) return '#fbbf24'
+  return '#f87171'
+}
+
+function sleepColor(h: number | null): string {
+  if (h == null) return '#6a6a82'
+  if (h >= 7) return '#34d399'
+  if (h >= 6) return '#fbbf24'
+  return '#f87171'
+}
+
+export function HeroGauges({ hrvVal, hrvWeeklyAvg, cardState, sleepHours, bodyBattery }: Props) {
+  // HRV gauge: show actual value, max based on weekly avg * 1.3 for visual scale
+  const hrvMax = hrvWeeklyAvg != null ? Math.round(hrvWeeklyAvg * 1.3) : 150
 
   return (
     <div className="grid grid-cols-3 gap-2">
       <div className="glass-card flex items-center justify-center py-3">
         <RadialGauge
-          value={recoveryScore}
-          max={100}
-          label="Recovery"
-          color={recoveryColors[recoveryState]}
+          value={hrvVal}
+          max={hrvMax}
+          label="HRV"
+          color={stateColors[cardState]}
           size="hero"
-        />
-      </div>
-      <div className="glass-card flex items-center justify-center py-3">
-        <RadialGauge
-          value={Math.round(strainPct)}
-          max={100}
-          label="Strain"
-          color="#fb923c"
-          size="hero"
-          unit="%"
+          unit="ms"
         />
       </div>
       <div className="glass-card flex items-center justify-center py-3">
         <RadialGauge
           value={sleepHours}
-          max={8}
+          max={9}
           label="Sleep"
-          color="#818cf8"
+          color={sleepColor(sleepHours)}
           size="hero"
           unit="h"
+        />
+      </div>
+      <div className="glass-card flex items-center justify-center py-3">
+        <RadialGauge
+          value={bodyBattery}
+          max={100}
+          label="Battery"
+          color={bbColor(bodyBattery)}
+          size="hero"
         />
       </div>
     </div>

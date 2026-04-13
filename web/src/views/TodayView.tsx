@@ -194,20 +194,15 @@ export default function TodayView() {
   if (!todayWellness && cardState === 'green') coachingPoints.push({ icon: 'ℹ️', text: 'Complete wellness check-in for full assessment', color: 'text-text-muted' })
   if (coachingPoints.length === 0 && isGymDay) coachingPoints.push({ icon: '✅', text: 'All signals green — train as planned' })
 
-  // ─── Hero gauge scores ───
-  const recoveryScore = cardState === 'green' ? 85 : cardState === 'amber' ? 55 : 25
-  const strainHours = trainingLoad / 3600
-  const strainTarget = 8 // ~8h/week target load
-
   return (
     <div className="space-y-3">
-      {/* Hero gauges: Recovery / Strain / Sleep */}
+      {/* Hero gauges: HRV / Sleep / Body Battery */}
       <HeroGauges
-        recoveryScore={recoveryScore}
-        recoveryState={cardState}
-        strainHours={strainHours}
-        strainTarget={strainTarget}
+        hrvVal={hrvVal}
+        hrvWeeklyAvg={hrvWeeklyAvg}
+        cardState={cardState}
         sleepHours={sleepHours}
+        bodyBattery={bbHigh}
       />
 
       {/* Coaching card with accent strip */}
