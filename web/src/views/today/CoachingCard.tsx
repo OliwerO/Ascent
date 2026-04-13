@@ -51,7 +51,7 @@ export function CoachingCard({
 
   // Home workout preview diff
   const homePreviewDiff = (() => {
-    if (!todayPlanned?.workout_definition || todayIsHome) return []
+    if (!todayPlanned?.workout_definition?.exercises || todayIsHome) return []
     const homeWd = buildHomeWorkout(todayPlanned.workout_definition)
     const gymExercises = todayPlanned.workout_definition.exercises ?? []
     const homeExercises = homeWd.exercises ?? []
