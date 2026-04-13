@@ -51,23 +51,24 @@ export default function TodayView() {
     })
   }, [recentActivities])
 
-  // ─── Weekly load for hero gauge (gym kg + mountain m) ───
-  const weeklyGymVolumeKg = useMemo(() => {
-    const now = new Date()
-    const dayOfWeek = now.getDay()
-    const monday = new Date(now)
-    monday.setDate(now.getDate() - ((dayOfWeek + 6) % 7))
-    const mondayStr = format(monday, 'yyyy-MM-dd')
-    return (sessions.data ?? [])
-      .filter((s) => s.date >= mondayStr)
-      .reduce((sum, s) => sum + (s.total_volume_kg ?? 0), 0)
-  }, [sessions.data])
+  // ─── Rolling 7-day load for hero gauge (gym kg + mountain m) ───
+  const sevenDaysAgoStr = useMemo(() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 7)
+    return format(d, 'yyyy-MM-dd')
+  }, [])
 
-  const weeklyElevationM = useMemo(() => {
-    return thisWeekActivities
-      .filter((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type))
+  const rolling7dGymVolumeKg = useMemo(() => {
+    return (sessions.data ?? [])
+      .filter((s) => s.date >= sevenDaysAgoStr)
+      .reduce((sum, s) => sum + (s.total_volume_kg ?? 0), 0)
+  }, [sessions.data, sevenDaysAgoStr])
+
+  const rolling7dElevationM = useMemo(() => {
+    return recentActivities
+      .filter((a) => a.date >= sevenDaysAgoStr && SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type))
       .reduce((sum, a) => sum + (a.elevation_gain ?? 0), 0)
-  }, [thisWeekActivities])
+  }, [recentActivities, sevenDaysAgoStr])
 
   const mountainLoad72h = useMemo(() => {
     const threeDaysAgo = new Date()
@@ -221,8 +222,8 @@ export default function TodayView() {
         hrvWeeklyAvg={hrvWeeklyAvg}
         cardState={cardState}
         sleepHours={sleepHours}
-        gymVolumeKg={weeklyGymVolumeKg}
-        elevationM={weeklyElevationM}
+        gymVolumeKg={rolling7dGymVolumeKg}
+        elevationM={rolling7dElevationM}
       />
 
       {/* Coaching card with accent strip */}
