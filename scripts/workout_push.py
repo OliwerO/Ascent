@@ -164,18 +164,19 @@ GARMIN_EXERCISE_MAP = {
     "DB Farmer Carry":          ("CARRY",           "FARMERS_WALK"),
     "Jump Rope":                ("CARDIO",          "JUMP_ROPE"),
 
-    # Warm-up exercises
-    "Foam Roll T-Spine":        ("WARM_UP",         "ARM_CIRCLES"),              # No foam rolling in Garmin DB
-    "Ankle Mobilization":       ("WARM_UP",         "ANKLE_CIRCLES"),
-    "Goblet Squat Hold":        ("SQUAT",           "GOBLET_SQUAT"),
-    "World's Greatest Stretch":  ("WARM_UP",        "ARM_CIRCLES"),              # No exact match
-    "Bodyweight Squat":         ("SQUAT",           "BODY_WEIGHT_WALL_SQUAT"),
+    # Warm-up exercises (aligned with mobility_workout.EXERCISE_MAP)
+    "Foam Roll T-Spine":        ("WARM_UP",         "FOAM_ROLLER"),
+    "Ankle Mobilization":       ("WARM_UP",         "ANKLE_DORSIFLEXION_WITH_BAND"),
+    "Goblet Squat Hold":        ("WARM_UP",         "GOBLET_SQUAT"),
+    "World's Greatest Stretch": ("WARM_UP",         "WORLDS_GREATEST_STRETCH"),
+    "Bodyweight Squat":         ("WARM_UP",         "BODY_WEIGHT_SQUAT"),
     "90/90 Hip Switch":         ("HIP_STABILITY",   "HIP_CIRCLES"),
-    "Single-Leg RDL":           ("DEADLIFT",        "SINGLE_LEG_DEADLIFT"),
-    "Inchworm":                 ("CORE",            "INCHWORM"),
-    "Wall Slides":              ("WARM_UP",         "ARM_CIRCLES"),
-    "Band Pull-Aparts":        ("WARM_UP",          "ARM_CIRCLES"),              # No band pull-apart in Garmin DB
-    "Thread the Needle":        ("WARM_UP",         "ARM_CIRCLES"),              # No exact match
+    "Single-Leg RDL":           ("WARM_UP",         "SINGLE_LEG_DEADLIFT"),
+    "Inchworm":                 ("WARM_UP",         "INCHWORM"),
+    "Wall Slides":              ("WARM_UP",         "WALL_SLIDE"),
+    "Band Pull-Aparts":        ("WARM_UP",          "BAND_PULL_APART"),
+    "Thread the Needle":        ("WARM_UP",         "THORACIC_ROTATION"),
+    "Half-Kneeling OH Press":   ("WARM_UP",         "HALF_KNEELING_OVERHEAD_PRESS"),
 }
 
 # Garmin benchmark e1RMs — loaded from config/training_constants.json
@@ -623,7 +624,13 @@ def build_warmup_step(
     duration_s: int | None = None,
     step_order: int = 0,
 ) -> dict:
-    """Build a Garmin warmup step (stepTypeId: 1) for pre-session mobility."""
+    """Build a Garmin warmup step as an interval (stepTypeId: 3).
+
+    Uses stepTypeId 3 ("interval") instead of 1 ("warmup") because Garmin
+    watches collapse multiple warmup-type steps into a single hidden phase.
+    Interval steps render individually on the watch, matching the behavior
+    of standalone mobility workouts (mobility_workout.py).
+    """
     # Safe fallback: ARM_CIRCLES is a known-valid Garmin warmup exerciseName
     # used elsewhere in GARMIN_EXERCISE_MAP for unmappable items. "OTHER"
     # triggers Garmin API "Invalid category" 400.
@@ -635,9 +642,9 @@ def build_warmup_step(
         "type": "ExecutableStepDTO",
         "stepOrder": step_order,
         "stepType": {
-            "stepTypeId": 1,
-            "stepTypeKey": "warmup",
-            "displayOrder": 1,
+            "stepTypeId": 3,
+            "stepTypeKey": "interval",
+            "displayOrder": 3,
         },
         "category": category,
         "exerciseName": garmin_exercise_name,
