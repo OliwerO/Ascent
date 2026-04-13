@@ -37,9 +37,11 @@ Read all fields including: recovery_action, hard_override, is_deload_week, mount
 CRITICAL — check is_fallback_data. If true, today's Garmin metrics have NOT synced yet and you are seeing YESTERDAY's stale values. Add "⚠️ Recovery data is from yesterday (today's sync pending)" to the card. Still make the decision, but flag the uncertainty.
 
 STEP 2b — MOUNTAIN DAY DATES (if mountain_days_3d > 0):
-Do NOT guess when the mountain day was. Query actual dates:
+Do NOT guess when the mountain day was. Query actual dates AND their day names:
   curl -s "${SUPABASE_URL}/rest/v1/activities?date=gte.$(date -v-3d +%Y-%m-%d)&activity_type=in.(hiking,mountaineering,backcountry_snowboarding,resort_snowboarding,ski_touring)&select=date,activity_type,elevation_gain&order=date.desc" -H "apikey: ${SUPABASE_SERVICE_KEY}" -H "Authorization: Bearer ${SUPABASE_SERVICE_KEY}"
-Use the actual date(s) in the card rationale. Say "mountain day on Monday (1228m)" not "mountain day yesterday."
+Then get the day name for each date using: date -j -f "%Y-%m-%d" "2026-04-11" "+%A"
+CRITICAL: Do NOT compute day-of-week in your head — LLMs consistently get this wrong. Always use the shell command.
+Use the actual day name in the card rationale. Say "backcountry snowboarding on Saturday (567m)" not "on Friday."
 
 STEP 2c — YESTERDAY'S SESSION + WELLNESS:
   curl -s "${SUPABASE_URL}/rest/v1/training_sessions?order=date.desc&limit=1&select=date,name,srpe" -H "apikey: ${SUPABASE_SERVICE_KEY}" -H "Authorization: Bearer ${SUPABASE_SERVICE_KEY}"
@@ -64,12 +66,16 @@ For adjustments: see SKILL.md "Session Adjustments" section. Always include rule
 
 Read stdout JSON. If result.ok=false → surface result.user_message verbatim in the card and stop.
 
+STEP 5b — GET TODAY'S DAY NAME (do NOT compute this yourself — LLMs get day-of-week wrong):
+  date +%A
+Use EXACTLY the output (e.g. "Monday") in the card below. Do NOT try to derive the day name from the date string.
+
 STEP 6 — POST TO #ascent-training:
 Compose the coaching card using Slack mrkdwn (NOT markdown — *bold* not **bold**):
 
   📡 Synced — data current as of <YYYY-MM-DD>
 
-  <emoji> *<Day> — <session_name from planned_workouts row>*
+  <emoji> *<Day from STEP 5b> — <session_name from planned_workouts row>*
   Week <N> · RPE <range> · ~<duration> min
 
   → <rationale: use FULL words — "Body battery 86, 7.4h sleep, last session 2 days ago — wearables clear to train as planned." Only mention signals that influenced the decision. Use ACTUAL mountain day dates from STEP 2b. Max 2 lines.>
