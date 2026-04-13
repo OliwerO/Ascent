@@ -7,9 +7,10 @@ interface Props {
   color: string
   size?: 'hero' | 'compact'
   unit?: string
+  hideValue?: boolean
 }
 
-export function RadialGauge({ value, max, label, color, size = 'hero', unit }: Props) {
+export function RadialGauge({ value, max, label, color, size = 'hero', unit, hideValue }: Props) {
   const isHero = size === 'hero'
   const diameter = isHero ? 88 : 52
   const strokeWidth = isHero ? 5 : 4
@@ -73,23 +74,25 @@ export function RadialGauge({ value, max, label, color, size = 'hero', unit }: P
           />
         </svg>
         {/* Center value */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span
-            className="font-data"
-            style={{
-              fontSize: isHero ? 20 : 14,
-              fontWeight: 700,
-              letterSpacing: '-0.02em',
-              lineHeight: 1,
-              color: value != null ? color : 'var(--color-text-dim)',
-            }}
-          >
-            {value != null ? Math.round(value) : '—'}
-            {unit && value != null && (
-              <span style={{ fontSize: isHero ? 11 : 9, fontWeight: 500, opacity: 0.6 }}>{unit}</span>
-            )}
-          </span>
-        </div>
+        {!hideValue && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span
+              className="font-data"
+              style={{
+                fontSize: isHero ? 20 : 14,
+                fontWeight: 700,
+                letterSpacing: '-0.02em',
+                lineHeight: 1,
+                color: value != null ? color : 'var(--color-text-dim)',
+              }}
+            >
+              {value != null ? Math.round(value) : '—'}
+              {unit && value != null && (
+                <span style={{ fontSize: isHero ? 11 : 9, fontWeight: 500, opacity: 0.6 }}>{unit}</span>
+              )}
+            </span>
+          </div>
+        )}
       </div>
       <span className="text-[10px] text-text-muted font-medium tracking-wide">{label}</span>
     </div>
