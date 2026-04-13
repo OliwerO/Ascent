@@ -89,6 +89,8 @@ export interface DailyMetrics {
   resting_hr: number | null
   avg_stress_level: number | null
   vo2max: number | null
+  vigorous_intensity_minutes: number | null
+  moderate_intensity_minutes: number | null
 }
 
 // --- Body composition

@@ -8,9 +8,10 @@ interface Props {
   size?: 'hero' | 'compact'
   unit?: string
   hideValue?: boolean
+  onClick?: () => void
 }
 
-export function RadialGauge({ value, max, label, color, size = 'hero', unit, hideValue }: Props) {
+export function RadialGauge({ value, max, label, color, size = 'hero', unit, hideValue, onClick }: Props) {
   const isHero = size === 'hero'
   const diameter = isHero ? 88 : 52
   const strokeWidth = isHero ? 5 : 4
@@ -35,7 +36,10 @@ export function RadialGauge({ value, max, label, color, size = 'hero', unit, hid
   const filterId = `glow-${label.replace(/\s+/g, '-')}`
 
   return (
-    <div className="flex flex-col items-center gap-1">
+    <div
+      className={`flex flex-col items-center gap-1 ${onClick ? 'cursor-pointer active:scale-[0.96] transition-transform' : ''}`}
+      onClick={onClick}
+    >
       <div className="relative" style={{ width: diameter, height: diameter }}>
         <svg
           width={diameter}

@@ -195,7 +195,7 @@ export function useDailyMetrics(days = 7) {
   return useFetch<DailyMetrics[]>('daily_metrics', async () => {
     const { data, error } = await supabase
       .from('daily_metrics')
-      .select('date,body_battery_highest,body_battery_lowest,training_readiness_score,resting_hr,avg_stress_level,vo2max')
+      .select('date,body_battery_highest,body_battery_lowest,training_readiness_score,resting_hr,avg_stress_level,vo2max,vigorous_intensity_minutes,moderate_intensity_minutes')
       .gte('date', fmt(daysAgo(days)))
       .order('date', { ascending: false })
     if (error) throw error

@@ -1,6 +1,6 @@
 import { LoadingState, EmptyState } from '../components/LoadingState'
 import { WellnessInput } from '../components/WellnessInput'
-import { useDailySummary, useHRV, useDailyMetrics, useActivities, useSubjectiveWellness, usePlannedWorkouts, useCoachingLog, useTrainingSessions } from '../hooks/useSupabase'
+import { useDailySummary, useHRV, useDailyMetrics, useActivities, useSubjectiveWellness, usePlannedWorkouts, useCoachingLog, useSleep } from '../hooks/useSupabase'
 import { getProgramWeek, isDeloadWeek, getSessionForDate, SESSION_NAMES } from '../lib/program'
 import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES, CYCLING_ACTIVITY_TYPES } from '../lib/activityTypes'
 import { computeCoachingState } from '../lib/coachingDecision'
@@ -12,12 +12,12 @@ import { HeroGauges, CoachingCard, AfterTraining, SecondaryInfo } from './today'
 export default function TodayView() {
   const summary = useDailySummary(7)
   const hrv = useHRV(14)
-  const metrics = useDailyMetrics(14)
+  const metrics = useDailyMetrics(28)
   const activities = useActivities(14)
+  const sleepHook = useSleep(14)
   const wellness = useSubjectiveWellness(30)
   const planned = usePlannedWorkouts()
   const coachingLog = useCoachingLog(7)
-  const sessions = useTrainingSessions(14)
   const [, setWellnessRefresh] = useState(0)
 
   const recentActivities = activities.data ?? []
@@ -51,24 +51,18 @@ export default function TodayView() {
     })
   }, [recentActivities])
 
-  // ─── Rolling 7-day load for hero gauge (gym kg + mountain m) ───
-  const sevenDaysAgoStr = useMemo(() => {
-    const d = new Date()
-    d.setDate(d.getDate() - 7)
-    return format(d, 'yyyy-MM-dd')
-  }, [])
-
-  const rolling7dGymVolumeKg = useMemo(() => {
-    return (sessions.data ?? [])
-      .filter((s) => s.date >= sevenDaysAgoStr)
-      .reduce((sum, s) => sum + (s.total_volume_kg ?? 0), 0)
-  }, [sessions.data, sevenDaysAgoStr])
-
-  const rolling7dElevationM = useMemo(() => {
-    return recentActivities
-      .filter((a) => a.date >= sevenDaysAgoStr && SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type))
-      .reduce((sum, a) => sum + (a.elevation_gain ?? 0), 0)
-  }, [recentActivities, sevenDaysAgoStr])
+  // ─── Strain: 7d vs 28d vigorous+moderate intensity minutes ───
+  const { strain7d, strain28d } = useMemo(() => {
+    const all = metrics.data ?? []
+    const intensityOf = (d: typeof all[0]) => (d.vigorous_intensity_minutes ?? 0) + (d.moderate_intensity_minutes ?? 0)
+    const last7 = all.slice(0, 7)
+    const last28 = all.slice(0, 28)
+    const sum7 = last7.reduce((s, d) => s + intensityOf(d), 0)
+    const sum28 = last28.reduce((s, d) => s + intensityOf(d), 0)
+    // 28d avg per 7-day window = total / (days/7)
+    const weeks28 = Math.max(1, last28.length / 7)
+    return { strain7d: sum7, strain28d: sum28 / weeks28 }
+  }, [metrics.data])
 
   const mountainLoad72h = useMemo(() => {
     const threeDaysAgo = new Date()
@@ -216,14 +210,22 @@ export default function TodayView() {
 
   return (
     <div className="space-y-3">
-      {/* Hero gauges: HRV / Sleep / Weekly Load */}
+      {/* Hero gauges: HRV / Sleep / Strain — each tappable for detail */}
       <HeroGauges
         hrvVal={hrvVal}
         hrvWeeklyAvg={hrvWeeklyAvg}
         cardState={cardState}
         sleepHours={sleepHours}
-        gymVolumeKg={rolling7dGymVolumeKg}
-        elevationM={rolling7dElevationM}
+        strain7d={strain7d}
+        strain28d={strain28d}
+        hrvData={hrv.data ?? []}
+        sleepData={sleepHook.data ?? []}
+        metricsData={metrics.data ?? []}
+        latestActivity={lastActivity ? {
+          training_effect_aerobic: lastActivity.training_effect_aerobic,
+          training_effect_anaerobic: lastActivity.training_effect_anaerobic,
+          activity_type: lastActivity.activity_type,
+        } : null}
       />
 
       {/* Coaching card with accent strip */}
