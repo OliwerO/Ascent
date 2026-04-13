@@ -329,7 +329,7 @@ export async function rescheduleWorkout(
     // Swap: move the target workout to the source's old date
     const { data: source } = await supabase
       .from('planned_workouts')
-      .select('scheduled_date')
+      .select('scheduled_date, session_name')
       .eq('id', workoutId)
       .single()
     if (!source) throw new Error('Workout not found')
@@ -353,11 +353,26 @@ export async function rescheduleWorkout(
       })
       .eq('id', workoutId)
     if (e2) throw e2
+
+    // Audit trail: log the swap decision to coaching_log
+    await supabase.from('coaching_log').insert({
+      date: new Date().toISOString().slice(0, 10),
+      type: 'adjustment',
+      channel: 'app',
+      message: `Swapped ${source.session_name ?? 'session'} (${source.scheduled_date}) with ${existingWorkoutOnTarget.session_name ?? 'session'} (${newDate})`,
+      data_context: {
+        action: 'reschedule_swap',
+        source_workout_id: workoutId,
+        target_workout_id: existingWorkoutOnTarget.id,
+        original_date: source.scheduled_date,
+        new_date: newDate,
+      },
+    })
   } else {
     // Simple move
     const { data: source } = await supabase
       .from('planned_workouts')
-      .select('scheduled_date')
+      .select('scheduled_date, session_name')
       .eq('id', workoutId)
       .single()
     if (!source) throw new Error('Workout not found')
@@ -371,5 +386,19 @@ export async function rescheduleWorkout(
       })
       .eq('id', workoutId)
     if (error) throw error
+
+    // Audit trail: log the move decision to coaching_log
+    await supabase.from('coaching_log').insert({
+      date: new Date().toISOString().slice(0, 10),
+      type: 'adjustment',
+      channel: 'app',
+      message: `Moved ${source.session_name ?? 'session'} from ${source.scheduled_date} to ${newDate}`,
+      data_context: {
+        action: 'reschedule_move',
+        workout_id: workoutId,
+        original_date: source.scheduled_date,
+        new_date: newDate,
+      },
+    })
   }
 }

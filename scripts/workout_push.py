@@ -1404,6 +1404,38 @@ def link_garmin_workout_id(
 # ---------------------------------------------------------------------------
 
 
+def unschedule_old_workout(client, target_date: date, *, sb=None) -> None:
+    """Unschedule any existing Garmin workout for this date before pushing a new one.
+
+    Prevents duplicate workouts appearing on the watch when a session is
+    rescheduled or re-pushed after adjustment.
+    """
+    try:
+        link_sb = sb if sb else create_client(SUPABASE_URL, SUPABASE_KEY)
+        date_str = target_date.isoformat()
+        result = link_sb.table("planned_workouts").select(
+            "id, garmin_workout_id"
+        ).eq("scheduled_date", date_str).not_.is_("garmin_workout_id", "null").execute()
+
+        for row in result.data or []:
+            old_id = row["garmin_workout_id"]
+            try:
+                client.delete_workout(old_id)
+                log.info("Deleted old Garmin workout %s for %s", old_id, date_str)
+            except Exception:
+                # delete_workout may not exist; try unschedule
+                try:
+                    client.connectapi(
+                        f"/workout-service/schedule/{old_id}",
+                        method="DELETE",
+                    )
+                    log.info("Unscheduled old Garmin workout %s for %s", old_id, date_str)
+                except Exception as exc2:
+                    log.warning("Could not remove old Garmin workout %s: %s", old_id, exc2)
+    except Exception as exc:
+        log.warning("Failed to check for old workouts on %s: %s", target_date, exc)
+
+
 def upload_workout(client, workout: dict) -> str | None:
     """Upload a workout to Garmin Connect. Returns workout ID or None."""
     try:
@@ -1567,6 +1599,10 @@ def main():
     # Upload to Garmin
     log.info("Connecting to Garmin Connect...")
     client = get_garmin_client()
+
+    # Remove any previously pushed workout for this date (prevents duplicates
+    # after reschedule or re-push)
+    unschedule_old_workout(client, target_date, sb=sb)
 
     workout_id = upload_workout(client, workout)
     if not workout_id:
