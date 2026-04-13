@@ -1,6 +1,6 @@
 import { LoadingState, EmptyState } from '../components/LoadingState'
 import { WellnessInput } from '../components/WellnessInput'
-import { useDailySummary, useHRV, useDailyMetrics, useActivities, useSubjectiveWellness, usePlannedWorkouts, useCoachingLog } from '../hooks/useSupabase'
+import { useDailySummary, useHRV, useDailyMetrics, useActivities, useSubjectiveWellness, usePlannedWorkouts, useCoachingLog, useTrainingSessions } from '../hooks/useSupabase'
 import { getProgramWeek, isDeloadWeek, getSessionForDate, SESSION_NAMES } from '../lib/program'
 import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES, CYCLING_ACTIVITY_TYPES } from '../lib/activityTypes'
 import { computeCoachingState } from '../lib/coachingDecision'
@@ -17,6 +17,7 @@ export default function TodayView() {
   const wellness = useSubjectiveWellness(30)
   const planned = usePlannedWorkouts()
   const coachingLog = useCoachingLog(7)
+  const sessions = useTrainingSessions(14)
   const [, setWellnessRefresh] = useState(0)
 
   const recentActivities = activities.data ?? []
@@ -49,6 +50,24 @@ export default function TodayView() {
       return d >= prevMonday && d < monday
     })
   }, [recentActivities])
+
+  // ─── Weekly load for hero gauge (gym kg + mountain m) ───
+  const weeklyGymVolumeKg = useMemo(() => {
+    const now = new Date()
+    const dayOfWeek = now.getDay()
+    const monday = new Date(now)
+    monday.setDate(now.getDate() - ((dayOfWeek + 6) % 7))
+    const mondayStr = format(monday, 'yyyy-MM-dd')
+    return (sessions.data ?? [])
+      .filter((s) => s.date >= mondayStr)
+      .reduce((sum, s) => sum + (s.total_volume_kg ?? 0), 0)
+  }, [sessions.data])
+
+  const weeklyElevationM = useMemo(() => {
+    return thisWeekActivities
+      .filter((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type))
+      .reduce((sum, a) => sum + (a.elevation_gain ?? 0), 0)
+  }, [thisWeekActivities])
 
   const mountainLoad72h = useMemo(() => {
     const threeDaysAgo = new Date()
@@ -196,13 +215,14 @@ export default function TodayView() {
 
   return (
     <div className="space-y-3">
-      {/* Hero gauges: HRV / Sleep / Body Battery */}
+      {/* Hero gauges: HRV / Sleep / Weekly Load */}
       <HeroGauges
         hrvVal={hrvVal}
         hrvWeeklyAvg={hrvWeeklyAvg}
         cardState={cardState}
         sleepHours={sleepHours}
-        bodyBattery={bbHigh}
+        gymVolumeKg={weeklyGymVolumeKg}
+        elevationM={weeklyElevationM}
       />
 
       {/* Coaching card with accent strip */}
