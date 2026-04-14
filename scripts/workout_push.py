@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -29,6 +30,7 @@ from supabase import create_client
 # ---------------------------------------------------------------------------
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+VENV_PYTHON = PROJECT_ROOT / "venv" / "bin" / "python3"
 load_dotenv(PROJECT_ROOT / ".env")
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
@@ -1521,12 +1523,61 @@ def main():
     else:
         session_key = get_session_for_date(target_date)
         if session_key is None:
-            log.error(
-                "Date %s is not a gym day (Mon/Wed/Fri). "
-                "Use --session to override or --date for a gym day.",
-                target_date,
-            )
-            sys.exit(1)
+            # Not a standard gym day — check if a workout was rescheduled here
+            sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+            date_str = target_date.isoformat()
+            pw = sb.table("planned_workouts").select(
+                "session_name, session_type, workout_definition"
+            ).eq("scheduled_date", date_str).in_(
+                "status", ["planned", "adjusted", "pushed"]
+            ).limit(1).execute()
+
+            if pw.data:
+                session_type = pw.data[0].get("session_type", "")
+                session_name = pw.data[0].get("session_name", "")
+                if session_type == "mobility" or "mobility" in session_name.lower():
+                    # Delegate to mobility_workout.py
+                    import subprocess
+                    protocol = "T"  # Default mobility protocol
+                    if "protocol c" in session_name.lower():
+                        protocol = "C"
+                    elif "protocol a" in session_name.lower():
+                        protocol = "A"
+                    log.info(
+                        "Date %s has rescheduled mobility session '%s' — delegating to mobility_workout.py --protocol %s",
+                        target_date, session_name, protocol,
+                    )
+                    result = subprocess.run(
+                        [str(VENV_PYTHON), str(PROJECT_ROOT / "scripts" / "mobility_workout.py"),
+                         "--protocol", protocol, "--date", date_str, "--push"],
+                        capture_output=True, text=True,
+                    )
+                    if result.returncode == 0:
+                        log.info("Mobility push succeeded")
+                    else:
+                        log.error("Mobility push failed: %s", result.stderr[-500:] if result.stderr else "no output")
+                    sys.exit(result.returncode)
+                else:
+                    # Non-mobility, non-gym session on a non-gym day — try to extract session key
+                    wd = pw.data[0].get("workout_definition") or {}
+                    session_label = wd.get("session_label") or ""
+                    for candidate_key in ["A", "B", "C", "A2", "B2"]:
+                        if candidate_key in session_label:
+                            session_key = candidate_key
+                            break
+                    if not session_key:
+                        log.error(
+                            "Date %s has rescheduled session '%s' but cannot determine session key.",
+                            target_date, session_name,
+                        )
+                        sys.exit(1)
+                    log.info("Using rescheduled session key %s from '%s'", session_key, session_name)
+            else:
+                log.error(
+                    "Date %s is not a gym day (Mon/Wed/Fri) and has no rescheduled workout.",
+                    target_date,
+                )
+                sys.exit(1)
 
     # Determine block and week
     block, week = get_program_week(target_date)
