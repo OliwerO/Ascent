@@ -110,3 +110,109 @@ Athlete completes workout
 - ❌ Null weight_kg scenarios
 - ❌ Integration with planned_workouts sync
 - ❌ Natural deload detection
+
+---
+
+## Deep Research Findings (2026-04-14 evening)
+
+### Coach LLM ↔ Progression Engine Boundary
+
+The coaching LLM (daily/weekly) **reads but never overrides** the progression engine:
+
+- **Coach CAN**: hold weights proactively (via context: high sRPE, heavy feel), reduce volume/RPE, swap exercises, reschedule sessions
+- **Coach CANNOT**: change `weight_kg` in `workout_definition`. No action in `coach_adjust.py` modifies weight.
+- **Coach flags**: stall warnings, progression alerts, feel trends → surfaces in daily card and weekly review
+- **When 3+ exercises stall simultaneously**: coach flags for block review (Opus session), doesn't fix itself
+
+This means ALL weight progression improvements must happen in `progression_engine.py`, not in the coaching prompts.
+
+### KB Autoregulation Thresholds (exact values)
+
+**Double progression protocol** (KB §1.1, lines 80-101):
+- Train at fixed weight until ALL sets hit TOP of rep range with ≥2 RIR
+- Increase weight by minimum increment (2.5kg compounds, 1-2kg isolation)
+- Reset reps to bottom of range
+- If reps DECREASE from previous session at same weight → flag fatigue
+- Stall 3+ sessions → add one set per exercise (max per-session) for 3-4 weeks, THEN retry load
+
+**RPE-based load modulation** (KB §1.3, lines 206-277):
+- RPE consistently overshoots target by >1 for ≥2 weeks → reduce loads 2.5-5%
+- No explicit "accelerate when RPE low" rule — but absence of high RPE + hitting all reps = green light for increase
+
+**Three-tier deload response** (KB §5, lines 2226-2267):
+- Tier 1 (micro): RPE inflated 1 point → reduce 1-2 sets, cap RPE by 1
+- Tier 2 (deload): RPE inflated ≥2 points consistently → 50% volume week
+- Tier 3 (restructure): 3+ exercises stalled, e1RM plateau 6+ weeks → block review
+
+**Training age determines model** (KB §1.1, lines 102-108):
+- <6 months: linear session-to-session increments
+- 6-12 months: double progression, tight ranges (4-6 compounds, 8-15 isolation)
+- 1-3 years: DUP/weekly undulating with RPE autoregulation
+- This athlete is ~3 months into structured training → between linear and double progression
+
+### Database State (2026-04-14)
+
+**`exercise_progression` table**: 30 entries since 2026-04-02. All `actual_*` columns NULL.
+
+Key recent decisions:
+- OHP: 35→45kg (+10kg, week 3) — data-driven from recorded 40kg
+- Cable Row: 35→42.5kg (+7.5kg) — data-driven from recorded 40kg  
+- Turkish Get-Up: 12→10→8kg — GOING DOWN (Garmin not recording weight correctly for CORE exercises)
+- Kettlebell Halo: 12→14→12kg — oscillating (deload drops, but deload should keep weight same)
+- DI Press: stuck at 20kg for 3 sessions ("behind" status)
+
+**`progression_velocity` view**: 22 exercises tracked
+- DI Press: "behind" (3 sessions at 20kg, kg/week=2.92)
+- KB Swing: "building" (6 sessions at same weight, 0 kg/week)
+- Trap Bar Deadlift: "building" (5 sessions, 0 kg/week)
+- Bulgarian Split Squat: "building" (5 sessions, 0 kg/week)
+
+**`stall_early_warning` view**: EMPTY — no exercises flagged. This seems wrong given DI Press at 3 sessions.
+
+### Garmin Weight Entry by Category
+
+Confirmed via firmware testing:
+- SQUAT, BENCH_PRESS, ROW, DEADLIFT, SHOULDER_PRESS, CARRY, LATERAL_RAISE → weight entry works
+- CORE → weight entry BLOCKED by firmware (Turkish Get-Up, Ab Wheel affected)
+- HIP_STABILITY → weight entry BLOCKED (Dead Bugs, Bird Dogs — but these are bodyweight anyway)
+- WARM_UP → no weight entry (expected)
+- TOTAL_BODY → weight entry WORKS (Kettlebell Swing mapped here correctly)
+
+**Fix**: Remap Turkish Get-Up from CORE to TOTAL_BODY. In both push map AND reverse map.
+
+---
+
+## Kickoff Prompt for Next Session
+
+Copy this into a new Claude Code session to continue the work:
+
+```
+Read /Users/jarvisforoli/projects/ascent/docs/audits/2026-04-14-progression-engine-audit.md — this is a thorough audit of the progression engine with 10 identified gaps. Then read the code files listed in the audit (progression_engine.py, workout_push.py, coach_adjust.py, SKILL.md).
+
+Your job is to plan and implement the progression engine improvements, prioritized by impact:
+
+**Phase 1 — Quick fixes (do first):**
+1. Turkish Get-Up: reclassify from CORE to TOTAL_BODY in workout_push.py GARMIN_EXERCISE_MAP (both push and sync maps)
+2. Deload weight bug: verify deload returns same weight (audit found some exercises dropping weight on deload weeks — KB says "same weight, 50% sets")
+3. Actual performance recording: after Garmin sync, backfill exercise_progression.actual_* from training_sets
+
+**Phase 2 — RPE-informed progression:**
+4. Light-feel acceleration: if 3+ consecutive "light" ratings AND sRPE ≤ 7 → allow 2× standard increment (5kg instead of 2.5kg for compounds)
+5. RPE-based modulation: if average sRPE ≤ 6.5 for 2+ sessions AND all reps hit → offer accelerated progression
+6. RPE overshoot detection: if RPE consistently >1 above target for ≥2 weeks → auto-reduce loads 2.5-5%
+
+**Phase 3 — Structural improvements:**
+7. Stall protocol: add intermediate "add_set" step (try +1 set for 2 weeks before deload_reset)
+8. Weekly volume cap: check aggregate weekly volume ≤10% increase before accepting progression
+9. Wellness integration: if subjective_wellness.composite < 2.5 → treat as sRPE 8 (mild conservatism)
+10. Natural deload recognition: if previous week had mountain_days ≥ 3 + gym ≤ 1, consider skipping planned deload
+
+**Constraints:**
+- progression_engine.py owns all weight decisions — coaching LLM reads but never overrides
+- All changes must pass existing tests in tests/test_progression_engine.py + add new tests for new features
+- Use the KB thresholds exactly (docs/knowledge-base/knowledge-base.md §1.1, §1.3, §5)
+- Run `cd web && npm run build` after any frontend changes
+- Commit and push after each phase
+
+Start with /plan to propose the approach before implementing.
+```
