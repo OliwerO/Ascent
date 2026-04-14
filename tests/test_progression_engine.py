@@ -15,6 +15,10 @@ from progression_engine import (
     _get_session_rpe_modifier,
     _check_rpe_overshoot,
     _accelerated_increase,
+    _was_add_set_tried,
+    _get_wellness_modifier,
+    _check_natural_deload,
+    _check_muscle_group_volume_cap,
     backfill_actuals,
     KB_WEIGHTS,
 )
@@ -245,7 +249,7 @@ class TestSessionRPE:
 
     def test_srpe_8_with_established_weight_defers_to_stall(self, mock_sb):
         """Session sRPE 8 with weight used 3+ sessions: sRPE hold is skipped,
-        normal stall protocol takes over (deload_reset at 3+ sessions same weight)."""
+        stall protocol takes over (add_set first, then deload_reset if tried)."""
         mock_sb.set_table_data("exercises", [{"id": 1}])
         mock_sb.set_table_data("training_sets", [
             # 3 sessions at 70kg (established, triggers stall)
@@ -270,8 +274,8 @@ class TestSessionRPE:
                                        target_reps=8, target_sets=3,
                                        current_week=2, start_kg=65)
         # sRPE 8 hold is NOT applied (sessions_at_wt > 2)
-        # Instead, stall protocol triggers (3 sessions at same weight)
-        assert result.applied == "deload_reset"
+        # Stall protocol triggers: add_set first (KB §1.1), then deload_reset if tried
+        assert result.applied == "add_set"
         assert "session RPE 8" not in result.note
 
     def test_get_session_rpe_modifier_no_data(self, mock_sb):
@@ -557,3 +561,199 @@ class TestRPEOvershoot:
                                        current_week=2, start_kg=70,
                                        target_rpe=7.0)
         assert result.applied != "rpe_reduction"
+
+
+# ─── Stall protocol: add_set intermediate ────────────────────────
+
+class TestAddSetProtocol:
+    def test_stall_3_without_prior_add_set_adds_set(self, mock_sb):
+        """3 sessions stalled, no prior add_set → add_set with sets+1."""
+        mock_sb.set_table_data("exercises", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            {"weight_kg": 70.0, "reps": 7, "rpe": 8, "set_number": 1, "session_id": 3},
+            {"weight_kg": 70.0, "reps": 7, "rpe": 8, "set_number": 2, "session_id": 3},
+            {"weight_kg": 70.0, "reps": 7, "rpe": 8, "set_number": 3, "session_id": 3},
+            {"weight_kg": 70.0, "reps": 7, "rpe": 8, "set_number": 1, "session_id": 2},
+            {"weight_kg": 70.0, "reps": 7, "rpe": 8, "set_number": 2, "session_id": 2},
+            {"weight_kg": 70.0, "reps": 7, "rpe": 8, "set_number": 3, "session_id": 2},
+            {"weight_kg": 70.0, "reps": 7, "rpe": 8, "set_number": 1, "session_id": 1},
+            {"weight_kg": 70.0, "reps": 7, "rpe": 8, "set_number": 2, "session_id": 1},
+            {"weight_kg": 70.0, "reps": 7, "rpe": 8, "set_number": 3, "session_id": 1},
+        ])
+        mock_sb.set_table_data("training_sessions", [
+            {"id": 3, "date": "2026-04-10"},
+            {"id": 2, "date": "2026-04-08"},
+            {"id": 1, "date": "2026-04-05"},
+        ])
+        mock_sb.set_table_data("exercise_feedback", [])
+        mock_sb.set_table_data("exercise_progression", [])
+        mock_sb.set_table_data("subjective_wellness", [])
+        mock_sb.set_table_data("weekly_training_load", [])
+
+        result = calculate_next_weight(mock_sb, "Barbell Back Squat",
+                                       target_reps=8, target_sets=3,
+                                       current_week=2, start_kg=70)
+        assert result.applied == "add_set"
+        assert result.sets == 4  # target_sets + 1
+        assert result.weight_kg == 70.0
+
+    def test_stall_3_with_prior_add_set_triggers_deload(self, mock_sb):
+        """3 sessions stalled + add_set already tried → deload_reset."""
+        mock_sb.set_table_data("exercises", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            {"weight_kg": 70.0, "reps": 7, "rpe": 8, "set_number": 1, "session_id": 3},
+            {"weight_kg": 70.0, "reps": 7, "rpe": 8, "set_number": 2, "session_id": 3},
+            {"weight_kg": 70.0, "reps": 7, "rpe": 8, "set_number": 3, "session_id": 3},
+            {"weight_kg": 70.0, "reps": 7, "rpe": 8, "set_number": 1, "session_id": 2},
+            {"weight_kg": 70.0, "reps": 7, "rpe": 8, "set_number": 2, "session_id": 2},
+            {"weight_kg": 70.0, "reps": 7, "rpe": 8, "set_number": 3, "session_id": 2},
+            {"weight_kg": 70.0, "reps": 7, "rpe": 8, "set_number": 1, "session_id": 1},
+            {"weight_kg": 70.0, "reps": 7, "rpe": 8, "set_number": 2, "session_id": 1},
+            {"weight_kg": 70.0, "reps": 7, "rpe": 8, "set_number": 3, "session_id": 1},
+        ])
+        mock_sb.set_table_data("training_sessions", [
+            {"id": 3, "date": "2026-04-10"},
+            {"id": 2, "date": "2026-04-08"},
+            {"id": 1, "date": "2026-04-05"},
+        ])
+        mock_sb.set_table_data("exercise_feedback", [])
+        mock_sb.set_table_data("exercise_progression", [
+            {"id": 1, "progression_applied": "add_set"},
+        ])
+        mock_sb.set_table_data("subjective_wellness", [])
+        mock_sb.set_table_data("weekly_training_load", [])
+
+        result = calculate_next_weight(mock_sb, "Barbell Back Squat",
+                                       target_reps=8, target_sets=3,
+                                       current_week=2, start_kg=70)
+        assert result.applied == "deload_reset"
+        assert result.weight_kg < 70.0
+
+
+# ─── Wellness integration ────────────────────────────────────────
+
+class TestWellnessIntegration:
+    def test_low_wellness_holds_on_recent_increase(self, mock_sb):
+        """composite_score < 2.5 + recent weight increase → hold."""
+        mock_sb.set_table_data("exercises", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            {"weight_kg": 75.0, "reps": 8, "rpe": 7, "set_number": 1, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 75.0, "reps": 8, "rpe": 7, "set_number": 2, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 75.0, "reps": 8, "rpe": 7, "set_number": 3, "session_id": 1, "exercise_id": 1},
+        ])
+        mock_sb.set_table_data("training_sessions", [{"id": 1, "date": "2026-04-10", "srpe": 6}])
+        mock_sb.set_table_data("exercise_feedback", [])
+        mock_sb.set_table_data("exercise_progression", [])
+        mock_sb.set_table_data("subjective_wellness", [{"composite_score": 2.0}])
+        mock_sb.set_table_data("weekly_training_load", [])
+
+        result = calculate_next_weight(mock_sb, "Barbell Back Squat",
+                                       target_reps=8, target_sets=3,
+                                       current_week=2, start_kg=70)
+        assert result.applied == "hold"
+        assert "wellness" in result.note
+
+    def test_normal_wellness_no_effect(self, mock_sb):
+        """composite_score >= 2.5 → no hold from wellness."""
+        mock_sb.set_table_data("exercises", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            {"weight_kg": 75.0, "reps": 8, "rpe": 7, "set_number": 1, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 75.0, "reps": 8, "rpe": 7, "set_number": 2, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 75.0, "reps": 8, "rpe": 7, "set_number": 3, "session_id": 1, "exercise_id": 1},
+        ])
+        mock_sb.set_table_data("training_sessions", [{"id": 1, "date": "2026-04-10", "srpe": 6}])
+        mock_sb.set_table_data("exercise_feedback", [])
+        mock_sb.set_table_data("exercise_progression", [])
+        mock_sb.set_table_data("subjective_wellness", [{"composite_score": 3.5}])
+        mock_sb.set_table_data("weekly_training_load", [])
+
+        result = calculate_next_weight(mock_sb, "Barbell Back Squat",
+                                       target_reps=8, target_sets=3,
+                                       current_week=2, start_kg=70)
+        assert result.applied != "hold" or "wellness" not in result.note
+
+
+# ─── Natural deload recognition ──────────────────────────────────
+
+class TestNaturalDeload:
+    def test_natural_deload_skips_planned_deload(self, mock_sb):
+        """Previous week had 3+ mountain days + 1 gym → skip deload."""
+        mock_sb.set_table_data("exercises", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            {"weight_kg": 75.0, "reps": 8, "rpe": 7, "set_number": 1, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 75.0, "reps": 8, "rpe": 7, "set_number": 2, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 75.0, "reps": 8, "rpe": 7, "set_number": 3, "session_id": 1, "exercise_id": 1},
+        ])
+        mock_sb.set_table_data("training_sessions", [{"id": 1, "date": "2026-04-24", "srpe": 6}])
+        mock_sb.set_table_data("exercise_feedback", [])
+        mock_sb.set_table_data("exercise_progression", [])
+        mock_sb.set_table_data("subjective_wellness", [])
+        mock_sb.set_table_data("weekly_training_load", [
+            {"week_start": "2026-04-21", "mountain_days": 0, "gym_sessions": 3, "total_gym_volume_kg": 5000},
+            {"week_start": "2026-04-14", "mountain_days": 4, "gym_sessions": 1, "total_gym_volume_kg": 2000},
+        ])
+
+        result = calculate_next_weight(mock_sb, "Barbell Back Squat",
+                                       target_reps=8, target_sets=3,
+                                       current_week=4, start_kg=70)
+        assert result.applied != "deload_week"
+
+    def test_no_natural_deload_keeps_planned(self, mock_sb):
+        """Normal week → deload_week as planned."""
+        mock_sb.set_table_data("exercises", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            {"weight_kg": 75.0, "reps": 8, "rpe": 7, "set_number": 1, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 75.0, "reps": 8, "rpe": 7, "set_number": 2, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 75.0, "reps": 8, "rpe": 7, "set_number": 3, "session_id": 1, "exercise_id": 1},
+        ])
+        mock_sb.set_table_data("training_sessions", [{"id": 1, "date": "2026-04-24", "srpe": 6}])
+        mock_sb.set_table_data("exercise_feedback", [])
+        mock_sb.set_table_data("exercise_progression", [])
+        mock_sb.set_table_data("subjective_wellness", [])
+        mock_sb.set_table_data("weekly_training_load", [
+            {"week_start": "2026-04-21", "mountain_days": 0, "gym_sessions": 3, "total_gym_volume_kg": 5000},
+            {"week_start": "2026-04-14", "mountain_days": 1, "gym_sessions": 3, "total_gym_volume_kg": 5200},
+        ])
+
+        result = calculate_next_weight(mock_sb, "Barbell Back Squat",
+                                       target_reps=8, target_sets=3,
+                                       current_week=4, start_kg=70)
+        assert result.applied == "deload_week"
+
+
+# ─── Per-muscle-group volume cap ─────────────────────────────────
+
+class TestMuscleGroupVolumeCap:
+    def test_volume_cap_no_op_without_data(self, mock_sb):
+        """No data → allow increase."""
+        mock_sb.set_table_data("exercises", [])
+        mock_sb.set_table_data("weekly_training_load", [])
+        assert _check_muscle_group_volume_cap(
+            mock_sb, "Barbell Back Squat", 80.0, 70.0, 3, 8
+        ) is False
+
+    def test_volume_cap_blocks_with_data(self, mock_sb):
+        """When volume data shows >10% increase → True."""
+        mock_sb.set_table_data("exercises", [
+            {"name": "Barbell Back Squat", "muscle_groups": ["quads", "glutes"]},
+        ])
+        mock_sb.set_table_data("weekly_training_load", [
+            {"total_gym_volume_kg": 5400},
+            {"total_gym_volume_kg": 4500},
+        ])
+        assert _check_muscle_group_volume_cap(
+            mock_sb, "Barbell Back Squat", 80.0, 70.0, 3, 8
+        ) is True
+
+    def test_volume_cap_allows_when_under(self, mock_sb):
+        """When volume is within range → False."""
+        mock_sb.set_table_data("exercises", [
+            {"name": "Barbell Back Squat", "muscle_groups": ["quads", "glutes"]},
+        ])
+        mock_sb.set_table_data("weekly_training_load", [
+            {"total_gym_volume_kg": 4600},
+            {"total_gym_volume_kg": 5000},
+        ])
+        assert _check_muscle_group_volume_cap(
+            mock_sb, "Barbell Back Squat", 75.0, 70.0, 3, 8
+        ) is False

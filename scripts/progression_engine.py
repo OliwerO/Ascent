@@ -252,7 +252,8 @@ def calculate_next_weight(
     # last_weight unchanged. KB Halo oscillation (12→14→12kg) is caused by
     # stall_reset on non-deload weeks, not a deload bug. The add_set
     # intermediate step (Item 7) addresses this oscillation pattern.
-    is_deload = current_week in (4, 8)
+    # Skip planned deload if previous week was a natural deload (heavy mountain, minimal gym)
+    is_deload = current_week in (4, 8) and not _check_natural_deload(sb, current_week)
 
     # Query actual performance history
     history = get_exercise_history(sb, exercise_name, limit=30)
@@ -365,6 +366,20 @@ def calculate_next_weight(
                 note=f"session RPE 8 with recent weight increase — consolidating at {last_weight}kg",
             )
 
+    # Wellness check: poor wellness → mild conservatism (same as sRPE 8)
+    # KB: subjective wellness overrides wearables (Saw et al. 2016)
+    wellness_mod = _get_wellness_modifier(sb)
+    if wellness_mod is not None and wellness_mod >= 0.5 and all(r >= target_reps for r in last_reps_list):
+        sessions_at_wt = _count_sessions_at_weight(sessions, last_weight)
+        if sessions_at_wt <= 2:
+            return ProgressionResult(
+                weight_kg=last_weight,
+                reps=target_reps,
+                sets=target_sets,
+                applied="hold",
+                note=f"low wellness score — consolidating at {last_weight}kg",
+            )
+
     # RPE overshoot: actual RPE consistently >1 above target for 2+ weeks → reduce weight
     # KB §1.3: reduce loads 2.5-5% to address fatigue accumulation
     if target_rpe is not None:
@@ -404,7 +419,17 @@ def calculate_next_weight(
     stall_weeks = _count_stall_weeks(sessions, last_weight)
 
     if stall_weeks >= 3:
-        # Stall protocol: drop 10%, increase reps to 12, rebuild
+        # KB §1.1: try +1 set for 3-4 weeks before deload_reset
+        if not _was_add_set_tried(sb, exercise_name, weeks=4):
+            return ProgressionResult(
+                weight_kg=last_weight,
+                reps=target_reps,
+                sets=target_sets + 1,
+                applied="add_set",
+                amount=0,
+                note=f"stalled {stall_weeks} sessions — adding 1 set to break plateau",
+            )
+        # add_set already tried and still stalled → deload_reset
         drop_weight = round_to_plate(last_weight * 0.90, equipment)
         return ProgressionResult(
             weight_kg=drop_weight,
@@ -412,7 +437,7 @@ def calculate_next_weight(
             sets=target_sets,
             applied="deload_reset",
             amount=drop_weight - last_weight,
-            note=f"stalled {stall_weeks} sessions — dropping weight, rebuild at 12 reps",
+            note=f"stalled {stall_weeks} sessions (add_set tried) — dropping weight, rebuild at 12 reps",
         )
 
     if stall_weeks == 2 and not all_hit_target:
@@ -439,6 +464,19 @@ def calculate_next_weight(
                 sets=target_sets,
                 applied="hold",
                 note="next jump would exceed 10% cap — holding",
+            )
+
+        # Per-muscle-group weekly volume cap: block if any primary mover
+        # would exceed 10% week-over-week increase
+        if _check_muscle_group_volume_cap(
+            sb, exercise_name, new_weight, last_weight, target_sets, target_reps
+        ):
+            return ProgressionResult(
+                weight_kg=last_weight,
+                reps=target_reps,
+                sets=target_sets,
+                applied="hold",
+                note="weekly muscle group volume cap — increase would exceed 10% WoW growth",
             )
 
         return ProgressionResult(
@@ -713,6 +751,139 @@ def _count_stall_weeks(sessions: list[dict], current_weight: float) -> int:
         else:
             break
     return count
+
+
+def _was_add_set_tried(sb, exercise_name: str, weeks: int = 4) -> bool:
+    """Check if 'add_set' was applied for this exercise in the last N weeks.
+
+    KB §1.1: try +1 set for 3-4 weeks before deload_reset.
+    """
+    try:
+        from datetime import date, timedelta
+        cutoff = (date.today() - timedelta(weeks=weeks)).isoformat()
+
+        result = sb.table("exercise_progression").select(
+            "id"
+        ).eq(
+            "exercise_name", exercise_name
+        ).eq(
+            "progression_applied", "add_set"
+        ).gte(
+            "date", cutoff
+        ).limit(1).execute()
+
+        return bool(result.data)
+    except Exception:
+        return False
+
+
+def _get_wellness_modifier(sb) -> float | None:
+    """Check today's/yesterday's subjective wellness for conservatism signal.
+
+    KB: subjective wellness overrides wearables (Saw et al. 2016).
+
+    Returns:
+        None — no wellness data
+        0    — wellness OK (composite >= 2.5)
+        0.5  — poor wellness (composite < 2.5), treat like sRPE 8
+    """
+    try:
+        result = sb.table("subjective_wellness").select(
+            "composite_score"
+        ).order("date", desc=True).limit(1).execute()
+
+        if not result.data or result.data[0].get("composite_score") is None:
+            return None
+
+        composite = result.data[0]["composite_score"]
+        if composite < 2.5:
+            return 0.5
+        return 0
+    except Exception:
+        return None
+
+
+def _check_natural_deload(sb, current_week: int) -> bool:
+    """Check if previous week had enough mountain activity to serve as natural deload.
+
+    KB §5: weeks with 3+ mountain days and 1 gym session function as partial deloads.
+    Returns True if the athlete already deloaded naturally.
+    """
+    try:
+        result = sb.table("weekly_training_load").select(
+            "mountain_days, gym_sessions"
+        ).order("week_start", desc=True).limit(2).execute()
+
+        if not result.data or len(result.data) < 2:
+            return False
+
+        # Second row is previous week (first is current)
+        prev_week = result.data[1]
+        mountain_days = prev_week.get("mountain_days") or 0
+        gym_sessions = prev_week.get("gym_sessions") or 0
+
+        return mountain_days >= 3 and gym_sessions <= 1
+    except Exception:
+        return False
+
+
+def _check_muscle_group_volume_cap(
+    sb,
+    exercise_name: str,
+    proposed_weight: float,
+    current_weight: float,
+    target_sets: int,
+    target_reps: int,
+) -> bool:
+    """Check if proposed weight increase would exceed 10% WoW volume for any primary mover.
+
+    Per-exercise gate: only checks this exercise's muscle groups.
+    A full-body session evaluates each exercise independently.
+
+    Returns True if the increase should be blocked.
+    """
+    try:
+        # Get muscle groups for this exercise
+        ex = sb.table("exercises").select(
+            "muscle_groups"
+        ).eq("name", exercise_name).limit(1).execute()
+
+        if not ex.data or not ex.data[0].get("muscle_groups"):
+            return False
+
+        muscle_groups = ex.data[0]["muscle_groups"]
+        if isinstance(muscle_groups, str):
+            import json
+            muscle_groups = json.loads(muscle_groups)
+
+        if not muscle_groups:
+            return False
+
+        # Get current and previous week volumes
+        weeks = sb.table("weekly_training_load").select(
+            "total_gym_volume_kg"
+        ).order("week_start", desc=True).limit(2).execute()
+
+        if not weeks.data or len(weeks.data) < 2:
+            return False
+
+        prev_vol = weeks.data[1].get("total_gym_volume_kg") or 0
+        if prev_vol == 0:
+            return False
+
+        curr_vol = weeks.data[0].get("total_gym_volume_kg") or 0
+
+        # Calculate the volume delta from this exercise's weight increase
+        volume_delta = (proposed_weight - current_weight) * target_sets * target_reps
+        projected_vol = curr_vol + volume_delta
+
+        # Check if projected exceeds 10% over previous
+        if projected_vol / prev_vol > 1.10:
+            return True
+
+        return False
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------
