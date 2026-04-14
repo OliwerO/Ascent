@@ -82,6 +82,12 @@ For adjustments: see SKILL.md "Session Adjustments" section. Always include rule
 
 Read stdout JSON. If result.ok=false → surface result.user_message verbatim in the card and stop.
 
+STEP 5a — GARMIN PUSH (if gym/strength day AND garmin_auth_ok=true):
+  /Users/jarvisforoli/projects/ascent/venv/bin/python3 /Users/jarvisforoli/projects/ascent/scripts/workout_push.py --date $(date +%Y-%m-%d)
+If exit code 0 → push succeeded, use "📲 Pushed to Garmin." in card.
+If exit code non-zero → push failed, use "⚠️ Garmin push failed — check logs." in card. Do NOT say "Pushed to Garmin" if the script failed.
+If rest/mobility day → skip this step.
+
 STEP 5b — GET TODAY'S DAY NAME (do NOT compute this yourself — LLMs get day-of-week wrong):
   date +%A
 Use EXACTLY the output (e.g. "Monday") in the card below. Do NOT try to derive the day name from the date string.
