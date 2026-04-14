@@ -13,8 +13,10 @@ class MockSupabaseResult:
 
 class MockSupabaseTable:
     """Chainable mock for supabase.table('x').select(...).eq(...).execute()."""
-    def __init__(self, data=None):
+    def __init__(self, data=None, client=None, table_name=None):
         self._data = data or []
+        self._client = client
+        self._table_name = table_name
 
     def select(self, *args, **kwargs):
         return self
@@ -23,6 +25,9 @@ class MockSupabaseTable:
         return self
 
     def in_(self, *args, **kwargs):
+        return self
+
+    def gte(self, *args, **kwargs):
         return self
 
     def order(self, *args, **kwargs):
@@ -34,6 +39,15 @@ class MockSupabaseTable:
     def upsert(self, *args, **kwargs):
         return self
 
+    def update(self, data, **kwargs):
+        """Track update calls for verification."""
+        if self._client is not None:
+            self._client._updates.append((self._table_name, data))
+        return self
+
+    def delete(self):
+        return self
+
     def execute(self):
         return MockSupabaseResult(self._data)
 
@@ -42,12 +56,13 @@ class MockSupabaseClient:
     """Mock Supabase client for unit tests."""
     def __init__(self):
         self._tables = {}
+        self._updates = []  # List of (table_name, data) for verification
 
     def set_table_data(self, table_name: str, data: list):
         self._tables[table_name] = data
 
     def table(self, name: str):
-        return MockSupabaseTable(self._tables.get(name, []))
+        return MockSupabaseTable(self._tables.get(name, []), client=self, table_name=name)
 
 
 @pytest.fixture

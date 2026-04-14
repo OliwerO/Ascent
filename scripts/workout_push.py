@@ -118,8 +118,8 @@ GARMIN_EXERCISE_MAP = {
     "Dumbbell Bench Press":     ("BENCH_PRESS",    "DUMBBELL_BENCH_PRESS"),
     "Barbell Row":              ("ROW",            "BARBELL_ROW"),
     "Kettlebell Swing":         ("HIP_RAISE",      "KETTLEBELL_SWING"),
-    "Kettlebell Halo":          ("WARM_UP",        "ARM_CIRCLES"),               # No exact match
-    "Turkish Get-Up":           ("CORE",           "TURKISH_GET_UP"),
+    "Kettlebell Halo":          ("SHOULDER_PRESS", "DUMBBELL_SHOULDER_PRESS"),   # Weighted shoulder/trap movement
+    "Turkish Get-Up":           ("TOTAL_BODY",     "TURKISH_GET_UP"),
 
     # Strength B (Monday)
     "Overhead Press":           ("SHOULDER_PRESS",  "OVERHEAD_BARBELL_PRESS"),
@@ -131,8 +131,8 @@ GARMIN_EXERCISE_MAP = {
     "Lat Pulldown":             ("PULL_UP",         "LAT_PULLDOWN"),
     "Dumbbell Incline Press":   ("BENCH_PRESS",     "INCLINE_DUMBBELL_BENCH_PRESS"),
     "Cable Row":                ("ROW",             "SEATED_CABLE_ROW"),
-    "Dead Bugs":                ("HIP_STABILITY",   "DEAD_BUG"),
-    "Copenhagen Plank":         ("SUSPENSION",      "SIDE_PLANK"),               # No exact match
+    "Dead Bugs":                ("CORE",            "DEAD_BUG"),
+    "Copenhagen Plank":         ("CORE",            "SIDE_PLANK"),               # Adductor-loaded side plank
     "Pallof Walkouts":          ("CORE",            "CABLE_CORE_PRESS"),
 
     # Strength C (Friday)
@@ -155,8 +155,8 @@ GARMIN_EXERCISE_MAP = {
     "Barbell Front Squat":      ("SQUAT",           "BARBELL_FRONT_SQUAT"),
     "DB Floor Press":           ("BENCH_PRESS",     "DUMBBELL_BENCH_PRESS"),
     "DB Swing":                 ("HIP_RAISE",       "KETTLEBELL_SWING"),          # Closest match
-    "DB Halo":                  ("WARM_UP",         "ARM_CIRCLES"),               # No exact match
-    "DB Turkish Get-Up":        ("CORE",            "TURKISH_GET_UP"),
+    "DB Halo":                  ("SHOULDER_PRESS",  "DUMBBELL_SHOULDER_PRESS"),   # Weighted shoulder/trap movement
+    "DB Turkish Get-Up":        ("TOTAL_BODY",      "TURKISH_GET_UP"),
     "Band-Assisted Inverted Row": ("ROW",           "INVERTED_ROW"),
     "Feet-Elevated Push-Up":    ("PUSH_UP",         "PUSH_UP"),
     "Band Row":                 ("ROW",             "BARBELL_ROW"),               # Closest match
@@ -189,6 +189,7 @@ GARMIN_BENCHMARKS: dict[str, float | None] = _CONSTANTS["garmin_benchmarks"]
 # These get a note in the description field
 EXERCISE_NOTES = {
     "Kettlebell Halo":   "Actual exercise: Kettlebell Halo",
+    "DB Halo":           "Actual exercise: DB Halo",
     "Copenhagen Plank":  "Actual exercise: Copenhagen Plank",
     "Pallof Walkouts":   "Actual exercise: Pallof Walkouts",
     "KB Clean & Press":  "Actual exercise: KB Clean & Press",

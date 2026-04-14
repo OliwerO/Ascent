@@ -468,6 +468,11 @@ def sync_activities(client: Garmin, sb, d: date) -> bool | None:
         # Sync per-set exercise data for strength activities
         try:
             _sync_training_session(client, sb, act, garmin_id)
+            # Backfill exercise_progression.actual_* from the synced training_sets
+            act_date = act.get("startTimeLocal", "")[:10]
+            if act_date:
+                from progression_engine import backfill_actuals
+                backfill_actuals(sb, act_date)
         except Exception as exc:
             log.warning("Training session sync failed for %s: %s", garmin_id, exc)
 

@@ -244,7 +244,11 @@ def calculate_next_weight(
             note="bodyweight exercise",
         )
 
-    # Deload weeks: same weight, reduced volume (volume handled by caller)
+    # Deload weeks: same weight, reduced volume (volume handled by caller).
+    # This check runs BEFORE stall detection — deload weeks always return
+    # last_weight unchanged. KB Halo oscillation (12→14→12kg) is caused by
+    # stall_reset on non-deload weeks, not a deload bug. The add_set
+    # intermediate step (Item 7) addresses this oscillation pattern.
     is_deload = current_week in (4, 8)
 
     # Query actual performance history
@@ -546,6 +550,101 @@ def record_progression(sb, exercise_name: str, target_date: str, result: Progres
         }, on_conflict="exercise_name,date").execute()
     except Exception as e:
         log.warning("Failed to record progression for %s: %s", exercise_name, e)
+
+
+# ---------------------------------------------------------------------------
+# Actual performance backfill
+# ---------------------------------------------------------------------------
+
+
+def backfill_actuals(sb, session_date: str) -> int:
+    """Backfill exercise_progression.actual_* from training_sets for a given date.
+
+    Called after garmin_sync writes training_sets. Updates existing
+    exercise_progression rows (planned side must already exist from
+    record_progression) with actual performance data.
+
+    Args:
+        sb: Supabase client
+        session_date: ISO date string (e.g. "2026-04-01")
+
+    Returns:
+        Number of exercise_progression rows updated
+    """
+    try:
+        # Find training session(s) for this date
+        sessions = sb.table("training_sessions").select(
+            "id"
+        ).eq("date", session_date).execute()
+
+        if not sessions.data:
+            return 0
+
+        session_ids = [s["id"] for s in sessions.data]
+
+        # Get all working sets for these sessions
+        sets = sb.table("training_sets").select(
+            "exercise_id, weight_kg, reps, rpe, set_type"
+        ).in_("session_id", session_ids).eq("set_type", "working").execute()
+
+        if not sets.data:
+            return 0
+
+        # Get exercise names for the exercise IDs
+        exercise_ids = list(set(s["exercise_id"] for s in sets.data if s.get("exercise_id")))
+        if not exercise_ids:
+            return 0
+
+        exercises = sb.table("exercises").select(
+            "id, name"
+        ).in_("id", exercise_ids).execute()
+
+        id_to_name = {e["id"]: e["name"] for e in (exercises.data or [])}
+
+        # Group sets by exercise name
+        from collections import defaultdict
+        by_exercise: dict[str, list[dict]] = defaultdict(list)
+        for s in sets.data:
+            name = id_to_name.get(s.get("exercise_id"))
+            if name:
+                by_exercise[name].append(s)
+
+        # Update exercise_progression rows
+        updated = 0
+        for exercise_name, exercise_sets in by_exercise.items():
+            actual_sets = len(exercise_sets)
+            actual_reps = [s["reps"] for s in exercise_sets if s.get("reps") is not None]
+            weights = [s["weight_kg"] for s in exercise_sets if s.get("weight_kg")]
+            rpes = [s["rpe"] for s in exercise_sets if s.get("rpe") is not None]
+
+            actual_weight = max(weights) if weights else None
+            actual_rpe = round(sum(rpes) / len(rpes), 1) if rpes else None
+
+            # Only update rows that already exist (planned side written by record_progression)
+            existing = sb.table("exercise_progression").select("id").eq(
+                "exercise_name", exercise_name
+            ).eq("date", session_date).limit(1).execute()
+
+            if not existing.data:
+                continue
+
+            sb.table("exercise_progression").update({
+                "actual_sets": actual_sets,
+                "actual_reps_per_set": actual_reps,
+                "actual_weight_kg": actual_weight,
+                "actual_rpe": actual_rpe,
+            }).eq("exercise_name", exercise_name).eq("date", session_date).execute()
+
+            updated += 1
+            log.info("Backfilled actuals for %s on %s: %d sets, %s reps, %skg, RPE %s",
+                     exercise_name, session_date, actual_sets, actual_reps,
+                     actual_weight, actual_rpe)
+
+        return updated
+
+    except Exception as e:
+        log.warning("Failed to backfill actuals for %s: %s", session_date, e)
+        return 0
 
 
 # ---------------------------------------------------------------------------

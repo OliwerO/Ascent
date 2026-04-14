@@ -13,6 +13,7 @@ from progression_engine import (
     _count_stall_weeks,
     _group_by_session,
     _get_session_rpe_modifier,
+    backfill_actuals,
     KB_WEIGHTS,
 )
 
@@ -284,3 +285,62 @@ class TestSessionRPE:
         ])
         mock_sb.set_table_data("training_sessions", [{"id": 1, "srpe": None}])
         assert _get_session_rpe_modifier(mock_sb, "Barbell Back Squat") is None
+
+
+# ─── Actual performance backfill ──────────────────────────────────
+
+class TestBackfillActuals:
+    def test_backfill_updates_matching_progression_row(self, mock_sb):
+        """Backfill should update exercise_progression with actual data from training_sets."""
+        mock_sb.set_table_data("training_sessions", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            {"exercise_id": 10, "weight_kg": 70.0, "reps": 8, "rpe": 7, "set_type": "working"},
+            {"exercise_id": 10, "weight_kg": 70.0, "reps": 8, "rpe": 7.5, "set_type": "working"},
+            {"exercise_id": 10, "weight_kg": 70.0, "reps": 7, "rpe": 8, "set_type": "working"},
+        ])
+        mock_sb.set_table_data("exercises", [{"id": 10, "name": "Barbell Back Squat"}])
+        mock_sb.set_table_data("exercise_progression", [{"id": 1}])
+
+        count = backfill_actuals(mock_sb, "2026-04-01")
+        assert count == 1
+        assert len(mock_sb._updates) == 1
+        table, data = mock_sb._updates[0]
+        assert table == "exercise_progression"
+        assert data["actual_sets"] == 3
+        assert data["actual_reps_per_set"] == [8, 8, 7]
+        assert data["actual_weight_kg"] == 70.0
+        assert data["actual_rpe"] == 7.5
+
+    def test_backfill_no_op_when_no_progression_row(self, mock_sb):
+        """Should not create rows when no planned progression exists."""
+        mock_sb.set_table_data("training_sessions", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            {"exercise_id": 10, "weight_kg": 70.0, "reps": 8, "rpe": 7, "set_type": "working"},
+        ])
+        mock_sb.set_table_data("exercises", [{"id": 10, "name": "Barbell Back Squat"}])
+        mock_sb.set_table_data("exercise_progression", [])  # No planned row
+
+        count = backfill_actuals(mock_sb, "2026-04-01")
+        assert count == 0
+        assert len(mock_sb._updates) == 0
+
+    def test_backfill_handles_missing_rpe(self, mock_sb):
+        """Sets without RPE should result in actual_rpe = None."""
+        mock_sb.set_table_data("training_sessions", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            {"exercise_id": 10, "weight_kg": 70.0, "reps": 8, "rpe": None, "set_type": "working"},
+            {"exercise_id": 10, "weight_kg": 70.0, "reps": 8, "rpe": None, "set_type": "working"},
+        ])
+        mock_sb.set_table_data("exercises", [{"id": 10, "name": "Barbell Back Squat"}])
+        mock_sb.set_table_data("exercise_progression", [{"id": 1}])
+
+        count = backfill_actuals(mock_sb, "2026-04-01")
+        assert count == 1
+        table, data = mock_sb._updates[0]
+        assert data["actual_rpe"] is None
+
+    def test_backfill_no_op_without_sessions(self, mock_sb):
+        """No training sessions for the date should return 0."""
+        mock_sb.set_table_data("training_sessions", [])
+        count = backfill_actuals(mock_sb, "2026-04-01")
+        assert count == 0
