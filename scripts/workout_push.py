@@ -1675,6 +1675,65 @@ def main():
 
     link_garmin_workout_id(workout_id, target_date, sb=sb)
 
+    # Sync progressed weights back to planned_workouts.workout_definition
+    # so the React app shows the same weights as the Garmin push.
+    sync_progressed_weights(target_date, workout.get("_progression_notes", []), sb=sb)
+
+
+def sync_progressed_weights(
+    target_date: date,
+    progression_notes: list[tuple[str, float | None, str]],
+    *,
+    sb=None,
+) -> None:
+    """Update planned_workouts.workout_definition with progressed weights.
+
+    After workout_push.py calculates progressive overload, the actual
+    weights sent to Garmin may differ from the original plan. This writes
+    the progressed weights back so the React app, coaching card, and lift
+    progression chart all show consistent numbers.
+    """
+    if not progression_notes:
+        return
+    try:
+        link_sb = sb if sb else create_client(SUPABASE_URL, SUPABASE_KEY)
+        date_str = target_date.isoformat()
+        result = link_sb.table("planned_workouts").select(
+            "id, workout_definition"
+        ).eq("scheduled_date", date_str).in_(
+            "status", ["planned", "adjusted", "rescheduled", "pushed"]
+        ).limit(1).execute()
+
+        if not result.data:
+            return
+
+        row = result.data[0]
+        wd = row["workout_definition"]
+        if not isinstance(wd, dict) or "exercises" not in wd:
+            return
+
+        # Build a name→weight lookup from progression notes
+        weight_by_name = {}
+        for name, weight, _note in progression_notes:
+            if weight is not None:
+                weight_by_name[name] = weight
+
+        # Update each exercise's weight_kg
+        changed = False
+        for ex in wd["exercises"]:
+            new_weight = weight_by_name.get(ex["name"])
+            if new_weight is not None and ex.get("weight_kg") != new_weight:
+                ex["weight_kg"] = new_weight
+                changed = True
+
+        if changed:
+            link_sb.table("planned_workouts").update({
+                "workout_definition": wd,
+            }).eq("id", row["id"]).execute()
+            log.info("Synced progressed weights back to planned_workouts for %s", date_str)
+    except Exception as exc:
+        log.warning("Failed to sync progressed weights: %s", exc)
+
 
 if __name__ == "__main__":
     main()
