@@ -757,7 +757,7 @@ def _sync_training_session(client: Garmin, sb, act: dict, garmin_id: str):
     # Mark matching planned_workout as completed and link the activity ID
     planned = sb.table("planned_workouts").select("id, status").eq(
         "scheduled_date", act_date
-    ).in_("status", ["planned", "pushed", "adjusted"]).execute()
+    ).in_("status", ["planned", "pushed", "adjusted", "rescheduled"]).execute()
     if planned.data:
         sb.table("planned_workouts").update({
             "status": "completed",

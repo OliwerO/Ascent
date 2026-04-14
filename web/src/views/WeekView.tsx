@@ -90,6 +90,7 @@ export default function WeekView() {
       } else if (planned) {
         if (planned.status === 'completed') status = 'completed'
         else if (planned.status === 'adjusted') status = 'adjusted'
+        else if (planned.status === 'rescheduled') status = 'rescheduled'
         else if (planned.status === 'skipped') status = 'skipped'
         else if (isPast) status = 'missed'
         else if (isToday) status = 'today'
@@ -113,7 +114,7 @@ export default function WeekView() {
     })
   }, [weekStart, weekPlanned, weekTemplate, weekActivities, today, plannedHook.data])
 
-  const canReschedule = (cell: DayCell) => cell.planned != null && ['planned', 'today', 'adjusted', 'missed'].includes(cell.status)
+  const canReschedule = (cell: DayCell) => cell.planned != null && ['planned', 'today', 'adjusted', 'rescheduled', 'missed'].includes(cell.status)
 
   const handleRescheduleConfirm = useCallback(async () => {
     if (!rescheduleSource?.planned || !rescheduleTarget) return
@@ -129,8 +130,8 @@ export default function WeekView() {
   // ─── Compliance ───
   const compliance = useMemo(() => {
     const isPastOrToday = (d: DayCell) => !isBefore(today, d.date)
-    const done = dayCells.filter((d) => d.status === 'completed' || d.status === 'mountain' || (d.status === 'adjusted' && isPastOrToday(d) && d.dateStr !== format(today, 'yyyy-MM-dd'))).length
-    const planned = dayCells.filter((d) => ['planned', 'today', 'adjusted'].includes(d.status) && d.dateStr >= format(today, 'yyyy-MM-dd') && d.planned != null).length
+    const done = dayCells.filter((d) => d.status === 'completed' || d.status === 'mountain' || (['adjusted', 'rescheduled'].includes(d.status) && isPastOrToday(d) && d.dateStr !== format(today, 'yyyy-MM-dd'))).length
+    const planned = dayCells.filter((d) => ['planned', 'today', 'adjusted', 'rescheduled'].includes(d.status) && d.dateStr >= format(today, 'yyyy-MM-dd') && d.planned != null).length
     const missed = dayCells.filter((d) => d.status === 'missed').length
     const scheduled = done + planned + missed
     const lastAdjustment = weekPlanned.filter((p) => p.adjustment_reason).sort((a, b) => b.scheduled_date.localeCompare(a.scheduled_date))[0]

@@ -212,7 +212,7 @@ export interface PlannedWorkout {
   scheduled_time: string | null
   estimated_duration_minutes: number | null
   workout_definition: WorkoutDefinition
-  status: 'planned' | 'pushed' | 'adjusted' | 'completed' | 'skipped'
+  status: 'planned' | 'pushed' | 'adjusted' | 'rescheduled' | 'completed' | 'skipped'
   actual_garmin_activity_id: string | null
   compliance_score: number | null
   adjustment_reason: string | null

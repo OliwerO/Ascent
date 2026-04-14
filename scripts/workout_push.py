@@ -1381,7 +1381,7 @@ def link_garmin_workout_id(
                 "garmin_workout_id": workout_id,
                 "status": "pushed",
             }).eq("id", planned_id).in_(
-                "status", ["planned", "adjusted", "pushed"]
+                "status", ["planned", "adjusted", "rescheduled", "pushed"]
             ).execute()
         else:
             date_str = target_date.isoformat()
@@ -1389,7 +1389,7 @@ def link_garmin_workout_id(
                 "garmin_workout_id": workout_id,
                 "status": "pushed",
             }).eq("scheduled_date", date_str).in_(
-                "status", ["planned", "adjusted", "pushed"]
+                "status", ["planned", "adjusted", "rescheduled", "pushed"]
             ).execute()
         if result.data:
             log.info("Linked garmin_workout_id=%s to planned_workout (date=%s)", workout_id, target_date)
@@ -1529,7 +1529,7 @@ def main():
             pw = sb.table("planned_workouts").select(
                 "session_name, session_type, workout_definition"
             ).eq("scheduled_date", date_str).in_(
-                "status", ["planned", "adjusted", "pushed"]
+                "status", ["planned", "adjusted", "rescheduled", "pushed"]
             ).limit(1).execute()
 
             if pw.data:

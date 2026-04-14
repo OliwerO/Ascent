@@ -18,6 +18,7 @@ interface Props {
   isGymDay: boolean
   todaySessionName: string | null
   isAdjusted: boolean
+  isRescheduled: boolean
   block: number
   week: number
   rpeRange: string
@@ -36,7 +37,7 @@ const accentMap = { green: 'green' as const, amber: 'yellow' as const, red: 'red
 const glowMap = { green: 'green' as const, amber: 'yellow' as const, red: 'red' as const }
 
 export function CoachingCard({
-  cardState, verdictLabel, isGymDay, todaySessionName, isAdjusted,
+  cardState, verdictLabel, isGymDay, todaySessionName, isAdjusted, isRescheduled,
   block, week, rpeRange, deload, coachingPoints, bbHigh, readiness,
   todayPlanned, todayAdjustment, todayRationale, todayStr, todayIsHome,
 }: Props) {
@@ -146,7 +147,8 @@ export function CoachingCard({
           {isGymDay && todaySessionName && (
             <div className="text-[15px] text-text-primary mt-1 font-[510]">
               {todaySessionName}
-              {isAdjusted && <span className="ml-2 text-[11px] px-2 py-0.5 rounded-full bg-accent-yellow/20 text-accent-yellow font-semibold">Adjusted</span>}
+              {isRescheduled && <span className="ml-2 text-[11px] px-2 py-0.5 rounded-full bg-accent-purple/20 text-accent-purple font-semibold">Moved</span>}
+              {isAdjusted && !isRescheduled && <span className="ml-2 text-[11px] px-2 py-0.5 rounded-full bg-accent-yellow/20 text-accent-yellow font-semibold">Adjusted</span>}
             </div>
           )}
         </div>

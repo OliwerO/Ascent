@@ -120,6 +120,7 @@ export default function TodayView() {
     ?? adjustedSessionName
     ?? (todaySession ? SESSION_NAMES[todaySession as keyof typeof SESSION_NAMES] : null)
   const isAdjusted = todayPlanned?.status === 'adjusted' || todayAdjustment != null
+  const isRescheduled = todayPlanned?.status === 'rescheduled'
   const bbHigh = todayMetrics?.body_battery_highest ?? null
   const readiness = todayMetrics?.training_readiness_score != null
     ? Math.round(todayMetrics.training_readiness_score) : null
@@ -249,6 +250,7 @@ export default function TodayView() {
         isGymDay={isGymDay}
         todaySessionName={todaySessionName ?? null}
         isAdjusted={isAdjusted}
+        isRescheduled={isRescheduled}
         block={block}
         week={week}
         rpeRange={rpeRange}

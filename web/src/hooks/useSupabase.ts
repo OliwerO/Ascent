@@ -338,7 +338,7 @@ export async function rescheduleWorkout(
       .from('planned_workouts')
       .update({
         scheduled_date: source.scheduled_date,
-        status: 'adjusted',
+        status: 'rescheduled',
         adjustment_reason: `Swapped with session on ${newDate}`,
       })
       .eq('id', existingWorkoutOnTarget.id)
@@ -348,7 +348,7 @@ export async function rescheduleWorkout(
       .from('planned_workouts')
       .update({
         scheduled_date: newDate,
-        status: 'adjusted',
+        status: 'rescheduled',
         adjustment_reason: `Moved from ${source.scheduled_date}`,
       })
       .eq('id', workoutId)
@@ -381,7 +381,7 @@ export async function rescheduleWorkout(
       .from('planned_workouts')
       .update({
         scheduled_date: newDate,
-        status: 'adjusted',
+        status: 'rescheduled',
         adjustment_reason: `Moved from ${source.scheduled_date}`,
       })
       .eq('id', workoutId)

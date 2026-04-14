@@ -7,7 +7,7 @@ import { formatDuration, formatActivityType } from '../../lib/format'
 import { MountainActivityCard } from '../../components/MountainActivityCard'
 import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES, CYCLING_ACTIVITY_TYPES } from '../../lib/constants'
 
-type DayStatus = 'completed' | 'adjusted' | 'skipped' | 'planned' | 'missed' | 'today' | 'rest' | 'mountain' | 'cycling'
+type DayStatus = 'completed' | 'adjusted' | 'rescheduled' | 'skipped' | 'planned' | 'missed' | 'today' | 'rest' | 'mountain' | 'cycling'
 
 export interface DayCell {
   date: Date
@@ -25,6 +25,7 @@ export interface DayCell {
 const STATUS_BADGES: Record<DayStatus, { icon: string; label: string; color: string }> = {
   completed: { icon: 'OK', label: 'Done', color: 'text-accent-green' },
   adjusted: { icon: '~', label: 'Adjusted', color: 'text-accent-blue' },
+  rescheduled: { icon: '↔', label: 'Moved', color: 'text-accent-purple' },
   skipped: { icon: 'X', label: 'Skipped', color: 'text-text-muted' },
   planned: { icon: '...', label: 'Planned', color: 'text-text-secondary' },
   missed: { icon: '!', label: 'Missed', color: 'text-accent-red' },
