@@ -693,8 +693,11 @@ const PROGRESSION_BADGES: Record<string, { label: string; color: string }> = {
 
 function ExerciseStatusGrid({ progression }: { progression: ExerciseProgression[] }) {
   const latestByExercise = useMemo(() => {
+    const today = format(new Date(), 'yyyy-MM-dd')
+    // Only show decisions for dates <= today (exclude future planned dates)
+    const pastOnly = progression.filter((p) => p.date <= today)
     const map = new Map<string, ExerciseProgression>()
-    for (const p of progression) {
+    for (const p of pastOnly) {
       if (!map.has(p.exercise_name)) {
         map.set(p.exercise_name, p)
       }
@@ -864,10 +867,11 @@ function LiftProgressionDetail({
     return map
   }, [selectedLift, sessions, sets])
 
-  // Engine decision history for selected exercise
+  // Engine decision history for selected exercise (past dates only)
   const decisionHistory = useMemo(() => {
+    const today = fmtDate(new Date())
     return progression
-      .filter((p) => exerciseNameMatch(p.exercise_name, selectedLift))
+      .filter((p) => exerciseNameMatch(p.exercise_name, selectedLift) && p.date <= today)
       .slice(0, 5)
   }, [progression, selectedLift])
 

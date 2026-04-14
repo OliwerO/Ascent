@@ -163,6 +163,7 @@ def build_workout_definition(
     block: int,
     week: int,
     sb=None,
+    target_date=None,
 ) -> dict:
     """Build the workout_definition JSONB for a planned_workouts row.
 
@@ -188,6 +189,7 @@ def build_workout_definition(
         weight, note = calculate_weight(
             ex["name"], ex["start_kg"], block, week, sb=sb,
             target_reps=ex["reps"], target_sets=ex["sets"],
+            target_date=target_date,
         )
 
         # Deload: keep weight, halve sets
@@ -345,6 +347,7 @@ def populate_full_program(sb, dry_run: bool = False) -> int:
         for gym_date, session_key in gym_dates:
             workout_def = build_workout_definition(
                 session_key, block, week_num, sb=sb,
+                target_date=gym_date,
             )
 
             block_name = f"Base Rebuild Block {block}"
