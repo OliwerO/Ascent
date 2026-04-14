@@ -93,46 +93,77 @@ def is_human_message(msg: dict, bot_uid: str) -> bool:
     return bool(msg.get("text", "").strip())
 
 
+def fetch_training_context() -> str:
+    """Pre-fetch training context from Supabase for the prompt."""
+    h = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+    ctx_parts = []
+
+    try:
+        # Daily coaching context
+        r = requests.get(f"{SUPABASE_URL}/rest/v1/daily_coaching_context?select=*&limit=1", headers=h)
+        if r.ok and r.json():
+            ctx_parts.append(f"COACHING CONTEXT:\n{json.dumps(r.json()[0], indent=2)}")
+    except Exception:
+        pass
+
+    try:
+        # Today's planned workout
+        today = time.strftime("%Y-%m-%d")
+        r = requests.get(f"{SUPABASE_URL}/rest/v1/planned_workouts?scheduled_date=eq.{today}&select=session_name,status,workout_definition,adjustment_reason", headers=h)
+        if r.ok and r.json():
+            ctx_parts.append(f"TODAY'S PLANNED WORKOUT:\n{json.dumps(r.json()[0], indent=2)}")
+        else:
+            ctx_parts.append("TODAY'S PLANNED WORKOUT: None (rest day or unplanned)")
+    except Exception:
+        pass
+
+    try:
+        # Recent HRV
+        r = requests.get(f"{SUPABASE_URL}/rest/v1/hrv?select=date,last_night_avg,status,weekly_avg&order=date.desc&limit=7", headers=h)
+        if r.ok and r.json():
+            ctx_parts.append(f"HRV (last 7 days):\n{json.dumps(r.json(), indent=2)}")
+    except Exception:
+        pass
+
+    try:
+        # Recent activities
+        r = requests.get(f"{SUPABASE_URL}/rest/v1/activities?select=date,activity_type,activity_name,duration_seconds,elevation_gain,training_effect_aerobic&order=date.desc&limit=5", headers=h)
+        if r.ok and r.json():
+            ctx_parts.append(f"RECENT ACTIVITIES:\n{json.dumps(r.json(), indent=2)}")
+    except Exception:
+        pass
+
+    return "\n\n".join(ctx_parts)
+
+
 def build_coach_prompt(user_message: str) -> str:
-    """Build a prompt for the ask-coach skill with training context."""
-    return f"""You are the Ascent training coach responding to a message in #ascent-training.
-The athlete sent this message:
+    """Build a prompt with pre-fetched context — no tool calls needed."""
+    context = fetch_training_context()
+    return f"""You are the Ascent training coach. An athlete sent this message in #ascent-training:
 
 "{user_message}"
 
-INSTRUCTIONS:
-1. Read the current coaching context:
-   source /Users/jarvisforoli/projects/ascent/.env
-   curl -s "${{SUPABASE_URL}}/rest/v1/daily_coaching_context?select=*&limit=1" -H "apikey: ${{SUPABASE_SERVICE_KEY}}" -H "Authorization: Bearer ${{SUPABASE_SERVICE_KEY}}"
+Here is the current training context (pre-fetched from the database):
 
-2. Read today's planned workout:
-   curl -s "${{SUPABASE_URL}}/rest/v1/planned_workouts?scheduled_date=eq.$(date +%Y-%m-%d)&select=*" -H "apikey: ${{SUPABASE_SERVICE_KEY}}" -H "Authorization: Bearer ${{SUPABASE_SERVICE_KEY}}"
+{context}
 
-3. If the question is about an exercise, check the knowledge base:
-   cat /Users/jarvisforoli/projects/ascent/docs/knowledge-base/knowledge-base.md | head -100
-
-4. Answer the question concisely (max 3-4 sentences for simple questions, more for complex ones).
-   Use autonomy-supportive language. Reference actual data from the DB.
-
-5. If the athlete asks to change today's workout (swap, lighten, skip), use coach_adjust.py:
-   /Users/jarvisforoli/projects/ascent/venv/bin/python3 /Users/jarvisforoli/projects/ascent/scripts/coach_adjust.py --date $(date +%Y-%m-%d) --action <action> --details '<json>' --no-slack
-
-6. If the athlete asks to push a workout to Garmin:
-   /Users/jarvisforoli/projects/ascent/venv/bin/python3 /Users/jarvisforoli/projects/ascent/scripts/workout_push.py --date $(date +%Y-%m-%d)
-
-7. Output ONLY the reply text (Slack mrkdwn format: *bold*, _italic_). No preamble.
-   Keep it conversational — this is a chat, not a report.
+RULES:
+- Answer concisely (2-4 sentences for simple questions, more detail only if needed)
+- Use Slack mrkdwn format (*bold*, _italic_)
+- Reference actual numbers from the data above
+- Use autonomy-supportive language (no "should", "must", "need to")
+- Output ONLY the reply text. No preamble, no explanation of what you did.
 """
 
 
 def run_coach_session(prompt: str) -> str | None:
-    """Run a Claude Code session with the prompt and return the response."""
+    """Run a Claude session with pre-fetched context. Fast: no tool calls."""
     try:
         result = subprocess.run(
-            ["claude", "-p", prompt],
+            ["claude", "-p", prompt, "--max-turns", "1", "--model", "sonnet"],
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=60,
             cwd=str(PROJECT_ROOT),
         )
         if result.returncode == 0 and result.stdout.strip():
@@ -140,7 +171,7 @@ def run_coach_session(prompt: str) -> str | None:
         log.error("Claude session failed (rc=%d): %s", result.returncode, result.stderr[-300:])
         return None
     except subprocess.TimeoutExpired:
-        log.error("Claude session timed out (120s)")
+        log.error("Claude session timed out (60s)")
         return None
     except FileNotFoundError:
         log.error("'claude' CLI not found in PATH")
