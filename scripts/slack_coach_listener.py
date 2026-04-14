@@ -94,46 +94,39 @@ def is_human_message(msg: dict, bot_uid: str) -> bool:
 
 
 def fetch_training_context() -> str:
-    """Pre-fetch training context from Supabase for the prompt."""
+    """Pre-fetch a compact training summary from Supabase."""
     h = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-    ctx_parts = []
+    lines = []
 
     try:
-        # Daily coaching context
-        r = requests.get(f"{SUPABASE_URL}/rest/v1/daily_coaching_context?select=*&limit=1", headers=h)
+        r = requests.get(f"{SUPABASE_URL}/rest/v1/daily_coaching_context?select=recovery_action,sleep_hours,body_battery_highest,hrv_status,training_readiness_score,mountain_days_3d,elevation_3d,last_session_name,last_session_date,last_srpe&limit=1", headers=h)
         if r.ok and r.json():
-            ctx_parts.append(f"COACHING CONTEXT:\n{json.dumps(r.json()[0], indent=2)}")
+            d = r.json()[0]
+            lines.append(f"Recovery: {d.get('recovery_action','?')} | Sleep: {d.get('sleep_hours','?')}h | BB: {d.get('body_battery_highest','?')} | HRV: {d.get('hrv_status','?')} | TR: {d.get('training_readiness_score','?')}")
+            lines.append(f"Mountain last 3d: {d.get('mountain_days_3d',0)} days, {d.get('elevation_3d',0)}m | Last session: {d.get('last_session_name','?')} on {d.get('last_session_date','?')} (sRPE {d.get('last_srpe','?')})")
     except Exception:
         pass
 
     try:
-        # Today's planned workout
         today = time.strftime("%Y-%m-%d")
-        r = requests.get(f"{SUPABASE_URL}/rest/v1/planned_workouts?scheduled_date=eq.{today}&select=session_name,status,workout_definition,adjustment_reason", headers=h)
+        r = requests.get(f"{SUPABASE_URL}/rest/v1/planned_workouts?scheduled_date=eq.{today}&select=session_name,status,adjustment_reason", headers=h)
         if r.ok and r.json():
-            ctx_parts.append(f"TODAY'S PLANNED WORKOUT:\n{json.dumps(r.json()[0], indent=2)}")
+            pw = r.json()[0]
+            lines.append(f"Today: {pw.get('session_name','?')} ({pw.get('status','?')}){' — ' + pw['adjustment_reason'] if pw.get('adjustment_reason') else ''}")
         else:
-            ctx_parts.append("TODAY'S PLANNED WORKOUT: None (rest day or unplanned)")
+            lines.append("Today: rest day / unplanned")
     except Exception:
         pass
 
     try:
-        # Recent HRV
-        r = requests.get(f"{SUPABASE_URL}/rest/v1/hrv?select=date,last_night_avg,status,weekly_avg&order=date.desc&limit=7", headers=h)
+        r = requests.get(f"{SUPABASE_URL}/rest/v1/hrv?select=date,last_night_avg,status&order=date.desc&limit=7", headers=h)
         if r.ok and r.json():
-            ctx_parts.append(f"HRV (last 7 days):\n{json.dumps(r.json(), indent=2)}")
+            vals = [f"{d['date'][-5:]}: {round(d['last_night_avg'])}ms ({d['status']})" for d in r.json() if d.get('last_night_avg')]
+            lines.append(f"HRV 7d: {' | '.join(vals)}")
     except Exception:
         pass
 
-    try:
-        # Recent activities
-        r = requests.get(f"{SUPABASE_URL}/rest/v1/activities?select=date,activity_type,activity_name,duration_seconds,elevation_gain,training_effect_aerobic&order=date.desc&limit=5", headers=h)
-        if r.ok and r.json():
-            ctx_parts.append(f"RECENT ACTIVITIES:\n{json.dumps(r.json(), indent=2)}")
-    except Exception:
-        pass
-
-    return "\n\n".join(ctx_parts)
+    return "\n".join(lines)
 
 
 def build_coach_prompt(user_message: str) -> str:
@@ -163,7 +156,7 @@ def run_coach_session(prompt: str) -> str | None:
             ["claude", "-p", prompt, "--max-turns", "1", "--model", "sonnet"],
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=90,
             cwd=str(PROJECT_ROOT),
         )
         if result.returncode == 0 and result.stdout.strip():
