@@ -145,7 +145,7 @@ export interface TrainingSet {
   volume_kg: number | null
   estimated_1rm: number | null
   notes: string | null
-  exercises: { name: string; category: string } | null
+  exercises: { name: string; category: string; muscle_groups: string[] | null } | null
 }
 
 // --- Training status
@@ -246,6 +246,22 @@ export interface PlannedExercise {
   note: string | null
   duration_s?: number
   distance_m?: number
+}
+
+// --- Exercise progression (engine decisions)
+export interface ExerciseProgression {
+  exercise_name: string
+  date: string
+  planned_sets: number | null
+  planned_reps: number | null
+  planned_weight_kg: number | null
+  planned_rpe: number | null
+  actual_sets: number | null
+  actual_reps_per_set: number[] | null
+  actual_weight_kg: number | null
+  actual_rpe: number | null
+  progression_applied: string
+  progression_amount: number | null
 }
 
 export interface ExerciseFeedback {

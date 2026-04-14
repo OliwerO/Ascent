@@ -5,6 +5,7 @@ import type {
   DailySummary, HRVRow, SleepRow, Activity, DailyMetrics,
   BodyComposition, TrainingSession, TrainingSet, SubjectiveWellness,
   Goal, CoachingLogEntry, PlannedWorkout, PerformanceScore,
+  ExerciseProgression,
 } from '../lib/types'
 
 const MAX_RETRIES = 2
@@ -234,7 +235,7 @@ export function useTrainingSets(sessionIds: number[]) {
     if (!sessionIds.length) return []
     const { data, error } = await supabase
       .from('training_sets')
-      .select('*, exercises(name, category)')
+      .select('*, exercises(name, category, muscle_groups)')
       .in('session_id', sessionIds)
       .order('set_number')
     if (error) throw error
@@ -308,6 +309,22 @@ export function usePerformanceScores(days = 90) {
       .select('date,endurance_score,hill_score,fitness_age')
       .gte('date', fmt(daysAgo(days)))
       .order('date', { ascending: true })
+    if (error) {
+      if (error.message?.includes('relation') || error.message?.includes('does not exist')) return []
+      throw error
+    }
+    return data ?? []
+  }, [days, rt])
+}
+
+export function useExerciseProgression(days = 60) {
+  const rt = useRealtimeRefresh('exercise_progression')
+  return useFetch<ExerciseProgression[]>('exercise_progression', async () => {
+    const { data, error } = await supabase
+      .from('exercise_progression')
+      .select('exercise_name,date,planned_sets,planned_reps,planned_weight_kg,planned_rpe,actual_sets,actual_reps_per_set,actual_weight_kg,actual_rpe,progression_applied,progression_amount')
+      .gte('date', fmt(daysAgo(days)))
+      .order('date', { ascending: false })
     if (error) {
       if (error.message?.includes('relation') || error.message?.includes('does not exist')) return []
       throw error

@@ -7,8 +7,9 @@ import {
   useTrainingSets,
   useCoachingLog,
   usePlannedWorkouts,
+  useExerciseProgression,
 } from '../hooks/useSupabase'
-import type { Activity, TrainingSession, TrainingSet, CoachingLogEntry, PlannedWorkout, WorkoutDefinition } from '../lib/types'
+import type { Activity, TrainingSession, TrainingSet, CoachingLogEntry, PlannedWorkout, WorkoutDefinition, ExerciseProgression } from '../lib/types'
 import {
   getProgramWeek,
   getWeekSchedule,
@@ -31,6 +32,7 @@ import { formatDuration } from '../lib/format'
 import { loadChangeColor } from '../lib/colors'
 import { MOUNTAIN_ACTIVITY_TYPES } from '../lib/constants'
 import { MountainActivityCard } from '../components/MountainActivityCard'
+import { MuscleGroupRadar } from '../components/MuscleGroupRadar'
 import { glassTooltipStyle } from '../lib/chartConfig'
 
 // ─── Helpers ───────────────────────────────────────────────────────
@@ -54,6 +56,7 @@ export function TrainingPlanView() {
   const sessionsQuery = useTrainingSessions(60)
   const coachingQuery = useCoachingLog(7)
   const plannedQuery = usePlannedWorkouts()
+  const progressionQuery = useExerciseProgression(60)
 
   const sessionIds = useMemo(
     () => (sessionsQuery.data ?? []).map((s: TrainingSession) => s.id),
@@ -74,13 +77,16 @@ export function TrainingPlanView() {
   const sets = (setsQuery.data ?? []) as TrainingSet[]
   const coaching = (coachingQuery.data ?? []) as CoachingLogEntry[]
   const planned = (plannedQuery.data ?? []) as PlannedWorkout[]
+  const progression = (progressionQuery.data ?? []) as ExerciseProgression[]
 
   return (
     <div className="space-y-3 pb-8">
       <ProgramOverview activities={activities} sessions={sessions} planned={planned} />
       <WeekGrid activities={activities} planned={planned} />
       <TodaySession sessions={sessions} sets={sets} coaching={coaching} planned={planned} />
-      <LiftProgressionTracker sessions={sessions} sets={sets} planned={planned} />
+      <MuscleGroupRadar sets={sets} sessions={sessions} />
+      <ExerciseStatusGrid progression={progression} />
+      <LiftProgressionDetail sessions={sessions} sets={sets} planned={planned} progression={progression} />
       <EnduranceLoadTracker activities={activities} />
       <SessionHistory sessions={sessions} sets={sets} />
       <SystemArchitecture />
@@ -669,17 +675,90 @@ function TodaySession({
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// 4. Lift Progression Tracker
+// 4a. Exercise Status Grid (engine-aware)
 // ═══════════════════════════════════════════════════════════════════
 
-function LiftProgressionTracker({
+const PROGRESSION_BADGES: Record<string, { label: string; color: string }> = {
+  weight_increase:       { label: 'Progressing',   color: 'bg-accent-green/20 text-accent-green' },
+  accelerated_increase:  { label: 'Accelerated',   color: 'bg-accent-blue/20 text-accent-blue' },
+  hold:                  { label: 'Hold',           color: 'bg-accent-yellow/20 text-accent-yellow' },
+  rep_increase:          { label: 'Building reps',  color: 'bg-accent-yellow/20 text-accent-yellow' },
+  add_set:               { label: 'Extra set',      color: 'bg-orange-500/20 text-orange-400' },
+  rpe_reduction:         { label: 'RPE reduce',     color: 'bg-accent-red/20 text-accent-red' },
+  deload_reset:          { label: 'Deload reset',   color: 'bg-accent-red/20 text-accent-red' },
+  deload_week:           { label: 'Deload',         color: 'bg-bg-primary/60 text-text-dim' },
+  first_session:         { label: 'New',            color: 'bg-bg-primary/60 text-text-dim' },
+  bodyweight:            { label: 'Bodyweight',     color: 'bg-bg-primary/60 text-text-dim' },
+}
+
+function ExerciseStatusGrid({ progression }: { progression: ExerciseProgression[] }) {
+  const latestByExercise = useMemo(() => {
+    const map = new Map<string, ExerciseProgression>()
+    for (const p of progression) {
+      if (!map.has(p.exercise_name)) {
+        map.set(p.exercise_name, p)
+      }
+    }
+    return Array.from(map.values())
+  }, [progression])
+
+  if (latestByExercise.length === 0) {
+    return (
+      <Card>
+        <div className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold mb-2">Exercise Status</div>
+        <div className="text-[13px] text-text-dim py-2">No progression data yet</div>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <div className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold mb-3">Exercise Status</div>
+      <div className="grid grid-cols-2 gap-2">
+        {latestByExercise.map((p) => {
+          const badge = PROGRESSION_BADGES[p.progression_applied] ?? { label: p.progression_applied, color: 'bg-bg-primary/60 text-text-dim' }
+          return (
+            <div key={p.exercise_name} className="bg-bg-primary/50 rounded-xl px-3 py-2.5">
+              <div className="text-[12px] font-semibold text-text-primary truncate">
+                {p.exercise_name.replace('Barbell ', '').replace('Dumbbell ', '')}
+              </div>
+              <div className="flex items-center gap-2 mt-1.5">
+                {p.planned_weight_kg != null && p.planned_weight_kg > 0 && (
+                  <span className="text-[13px] font-bold text-text-primary">
+                    {p.planned_weight_kg}kg
+                  </span>
+                )}
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${badge.color}`}>
+                  {badge.label}
+                </span>
+              </div>
+              {p.progression_amount != null && p.progression_amount !== 0 && (
+                <div className={`text-[11px] mt-1 ${p.progression_amount > 0 ? 'text-accent-green' : 'text-accent-red'}`}>
+                  {p.progression_amount > 0 ? '+' : ''}{p.progression_amount}kg
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </Card>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 4b. Lift Progression Detail (enhanced chart + decision history)
+// ═══════════════════════════════════════════════════════════════════
+
+function LiftProgressionDetail({
   sessions,
   sets,
   planned,
+  progression,
 }: {
   sessions: TrainingSession[]
   sets: TrainingSet[]
   planned: PlannedWorkout[]
+  progression: ExerciseProgression[]
 }) {
   const { week: currentWeek } = getProgramWeek(new Date())
 
@@ -785,90 +864,17 @@ function LiftProgressionTracker({
     return map
   }, [selectedLift, sessions, sets])
 
-  const analysis = useMemo(() => {
-    let lastActualWeight: number | null = null
-    let lastActualWeek: number | null = null
-    for (let w = currentWeek; w >= 1; w--) {
-      if (actualWeightsByWeek.has(w)) {
-        lastActualWeight = actualWeightsByWeek.get(w)!
-        lastActualWeek = w
-        break
-      }
-    }
+  // Engine decision history for selected exercise
+  const decisionHistory = useMemo(() => {
+    return progression
+      .filter((p) => exerciseNameMatch(p.exercise_name, selectedLift))
+      .slice(0, 5)
+  }, [progression, selectedLift])
 
-    if (lastActualWeight === null) {
-      return {
-        status: 'no_data' as const,
-        statusLabel: 'No sessions yet',
-        lastActualWeight: null,
-        trend: null as 'up' | 'flat' | 'down' | null,
-        weeksAtSameWeight: 0,
-      }
-    }
-
-    let weeksAtSameWeight = 0
-    for (let w = lastActualWeek!; w >= 1; w--) {
-      const wt = actualWeightsByWeek.get(w)
-      if (wt === lastActualWeight) weeksAtSameWeight++
-      else break
-    }
-
-    const recentWeights: number[] = []
-    for (let w = lastActualWeek!; w >= 1 && recentWeights.length < 3; w--) {
-      if (actualWeightsByWeek.has(w)) recentWeights.unshift(actualWeightsByWeek.get(w)!)
-    }
-    let trend: 'up' | 'flat' | 'down' | null = null
-    if (recentWeights.length >= 2) {
-      const last = recentWeights[recentWeights.length - 1]
-      const prev = recentWeights[recentWeights.length - 2]
-      if (last > prev) trend = 'up'
-      else if (last < prev) trend = 'down'
-      else trend = 'flat'
-    }
-
-    const plannedForLastWeek = plannedWeightsByWeek.get(lastActualWeek!)
-    let status: 'on_track' | 'ahead' | 'stalled' | 'behind' | 'no_data' = 'on_track'
-    let statusLabel = 'On track'
-
-    if (plannedForLastWeek != null) {
-      if (lastActualWeight > plannedForLastWeek) {
-        status = 'ahead'
-        statusLabel = 'Ahead of plan'
-      } else if (lastActualWeight >= plannedForLastWeek) {
-        status = 'on_track'
-        statusLabel = 'On track'
-      } else {
-        status = 'behind'
-        statusLabel = 'Behind plan'
-      }
-    }
-
-    if (status !== 'ahead') {
-      if (weeksAtSameWeight >= 3) {
-        status = 'stalled'
-        statusLabel = `Stalled ${weeksAtSameWeight} weeks`
-      } else if (weeksAtSameWeight >= 2 && status !== 'on_track') {
-        status = 'stalled'
-        statusLabel = `Same weight for ${weeksAtSameWeight} weeks`
-      }
-    }
-
-    return { status, statusLabel, lastActualWeight, trend, weeksAtSameWeight }
-  }, [selectedLift, currentWeek, actualWeightsByWeek, plannedWeightsByWeek])
-
-  const statusColors: Record<string, string> = {
-    on_track: 'text-accent-green',
-    ahead: 'text-accent-blue',
-    stalled: 'text-accent-red',
-    behind: 'text-accent-yellow',
-    no_data: 'text-text-dim',
-  }
-
-  const trendArrows: Record<string, string> = {
-    up: '\u2197',
-    flat: '\u2192',
-    down: '\u2198',
-  }
+  const latestDecision = decisionHistory[0]
+  const latestBadge = latestDecision
+    ? PROGRESSION_BADGES[latestDecision.progression_applied] ?? { label: latestDecision.progression_applied, color: 'bg-bg-primary/60 text-text-dim' }
+    : null
 
   const chartData = useMemo(() => {
     return Array.from({ length: 8 }, (_, i) => {
@@ -886,23 +892,32 @@ function LiftProgressionTracker({
   return (
     <Card>
       <div className="space-y-4">
+        {/* Header */}
         <div className="flex items-start justify-between">
           <div>
             <div className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold mb-1">Lift Progression</div>
             <div className="text-[16px] font-bold text-text-primary">{selectedLift}</div>
           </div>
           <div className="text-right">
-            <div className={`text-[14px] font-semibold ${statusColors[analysis.status]}`}>
-              {analysis.trend && trendArrows[analysis.trend]} {analysis.statusLabel}
-            </div>
-            {analysis.lastActualWeight != null && (
-              <div className="text-[12px] text-text-muted mt-0.5">
-                Last: {analysis.lastActualWeight}kg
+            {latestBadge && (
+              <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${latestBadge.color}`}>
+                {latestBadge.label}
+              </span>
+            )}
+            {latestDecision?.planned_weight_kg != null && (
+              <div className="text-[12px] text-text-muted mt-1.5">
+                Current: {latestDecision.planned_weight_kg}kg
+                {latestDecision.progression_amount != null && latestDecision.progression_amount !== 0 && (
+                  <span className={latestDecision.progression_amount > 0 ? ' text-accent-green' : ' text-accent-red'}>
+                    {' '}({latestDecision.progression_amount > 0 ? '+' : ''}{latestDecision.progression_amount}kg)
+                  </span>
+                )}
               </div>
             )}
           </div>
         </div>
 
+        {/* Exercise selector */}
         <div className="flex gap-1.5 flex-wrap">
           {liftOptions.withData.map((lift) => (
             <button
@@ -940,6 +955,7 @@ function LiftProgressionTracker({
           )}
         </div>
 
+        {/* Chart */}
         <div className="h-48">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData} margin={{ top: 5, right: 10, left: 5, bottom: 0 }}>
@@ -952,25 +968,45 @@ function LiftProgressionTracker({
           </ResponsiveContainer>
         </div>
 
-        <div className="flex items-center justify-between">
-          <div className="flex gap-4 text-[11px] text-text-muted">
-            <span className="flex items-center gap-1.5">
-              <span className="w-5 h-px inline-block" style={{ borderTop: '1.5px dashed #646478' }} />
-              Planned (DB)
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-gym inline-block" />
-              Your lifts
-            </span>
-          </div>
-          {analysis.weeksAtSameWeight >= 2 && (
-            <div className="text-[11px] text-accent-red font-semibold">
-              {analysis.weeksAtSameWeight >= 3
-                ? 'Drop 10% & rebuild recommended'
-                : 'Hold weight, focus on reps'}
-            </div>
-          )}
+        {/* Legend */}
+        <div className="flex gap-4 text-[11px] text-text-muted">
+          <span className="flex items-center gap-1.5">
+            <span className="w-5 h-px inline-block" style={{ borderTop: '1.5px dashed #646478' }} />
+            Planned
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-gym inline-block" />
+            Actual
+          </span>
         </div>
+
+        {/* Decision history */}
+        {decisionHistory.length > 0 && (
+          <div className="border-t border-border pt-3">
+            <div className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold mb-2">Engine Decisions</div>
+            <div className="space-y-1.5">
+              {decisionHistory.map((d, i) => {
+                const b = PROGRESSION_BADGES[d.progression_applied] ?? { label: d.progression_applied, color: 'bg-bg-primary/60 text-text-dim' }
+                return (
+                  <div key={i} className="flex items-center gap-2 text-[12px]">
+                    <span className="text-text-dim w-16 shrink-0">{d.date.slice(5)}</span>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${b.color}`}>
+                      {b.label}
+                    </span>
+                    {d.planned_weight_kg != null && (
+                      <span className="text-text-secondary">{d.planned_weight_kg}kg</span>
+                    )}
+                    {d.progression_amount != null && d.progression_amount !== 0 && (
+                      <span className={d.progression_amount > 0 ? 'text-accent-green' : 'text-accent-red'}>
+                        {d.progression_amount > 0 ? '+' : ''}{d.progression_amount}kg
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </Card>
   )
