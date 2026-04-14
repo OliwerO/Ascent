@@ -179,6 +179,18 @@ def fetch_mountain_patterns() -> list:
         return []
 
 
+def fetch_coaching_context_fields() -> dict:
+    """Fetch recovery-relevant fields from daily_coaching_context."""
+    try:
+        rows = supabase_get("daily_coaching_context", {
+            "select": "mountain_days_3d,is_deload_week,last_srpe,poor_sleep_nights_7d",
+        })
+        return rows[0] if rows else {}
+    except Exception as e:
+        log.warning("Failed to fetch coaching context: %s", e)
+        return {}
+
+
 def fetch_recent_prs(since_date: date) -> list:
     """Fetch exercise PRs set since the given date."""
     try:
@@ -534,6 +546,38 @@ def build_message(target_date: date) -> dict:
         "type": "section",
         "text": {"type": "mrkdwn", "text": rec}
     })
+
+    # Recovery tip — single highest-priority tip (matches coachingDecision.ts)
+    ctx = fetch_coaching_context_fields()
+    sleep_hours = sleep_seconds / 3600.0 if sleep_seconds else None
+    deep_pct = (deep_seconds / sleep_seconds * 100) if deep_seconds and sleep_seconds else None
+    rem_pct = (rem_seconds / sleep_seconds * 100) if rem_seconds and sleep_seconds else None
+    mountain_days_3d = ctx.get("mountain_days_3d") or 0
+    is_deload = ctx.get("is_deload_week") or False
+    last_srpe = ctx.get("last_srpe")
+    poor_sleep_nights = ctx.get("poor_sleep_nights_7d") or 0
+
+    recovery_tip = None
+    if deep_pct is not None and deep_pct < 15:
+        recovery_tip = "Deep sleep was low — cooler room, earlier screen cutoff, and consistent bedtime tend to help"
+    elif rem_pct is not None and rem_pct < 18:
+        recovery_tip = "REM sleep trending low — alcohol, late caffeine, and irregular sleep times are common culprits"
+    elif sleep_hours is not None and sleep_hours < 6:
+        recovery_tip = "Short sleep last night — a 20-min nap before training can partially compensate"
+    elif mountain_days_3d > 0:
+        recovery_tip = "Hydration and protein intake support recovery after mountain days — 1.6-2.2g/kg/day protein target"
+    elif is_deload:
+        recovery_tip = "Deload week — extra sleep and light mobility maximize adaptation from the training block"
+    elif last_srpe is not None and last_srpe >= 8:
+        recovery_tip = "Yesterday was a grinder — extra carbs and protein in the next 24h support recovery"
+    elif poor_sleep_nights >= 3:
+        recovery_tip = "Sleep has been short this week — even 30min earlier to bed compounds"
+
+    if recovery_tip:
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f":bulb: *Recovery Tip*\n{recovery_tip}"}
+        })
 
     # Gym-day sections: progression alerts, stall warnings, mountain context
     if is_gym_day(target_date):
