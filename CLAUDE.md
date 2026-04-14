@@ -150,13 +150,20 @@ Schema is the source of truth. Don't duplicate the full DDL here — read `sql/0
 | 20:00 | rpe_reminder.py | Slack RPE log reminder |
 | Sun 20:00 | weekly_analysis_runner.py | Weekly analysis suite |
 
-**CCD Scheduled Sessions (Anthropic ACP):**
+**CCD Scheduled Sessions (Claude Desktop App → Scheduled Tasks):**
 
-| Time | Session | Purpose |
-|------|---------|---------|
-| 09:43 daily | health-coach-daily | Autoregulation decision + Garmin push |
-| Sun 20:03 | health-coach-weekly | Weekly review + coaching adjustments |
-| End of block | block-review | Strategic review with Opus (manual trigger) |
+| Time | Session | Prompt file |
+|------|---------|-------------|
+| 09:43 daily | health-coach-daily | `ccd-prompts/health-coach-daily.md` |
+| Sun 20:03 | health-coach-weekly | `ccd-prompts/health-coach-weekly.md` |
+| 22:00 daily | health-coach-sleep-reminder | `ccd-prompts/health-coach-sleep-reminder.md` |
+| End of block | block-review | `ccd-prompts/block-review.md` |
+
+**How CCD prompts are managed:** Each scheduled task in the Claude Desktop app uses a one-liner that reads the prompt file at runtime:
+```
+Read and execute the prompt in /Users/jarvisforoli/projects/ascent/ccd-prompts/<name>.md — follow every step exactly as written. The working directory is /Users/jarvisforoli/projects/ascent.
+```
+This means editing the files in `ccd-prompts/` automatically takes effect on the next scheduled run — no need to update the app. **When modifying CCD prompts, always edit the file in `ccd-prompts/`, never paste prompts directly into the scheduled task UI.**
 
 ## Working With This Codebase
 
