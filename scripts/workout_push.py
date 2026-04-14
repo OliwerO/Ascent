@@ -510,6 +510,7 @@ def calculate_weight(
     sb=None,
     target_reps: int = 8,
     target_sets: int = 3,
+    target_rpe: float | None = None,
 ) -> tuple[float | None, str]:
     """Apply smart progressive overload based on actual performance data.
 
@@ -532,6 +533,7 @@ def calculate_weight(
                 target_sets=target_sets,
                 current_week=week,
                 start_kg=start_kg,
+                target_rpe=target_rpe,
             )
 
             # Record the decision to exercise_progression table
@@ -938,6 +940,7 @@ def build_garmin_workout(
             sb=sb,
             target_reps=ex["reps"],
             target_sets=ex["sets"],
+            target_rpe=ex.get("rpe_high"),
         )
         progression_notes.append((ex["name"], weight, prog_note))
 
@@ -1047,6 +1050,7 @@ def format_weight_summary(session_key: str, block: int, week: int,
             weight, prog_note = calculate_weight(
                 ex["name"], ex["start_kg"], block, week, sb=sb,
                 target_reps=ex["reps"], target_sets=ex["sets"],
+                target_rpe=ex.get("rpe_high"),
             )
 
         if weight:

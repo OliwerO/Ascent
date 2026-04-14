@@ -13,6 +13,8 @@ from progression_engine import (
     _count_stall_weeks,
     _group_by_session,
     _get_session_rpe_modifier,
+    _check_rpe_overshoot,
+    _accelerated_increase,
     backfill_actuals,
     KB_WEIGHTS,
 )
@@ -344,3 +346,214 @@ class TestBackfillActuals:
         mock_sb.set_table_data("training_sessions", [])
         count = backfill_actuals(mock_sb, "2026-04-01")
         assert count == 0
+
+
+# ─── Accelerated increment helper ────────────────────────────────
+
+class TestAcceleratedIncrement:
+    def test_barbell_doubles_increment(self):
+        # Barbell: 2×5kg = 10kg increment
+        assert _accelerated_increase(70, "barbell") == 80.0
+
+    def test_dumbbell_doubles_increment(self):
+        # Dumbbell: 2×2.5kg = 5kg increment
+        assert _accelerated_increase(20, "dumbbell") == 25.0
+
+    def test_kb_skips_one_weight(self):
+        # KB 16 → skip 20 → land on 24
+        assert _accelerated_increase(16, "kettlebell") == 24
+
+    def test_kb_at_max_stays(self):
+        # KB 48 is max — can't skip further
+        assert _accelerated_increase(48, "kettlebell") == 48
+
+
+# ─── Light-feel acceleration ─────────────────────────────────────
+
+class TestLightFeelAcceleration:
+    def test_light_streak_3_with_low_srpe_accelerates(self, mock_sb):
+        """3+ light ratings + sRPE <= 7 + all reps hit → accelerated_increase."""
+        mock_sb.set_table_data("exercises", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            {"weight_kg": 70.0, "reps": 8, "rpe": 6, "set_number": 1, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 6, "set_number": 2, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 6, "set_number": 3, "session_id": 1, "exercise_id": 1},
+        ])
+        mock_sb.set_table_data("training_sessions", [{"id": 1, "date": "2026-04-01", "srpe": 6}])
+        # 3 consecutive "light" ratings
+        mock_sb.set_table_data("exercise_feedback", [
+            {"session_date": "2026-04-01", "feel": "light"},
+            {"session_date": "2026-03-29", "feel": "light"},
+            {"session_date": "2026-03-27", "feel": "light"},
+        ])
+
+        result = calculate_next_weight(mock_sb, "Barbell Back Squat",
+                                       target_reps=8, target_sets=3,
+                                       current_week=2, start_kg=70)
+        assert result.applied == "accelerated_increase"
+        assert result.weight_kg == 80.0  # 70 + 2×5kg
+        assert result.amount == 10.0
+
+    def test_light_streak_2_does_not_accelerate(self, mock_sb):
+        """Only 2 light ratings → normal progression."""
+        mock_sb.set_table_data("exercises", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            {"weight_kg": 70.0, "reps": 8, "rpe": 6, "set_number": 1, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 6, "set_number": 2, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 6, "set_number": 3, "session_id": 1, "exercise_id": 1},
+        ])
+        mock_sb.set_table_data("training_sessions", [{"id": 1, "date": "2026-04-01", "srpe": 6}])
+        mock_sb.set_table_data("exercise_feedback", [
+            {"session_date": "2026-04-01", "feel": "light"},
+            {"session_date": "2026-03-29", "feel": "light"},
+            {"session_date": "2026-03-27", "feel": "right"},  # breaks streak
+        ])
+
+        result = calculate_next_weight(mock_sb, "Barbell Back Squat",
+                                       target_reps=8, target_sets=3,
+                                       current_week=2, start_kg=70)
+        assert result.applied == "weight_increase"
+        assert result.weight_kg == 75.0  # normal +5kg
+
+    def test_light_streak_3_with_high_srpe_does_not_accelerate(self, mock_sb):
+        """3 light ratings but sRPE 8 → normal progression (sRPE contradicts feel)."""
+        mock_sb.set_table_data("exercises", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            {"weight_kg": 70.0, "reps": 8, "rpe": 6, "set_number": 1, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 6, "set_number": 2, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 6, "set_number": 3, "session_id": 1, "exercise_id": 1},
+        ])
+        mock_sb.set_table_data("training_sessions", [{"id": 1, "date": "2026-04-01", "srpe": 8}])
+        mock_sb.set_table_data("exercise_feedback", [
+            {"session_date": "2026-04-01", "feel": "light"},
+            {"session_date": "2026-03-29", "feel": "light"},
+            {"session_date": "2026-03-27", "feel": "light"},
+        ])
+
+        result = calculate_next_weight(mock_sb, "Barbell Back Squat",
+                                       target_reps=8, target_sets=3,
+                                       current_week=2, start_kg=70)
+        # sRPE 8 with recent weight → hold (sRPE 8 check fires)
+        # The mock returns same sessions data regardless of filter,
+        # so sessions_at_weight will be 1 → sRPE 8 hold triggers
+        assert result.applied == "hold"
+
+
+# ─── RPE-based acceleration ──────────────────────────────────────
+
+class TestRPEAcceleration:
+    def test_avg_srpe_65_or_below_accelerates(self, mock_sb):
+        """avg sRPE <= 6.5 for 2+ sessions + all reps hit → accelerated_increase."""
+        mock_sb.set_table_data("exercises", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            {"weight_kg": 70.0, "reps": 8, "rpe": 6, "set_number": 1, "session_id": 2, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 6, "set_number": 2, "session_id": 2, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 6, "set_number": 3, "session_id": 2, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 6, "set_number": 1, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 6, "set_number": 2, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 70.0, "reps": 8, "rpe": 6, "set_number": 3, "session_id": 1, "exercise_id": 1},
+        ])
+        mock_sb.set_table_data("training_sessions", [
+            {"id": 2, "date": "2026-04-03", "srpe": 6},
+            {"id": 1, "date": "2026-04-01", "srpe": 6},
+        ])
+        # No light feel — testing RPE path specifically
+        mock_sb.set_table_data("exercise_feedback", [
+            {"session_date": "2026-04-03", "feel": "right"},
+            {"session_date": "2026-04-01", "feel": "right"},
+        ])
+
+        result = calculate_next_weight(mock_sb, "Barbell Back Squat",
+                                       target_reps=8, target_sets=3,
+                                       current_week=2, start_kg=70)
+        assert result.applied == "accelerated_increase"
+        assert result.weight_kg == 80.0
+
+
+# ─── RPE overshoot detection ─────────────────────────────────────
+
+class TestRPEOvershoot:
+    def test_overshoot_triggers_reduction(self, mock_sb):
+        """RPE consistently >1 above target for 2+ weeks → rpe_reduction."""
+        mock_sb.set_table_data("exercises", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            {"weight_kg": 75.0, "reps": 8, "rpe": 9, "set_number": 1, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 75.0, "reps": 8, "rpe": 9, "set_number": 2, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 75.0, "reps": 8, "rpe": 9, "set_number": 3, "session_id": 1, "exercise_id": 1},
+        ])
+        mock_sb.set_table_data("training_sessions", [{"id": 1, "date": "2026-04-10", "srpe": 7}])
+        mock_sb.set_table_data("exercise_feedback", [])
+        # Overshoot data: actual RPE 9 vs target 7 → overshoot by 2
+        mock_sb.set_table_data("exercise_progression", [
+            {"actual_rpe": 9.0, "planned_rpe": 7.0},
+            {"actual_rpe": 8.5, "planned_rpe": 7.0},
+        ])
+
+        result = calculate_next_weight(mock_sb, "Barbell Back Squat",
+                                       target_reps=8, target_sets=3,
+                                       current_week=2, start_kg=70,
+                                       target_rpe=7.0)
+        assert result.applied == "rpe_reduction"
+        assert result.weight_kg < 75.0
+        assert result.amount < 0
+
+    def test_no_overshoot_when_rpe_close(self, mock_sb):
+        """RPE within 1 of target → no reduction, normal progression."""
+        mock_sb.set_table_data("exercises", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            {"weight_kg": 75.0, "reps": 8, "rpe": 7.5, "set_number": 1, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 75.0, "reps": 8, "rpe": 7.5, "set_number": 2, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 75.0, "reps": 8, "rpe": 7.5, "set_number": 3, "session_id": 1, "exercise_id": 1},
+        ])
+        mock_sb.set_table_data("training_sessions", [{"id": 1, "date": "2026-04-10", "srpe": 7}])
+        mock_sb.set_table_data("exercise_feedback", [])
+        mock_sb.set_table_data("exercise_progression", [
+            {"actual_rpe": 7.5, "planned_rpe": 7.0},
+            {"actual_rpe": 7.8, "planned_rpe": 7.0},
+        ])
+
+        result = calculate_next_weight(mock_sb, "Barbell Back Squat",
+                                       target_reps=8, target_sets=3,
+                                       current_week=2, start_kg=70,
+                                       target_rpe=7.0)
+        assert result.applied != "rpe_reduction"
+
+    def test_no_overshoot_without_target_rpe(self, mock_sb):
+        """No target_rpe → skip overshoot check entirely."""
+        mock_sb.set_table_data("exercises", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            {"weight_kg": 75.0, "reps": 8, "rpe": 9, "set_number": 1, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 75.0, "reps": 8, "rpe": 9, "set_number": 2, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 75.0, "reps": 8, "rpe": 9, "set_number": 3, "session_id": 1, "exercise_id": 1},
+        ])
+        mock_sb.set_table_data("training_sessions", [{"id": 1, "date": "2026-04-10", "srpe": 7}])
+        mock_sb.set_table_data("exercise_feedback", [])
+        mock_sb.set_table_data("exercise_progression", [
+            {"actual_rpe": 9.0, "planned_rpe": 7.0},
+            {"actual_rpe": 9.0, "planned_rpe": 7.0},
+        ])
+
+        result = calculate_next_weight(mock_sb, "Barbell Back Squat",
+                                       target_reps=8, target_sets=3,
+                                       current_week=2, start_kg=70)
+        assert result.applied != "rpe_reduction"
+
+    def test_no_overshoot_insufficient_data(self, mock_sb):
+        """Only 1 session of RPE data → not enough for overshoot detection."""
+        mock_sb.set_table_data("exercises", [{"id": 1}])
+        mock_sb.set_table_data("training_sets", [
+            {"weight_kg": 75.0, "reps": 8, "rpe": 9, "set_number": 1, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 75.0, "reps": 8, "rpe": 9, "set_number": 2, "session_id": 1, "exercise_id": 1},
+            {"weight_kg": 75.0, "reps": 8, "rpe": 9, "set_number": 3, "session_id": 1, "exercise_id": 1},
+        ])
+        mock_sb.set_table_data("training_sessions", [{"id": 1, "date": "2026-04-10", "srpe": 7}])
+        mock_sb.set_table_data("exercise_feedback", [])
+        mock_sb.set_table_data("exercise_progression", [
+            {"actual_rpe": 9.0, "planned_rpe": 7.0},
+        ])
+
+        result = calculate_next_weight(mock_sb, "Barbell Back Squat",
+                                       target_reps=8, target_sets=3,
+                                       current_week=2, start_kg=70,
+                                       target_rpe=7.0)
+        assert result.applied != "rpe_reduction"

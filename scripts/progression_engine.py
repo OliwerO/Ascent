@@ -116,7 +116,8 @@ class ProgressionResult:
     weight_kg: float
     reps: int
     sets: int
-    applied: str   # "weight_increase", "hold", "rep_increase", "deload_reset", "deload_week", "first_session"
+    applied: str   # "weight_increase", "accelerated_increase", "hold", "rep_increase",
+                    #  "deload_reset", "deload_week", "add_set", "rpe_reduction", "first_session"
     note: str
     amount: float = 0.0  # kg change from last session
 
@@ -218,6 +219,7 @@ def calculate_next_weight(
     target_sets: int,
     current_week: int,
     start_kg: float | None = None,
+    target_rpe: float | None = None,
 ) -> ProgressionResult:
     """Determine the next workout weight based on actual performance.
 
@@ -228,6 +230,7 @@ def calculate_next_weight(
         target_sets: Target number of sets
         current_week: Current program week (1-8)
         start_kg: Fallback starting weight if no history exists
+        target_rpe: Target RPE for this exercise (for overshoot detection)
 
     Returns:
         ProgressionResult with weight, reps, sets, and progression decision
@@ -300,6 +303,43 @@ def calculate_next_weight(
             note=f"rated 'heavy' {heavy_streak} sessions in a row — holding until it feels easier",
         )
 
+    # Acceleration gate: light feel OR low avg sRPE → 2× standard increment
+    # KB §1.1: when all sets hit target reps with ease, accelerate progression
+    all_hit_target_early = all(r >= target_reps for r in last_reps_list)
+    if all_hit_target_early and all_same_weight:
+        should_accelerate = False
+        accel_reason = ""
+
+        light_streak = _count_light_streak(sb, exercise_name)
+        srpe_for_accel = _get_session_rpe_modifier(sb, exercise_name)
+
+        if light_streak >= 3 and (srpe_for_accel is None or srpe_for_accel == 0):
+            should_accelerate = True
+            accel_reason = f"light feel {light_streak} sessions + low sRPE"
+
+        if not should_accelerate:
+            avg_srpe = _get_avg_srpe(sb, exercise_name, sessions=2)
+            if avg_srpe is not None and avg_srpe <= 6.5:
+                should_accelerate = True
+                accel_reason = f"avg sRPE {avg_srpe:.1f} over 2 sessions"
+
+        if should_accelerate and (not has_rpe or last_rpe_max < 9):
+            new_weight = _accelerated_increase(last_weight, equipment)
+            increase = new_weight - last_weight
+            # Skip the per-exercise 10% cap for acceleration: the triggers
+            # (3+ light sessions OR avg sRPE ≤ 6.5) are conservative enough
+            # that a larger jump is warranted. The weekly volume cap (Phase 3)
+            # provides the aggregate safety net.
+            if increase > 0:
+                return ProgressionResult(
+                    weight_kg=new_weight,
+                    reps=target_reps,
+                    sets=target_sets,
+                    applied="accelerated_increase",
+                    amount=increase,
+                    note=f"{accel_reason} — accelerated +{increase:.1f}kg",
+                )
+
     # Session-level sRPE check — hold if the whole session felt brutal,
     # even when per-set RPE and per-exercise feel are fine
     srpe_mod = _get_session_rpe_modifier(sb, exercise_name)
@@ -323,6 +363,21 @@ def calculate_next_weight(
                 sets=target_sets,
                 applied="hold",
                 note=f"session RPE 8 with recent weight increase — consolidating at {last_weight}kg",
+            )
+
+    # RPE overshoot: actual RPE consistently >1 above target for 2+ weeks → reduce weight
+    # KB §1.3: reduce loads 2.5-5% to address fatigue accumulation
+    if target_rpe is not None:
+        if _check_rpe_overshoot(sb, exercise_name, target_rpe, weeks=2):
+            drop_weight = round_to_plate(last_weight * 0.95, equipment)
+            reduction = drop_weight - last_weight
+            return ProgressionResult(
+                weight_kg=drop_weight,
+                reps=target_reps,
+                sets=target_sets,
+                applied="rpe_reduction",
+                amount=reduction,
+                note=f"RPE consistently >{target_rpe + 1:.0f} for 2+ weeks — reducing {abs(reduction):.1f}kg",
             )
 
     # Double progression check
@@ -456,6 +511,137 @@ def _count_heavy_streak(sb, exercise_name: str) -> int:
         return streak
     except Exception:
         return 0
+
+
+def _count_light_streak(sb, exercise_name: str) -> int:
+    """Count consecutive recent sessions where exercise was rated 'light'."""
+    try:
+        result = sb.table("exercise_feedback").select(
+            "session_date, feel"
+        ).eq(
+            "exercise_name", exercise_name
+        ).order(
+            "session_date", desc=True
+        ).limit(5).execute()
+
+        if not result.data:
+            return 0
+
+        streak = 0
+        for row in result.data:
+            if row["feel"] == "light":
+                streak += 1
+            else:
+                break
+        return streak
+    except Exception:
+        return 0
+
+
+def _accelerated_increase(weight_kg: float, equipment: str) -> float:
+    """Return weight with 2x normal increment (for acceleration triggers).
+
+    Used when light-feel or low-RPE signals indicate the athlete is ready
+    for faster progression than the standard minimum increment.
+    """
+    if equipment == "kettlebell":
+        # Skip one KB weight (e.g., 16 → 24 instead of 16 → 20)
+        first_up = next_plate_up(weight_kg, equipment)
+        return next_plate_up(first_up, equipment)
+
+    # For barbell/dumbbell: double the plate increment
+    increment = PLATE_INCREMENTS.get(equipment, 2.5)
+    return round_to_plate(weight_kg + 2 * increment, equipment)
+
+
+def _get_avg_srpe(sb, exercise_name: str, sessions: int = 2) -> float | None:
+    """Get average session RPE over last N sessions containing this exercise.
+
+    Returns None if fewer than `sessions` data points with sRPE exist.
+    """
+    try:
+        db_name = resolve_exercise_name(exercise_name)
+
+        ex = sb.table("exercises").select("id").eq("name", db_name).limit(1).execute()
+        if not ex.data:
+            return None
+        ex_id = ex.data[0]["id"]
+
+        # Get recent distinct session_ids for this exercise
+        recent_sets = sb.table("training_sets").select(
+            "session_id"
+        ).eq("exercise_id", ex_id).order("id", desc=True).limit(sessions * 3).execute()
+
+        if not recent_sets.data:
+            return None
+
+        # Deduplicate session IDs preserving order
+        seen = set()
+        session_ids = []
+        for s in recent_sets.data:
+            sid = s["session_id"]
+            if sid not in seen:
+                seen.add(sid)
+                session_ids.append(sid)
+            if len(session_ids) >= sessions:
+                break
+
+        if len(session_ids) < sessions:
+            return None
+
+        # Get sRPE for each session
+        sessions_data = sb.table("training_sessions").select(
+            "id, srpe"
+        ).in_("id", session_ids).execute()
+
+        srpe_values = [s["srpe"] for s in (sessions_data.data or []) if s.get("srpe") is not None]
+
+        if len(srpe_values) < sessions:
+            return None
+
+        return sum(srpe_values) / len(srpe_values)
+    except Exception:
+        return None
+
+
+def _check_rpe_overshoot(sb, exercise_name: str, target_rpe: float, weeks: int = 2) -> bool:
+    """Check if actual RPE consistently exceeds target by >1 for N+ weeks.
+
+    KB §1.3: "IF RPE consistently overshoots target by >1 RPE for ≥2 weeks
+    → flag as potential fatigue accumulation; reduce loads 2.5-5%."
+
+    Requires exercise_progression.actual_rpe to be populated (via backfill_actuals).
+    Returns True if overshoot detected.
+    """
+    try:
+        from datetime import date, timedelta
+        cutoff = (date.today() - timedelta(weeks=weeks)).isoformat()
+
+        result = sb.table("exercise_progression").select(
+            "actual_rpe, planned_rpe"
+        ).eq(
+            "exercise_name", exercise_name
+        ).gte(
+            "date", cutoff
+        ).order("date", desc=True).limit(weeks * 2).execute()
+
+        if not result.data:
+            return False
+
+        # Filter for rows with actual RPE data
+        rows_with_rpe = [r for r in result.data if r.get("actual_rpe") is not None]
+
+        if len(rows_with_rpe) < weeks:
+            return False
+
+        # Check if the most recent entries all overshoot by >1
+        for row in rows_with_rpe[:weeks]:
+            if row["actual_rpe"] <= target_rpe + 1.0:
+                return False
+
+        return True
+    except Exception:
+        return False
 
 
 def _get_session_rpe_modifier(sb, exercise_name: str) -> float | None:
