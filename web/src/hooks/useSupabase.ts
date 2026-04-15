@@ -421,9 +421,10 @@ export async function rescheduleWorkout(
 }
 
 /**
- * Mark a planned workout as completed from the app.
+ * Mark a planned workout as completed from the app, with optional sRPE.
+ * Upserts a training_sessions row so the sRPE feeds into coaching decisions.
  */
-export async function markWorkoutCompleted(workoutId: number): Promise<void> {
+export async function markWorkoutCompleted(workoutId: number, srpe?: number): Promise<void> {
   const { data: workout } = await supabase
     .from('planned_workouts')
     .select('session_name, scheduled_date, status')
@@ -437,16 +438,36 @@ export async function markWorkoutCompleted(workoutId: number): Promise<void> {
     .eq('id', workoutId)
   if (error) throw error
 
+  // Upsert training_sessions row with sRPE
+  if (srpe != null) {
+    const { data: existing } = await supabase
+      .from('training_sessions')
+      .select('id')
+      .eq('date', workout.scheduled_date)
+      .limit(1)
+    if (existing && existing.length > 0) {
+      await supabase
+        .from('training_sessions')
+        .update({ srpe, name: workout.session_name })
+        .eq('id', existing[0].id)
+    } else {
+      await supabase
+        .from('training_sessions')
+        .insert({ date: workout.scheduled_date, name: workout.session_name, srpe })
+    }
+  }
+
   await supabase.from('coaching_log').insert({
     date: new Date().toISOString().slice(0, 10),
     type: 'adjustment',
     channel: 'app',
-    message: `Marked ${workout.session_name ?? 'session'} (${workout.scheduled_date}) as completed`,
+    message: `Marked ${workout.session_name ?? 'session'} (${workout.scheduled_date}) as completed${srpe != null ? ` — sRPE ${srpe}` : ''}`,
     data_context: {
       action: 'mark_completed',
       workout_id: workoutId,
       scheduled_date: workout.scheduled_date,
       previous_status: workout.status,
+      srpe: srpe ?? null,
     },
   })
 }

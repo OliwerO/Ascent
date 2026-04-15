@@ -118,11 +118,11 @@ export default function WeekView() {
   const canReschedule = (cell: DayCell) => cell.planned != null && ['planned', 'today', 'adjusted', 'rescheduled', 'missed'].includes(cell.status)
   const canMarkDone = (cell: DayCell) => cell.planned != null && ['planned', 'today', 'adjusted', 'pushed', 'rescheduled', 'missed'].includes(cell.status)
 
-  const handleMarkDone = useCallback(async (cell: DayCell) => {
+  const handleMarkDone = useCallback(async (cell: DayCell, srpe: number) => {
     if (!cell.planned) return
     setMarkDoneLoading(cell.planned.id)
     try {
-      await markWorkoutCompleted(cell.planned.id)
+      await markWorkoutCompleted(cell.planned.id, srpe)
       plannedHook.refetch?.()
     } catch (err) { console.error('Mark done failed:', err) }
     finally { setMarkDoneLoading(null) }

@@ -35,18 +35,25 @@ const STATUS_BADGES: Record<DayStatus, { icon: string; label: string; color: str
   cycling: { icon: '🚲', label: 'Cycling', color: 'text-accent-blue' },
 }
 
+const RPE_LABELS: Record<number, string> = {
+  0: 'Rest', 1: 'Very light', 2: 'Light', 3: 'Moderate', 4: 'Somewhat hard',
+  5: 'Hard', 6: '', 7: 'Very hard', 8: '', 9: '', 10: 'Maximal',
+}
+
 interface Props {
   dayCells: DayCell[]
   hasPlannedWorkouts: boolean
   canReschedule: (cell: DayCell) => boolean
   onReschedule: (cell: DayCell) => void
   canMarkDone: (cell: DayCell) => boolean
-  onMarkDone: (cell: DayCell) => void
+  onMarkDone: (cell: DayCell, srpe: number) => void
   markDoneLoading: number | null
 }
 
 export function ScheduleGrid({ dayCells, hasPlannedWorkouts, canReschedule, onReschedule, canMarkDone, onMarkDone, markDoneLoading }: Props) {
   const [expandedDay, setExpandedDay] = useState<string | null>(null)
+  const [rpePickerFor, setRpePickerFor] = useState<string | null>(null)
+  const [selectedRPE, setSelectedRPE] = useState<number | null>(null)
 
   return (
     <Card title="Schedule">
@@ -76,6 +83,8 @@ export function ScheduleGrid({ dayCells, hasPlannedWorkouts, canReschedule, onRe
               ? a.garmin_activity_id === cell.planned.actual_garmin_activity_id
               : false
           ) ?? cell.activities[0]
+
+          const showRpePicker = rpePickerFor === cell.dateStr
 
           return (
             <div
@@ -161,16 +170,68 @@ export function ScheduleGrid({ dayCells, hasPlannedWorkouts, canReschedule, onRe
                       Adjusted: {cell.planned.adjustment_reason}
                     </div>
                   )}
-                  {(canReschedule(cell) || canMarkDone(cell)) && (
+
+                  {/* RPE picker (shown after tapping Mark as done) */}
+                  {showRpePicker && (
+                    <div className="mt-3 pt-2 border-t border-border-subtle">
+                      <div className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold mb-2">Session RPE</div>
+                      <div className="text-[12px] text-text-secondary mb-2">How hard was this session?</div>
+                      <div className="flex gap-1">
+                        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => (
+                          <button
+                            key={v}
+                            onClick={(e) => { e.stopPropagation(); setSelectedRPE(v) }}
+                            className={`flex-1 h-8 rounded-lg text-[10px] font-semibold transition-all ${
+                              selectedRPE === v
+                                ? v >= 8 ? 'bg-accent-red/20 text-accent-red border border-accent-red/40'
+                                  : v >= 5 ? 'bg-accent-yellow/20 text-accent-yellow border border-accent-yellow/40'
+                                  : 'bg-accent-green/20 text-accent-green border border-accent-green/40'
+                                : 'bg-bg-primary/50 text-text-muted border border-transparent'
+                            }`}
+                          >
+                            {v}
+                          </button>
+                        ))}
+                      </div>
+                      {selectedRPE != null && RPE_LABELS[selectedRPE] && (
+                        <div className="text-[10px] text-text-dim mt-1 text-center">{RPE_LABELS[selectedRPE]}</div>
+                      )}
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (selectedRPE != null) {
+                              onMarkDone(cell, selectedRPE)
+                              setRpePickerFor(null)
+                              setSelectedRPE(null)
+                            }
+                          }}
+                          disabled={selectedRPE == null || markDoneLoading === cell.planned?.id}
+                          className="flex-1 py-2 rounded-xl bg-accent-green/15 text-accent-green text-[12px] font-semibold
+                                     disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                        >
+                          {markDoneLoading === cell.planned?.id ? 'Saving...' : 'Done'}
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setRpePickerFor(null); setSelectedRPE(null) }}
+                          className="px-3 py-2 rounded-xl text-text-muted text-[12px] font-medium"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Action buttons (hidden when RPE picker is shown) */}
+                  {!showRpePicker && (canReschedule(cell) || canMarkDone(cell)) && (
                     <div className="mt-3 pt-2 border-t border-border-subtle flex items-center gap-4">
                       {canMarkDone(cell) && (
                         <button
-                          onClick={(e) => { e.stopPropagation(); onMarkDone(cell) }}
-                          disabled={markDoneLoading === cell.planned?.id}
-                          className="flex items-center gap-1.5 text-[12px] text-accent-green font-medium disabled:opacity-50"
+                          onClick={(e) => { e.stopPropagation(); setRpePickerFor(cell.dateStr); setSelectedRPE(null) }}
+                          className="flex items-center gap-1.5 text-[12px] text-accent-green font-medium"
                         >
                           <Check size={13} />
-                          {markDoneLoading === cell.planned?.id ? 'Saving...' : 'Mark as done'}
+                          Mark as done
                         </button>
                       )}
                       {canReschedule(cell) && (
