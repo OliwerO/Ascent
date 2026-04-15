@@ -3,7 +3,7 @@ import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
 import {
   useActivities, useSleep, useBodyComposition, useHRV, useDailyMetrics,
-  usePlannedWorkouts, useTrainingSessions, rescheduleWorkout,
+  usePlannedWorkouts, useTrainingSessions, rescheduleWorkout, markWorkoutCompleted,
 } from '../hooks/useSupabase'
 import type {
   Activity, SleepRow, BodyComposition, HRVRow, DailyMetrics,
@@ -32,6 +32,7 @@ export default function WeekView() {
   const [rescheduleSource, setRescheduleSource] = useState<DayCell | null>(null)
   const [rescheduleTarget, setRescheduleTarget] = useState<string | null>(null)
   const [rescheduleLoading, setRescheduleLoading] = useState(false)
+  const [markDoneLoading, setMarkDoneLoading] = useState<number | null>(null)
 
   const loading = activitiesHook.loading || sleepHook.loading || bodyCompHook.loading
     || hrvHook.loading || metricsHook.loading || plannedHook.loading
@@ -115,6 +116,17 @@ export default function WeekView() {
   }, [weekStart, weekPlanned, weekTemplate, weekActivities, today, plannedHook.data])
 
   const canReschedule = (cell: DayCell) => cell.planned != null && ['planned', 'today', 'adjusted', 'rescheduled', 'missed'].includes(cell.status)
+  const canMarkDone = (cell: DayCell) => cell.planned != null && ['planned', 'today', 'adjusted', 'pushed', 'rescheduled', 'missed'].includes(cell.status)
+
+  const handleMarkDone = useCallback(async (cell: DayCell) => {
+    if (!cell.planned) return
+    setMarkDoneLoading(cell.planned.id)
+    try {
+      await markWorkoutCompleted(cell.planned.id)
+      plannedHook.refetch?.()
+    } catch (err) { console.error('Mark done failed:', err) }
+    finally { setMarkDoneLoading(null) }
+  }, [plannedHook])
 
   const handleRescheduleConfirm = useCallback(async () => {
     if (!rescheduleSource?.planned || !rescheduleTarget) return
@@ -237,7 +249,7 @@ export default function WeekView() {
       )}
 
       {/* Schedule grid */}
-      <ScheduleGrid dayCells={dayCells} hasPlannedWorkouts={hasPlannedWorkouts} canReschedule={canReschedule} onReschedule={setRescheduleSource} />
+      <ScheduleGrid dayCells={dayCells} hasPlannedWorkouts={hasPlannedWorkouts} canReschedule={canReschedule} onReschedule={setRescheduleSource} canMarkDone={canMarkDone} onMarkDone={handleMarkDone} markDoneLoading={markDoneLoading} />
 
       {/* Load */}
       <Card title="Load this week">

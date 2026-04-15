@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Card } from '../../components/Card'
 import type { Activity, PlannedWorkout, PlannedExercise } from '../../lib/types'
 import { format } from 'date-fns'
-import { ChevronDown, ChevronUp, ArrowRightLeft } from 'lucide-react'
+import { ChevronDown, ChevronUp, ArrowRightLeft, Check } from 'lucide-react'
 import { formatDuration, formatActivityType } from '../../lib/format'
 import { MountainActivityCard } from '../../components/MountainActivityCard'
 import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES, CYCLING_ACTIVITY_TYPES } from '../../lib/constants'
@@ -40,9 +40,12 @@ interface Props {
   hasPlannedWorkouts: boolean
   canReschedule: (cell: DayCell) => boolean
   onReschedule: (cell: DayCell) => void
+  canMarkDone: (cell: DayCell) => boolean
+  onMarkDone: (cell: DayCell) => void
+  markDoneLoading: number | null
 }
 
-export function ScheduleGrid({ dayCells, hasPlannedWorkouts, canReschedule, onReschedule }: Props) {
+export function ScheduleGrid({ dayCells, hasPlannedWorkouts, canReschedule, onReschedule, canMarkDone, onMarkDone, markDoneLoading }: Props) {
   const [expandedDay, setExpandedDay] = useState<string | null>(null)
 
   return (
@@ -158,14 +161,28 @@ export function ScheduleGrid({ dayCells, hasPlannedWorkouts, canReschedule, onRe
                       Adjusted: {cell.planned.adjustment_reason}
                     </div>
                   )}
-                  {canReschedule(cell) && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onReschedule(cell) }}
-                      className="mt-3 pt-2 border-t border-border-subtle flex items-center gap-1.5 text-[12px] text-accent-blue font-medium w-full"
-                    >
-                      <ArrowRightLeft size={13} />
-                      Move to another day
-                    </button>
+                  {(canReschedule(cell) || canMarkDone(cell)) && (
+                    <div className="mt-3 pt-2 border-t border-border-subtle flex items-center gap-4">
+                      {canMarkDone(cell) && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onMarkDone(cell) }}
+                          disabled={markDoneLoading === cell.planned?.id}
+                          className="flex items-center gap-1.5 text-[12px] text-accent-green font-medium disabled:opacity-50"
+                        >
+                          <Check size={13} />
+                          {markDoneLoading === cell.planned?.id ? 'Saving...' : 'Mark as done'}
+                        </button>
+                      )}
+                      {canReschedule(cell) && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onReschedule(cell) }}
+                          className="flex items-center gap-1.5 text-[12px] text-accent-blue font-medium"
+                        >
+                          <ArrowRightLeft size={13} />
+                          Move to another day
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               )}

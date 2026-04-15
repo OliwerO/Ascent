@@ -419,3 +419,34 @@ export async function rescheduleWorkout(
     })
   }
 }
+
+/**
+ * Mark a planned workout as completed from the app.
+ */
+export async function markWorkoutCompleted(workoutId: number): Promise<void> {
+  const { data: workout } = await supabase
+    .from('planned_workouts')
+    .select('session_name, scheduled_date, status')
+    .eq('id', workoutId)
+    .single()
+  if (!workout) throw new Error('Workout not found')
+
+  const { error } = await supabase
+    .from('planned_workouts')
+    .update({ status: 'completed' })
+    .eq('id', workoutId)
+  if (error) throw error
+
+  await supabase.from('coaching_log').insert({
+    date: new Date().toISOString().slice(0, 10),
+    type: 'adjustment',
+    channel: 'app',
+    message: `Marked ${workout.session_name ?? 'session'} (${workout.scheduled_date}) as completed`,
+    data_context: {
+      action: 'mark_completed',
+      workout_id: workoutId,
+      scheduled_date: workout.scheduled_date,
+      previous_status: workout.status,
+    },
+  })
+}
