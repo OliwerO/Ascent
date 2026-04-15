@@ -3,7 +3,7 @@ import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
 import {
   useActivities, useSleep, useBodyComposition, useHRV, useDailyMetrics,
-  usePlannedWorkouts, useTrainingSessions, rescheduleWorkout, markWorkoutCompleted,
+  usePlannedWorkouts, useTrainingSessions, rescheduleWorkout, markWorkoutCompleted, logSrpe,
 } from '../hooks/useSupabase'
 import type {
   Activity, SleepRow, BodyComposition, HRVRow, DailyMetrics,
@@ -33,6 +33,7 @@ export default function WeekView() {
   const [rescheduleTarget, setRescheduleTarget] = useState<string | null>(null)
   const [rescheduleLoading, setRescheduleLoading] = useState(false)
   const [markDoneLoading, setMarkDoneLoading] = useState<number | null>(null)
+  const [logSrpeLoading, setLogSrpeLoading] = useState<string | null>(null)
 
   const loading = activitiesHook.loading || sleepHook.loading || bodyCompHook.loading
     || hrvHook.loading || metricsHook.loading || plannedHook.loading
@@ -128,6 +129,15 @@ export default function WeekView() {
     finally { setMarkDoneLoading(null) }
   }, [plannedHook])
 
+  const handleLogSrpe = useCallback(async (cell: DayCell, srpe: number) => {
+    setLogSrpeLoading(cell.dateStr)
+    try {
+      await logSrpe(cell.dateStr, cell.planned?.session_name ?? null, srpe)
+      sessionsHook.refetch?.()
+    } catch (err) { console.error('Log sRPE failed:', err) }
+    finally { setLogSrpeLoading(null) }
+  }, [sessionsHook])
+
   const handleRescheduleConfirm = useCallback(async () => {
     if (!rescheduleSource?.planned || !rescheduleTarget) return
     setRescheduleLoading(true)
@@ -149,6 +159,12 @@ export default function WeekView() {
     const lastAdjustment = weekPlanned.filter((p) => p.adjustment_reason).sort((a, b) => b.scheduled_date.localeCompare(a.scheduled_date))[0]
     return { completed: done, missed, scheduled, lastAdjustment, planned }
   }, [dayCells, weekPlanned, today])
+
+  // ─── Sessions for sRPE lookup ───
+  const weekSessions = useMemo(() => {
+    if (!sessionsHook.data) return []
+    return sessionsHook.data.filter((s: TrainingSession) => isWithinInterval(parseISO(s.date), { start: weekStart, end: weekEnd }))
+  }, [sessionsHook.data, weekStart, weekEnd])
 
   // ─── Load ───
   const isTrainingActivity = (a: Activity) => a.activity_type === 'strength_training' || SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type) || CYCLING_ACTIVITY_TYPES.has(a.activity_type)
@@ -249,7 +265,7 @@ export default function WeekView() {
       )}
 
       {/* Schedule grid */}
-      <ScheduleGrid dayCells={dayCells} hasPlannedWorkouts={hasPlannedWorkouts} canReschedule={canReschedule} onReschedule={setRescheduleSource} canMarkDone={canMarkDone} onMarkDone={handleMarkDone} markDoneLoading={markDoneLoading} />
+      <ScheduleGrid dayCells={dayCells} hasPlannedWorkouts={hasPlannedWorkouts} weekSessions={weekSessions} canReschedule={canReschedule} onReschedule={setRescheduleSource} canMarkDone={canMarkDone} onMarkDone={handleMarkDone} markDoneLoading={markDoneLoading} onLogSrpe={handleLogSrpe} logSrpeLoading={logSrpeLoading} />
 
       {/* Load */}
       <Card title="Load this week">

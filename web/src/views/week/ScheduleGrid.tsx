@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Card } from '../../components/Card'
-import type { Activity, PlannedWorkout, PlannedExercise } from '../../lib/types'
+import type { Activity, PlannedWorkout, PlannedExercise, TrainingSession } from '../../lib/types'
 import { format } from 'date-fns'
 import { ChevronDown, ChevronUp, ArrowRightLeft, Check } from 'lucide-react'
 import { formatDuration, formatActivityType } from '../../lib/format'
@@ -43,14 +43,17 @@ const RPE_LABELS: Record<number, string> = {
 interface Props {
   dayCells: DayCell[]
   hasPlannedWorkouts: boolean
+  weekSessions: TrainingSession[]
   canReschedule: (cell: DayCell) => boolean
   onReschedule: (cell: DayCell) => void
   canMarkDone: (cell: DayCell) => boolean
   onMarkDone: (cell: DayCell, srpe: number) => void
   markDoneLoading: number | null
+  onLogSrpe: (cell: DayCell, srpe: number) => void
+  logSrpeLoading: string | null
 }
 
-export function ScheduleGrid({ dayCells, hasPlannedWorkouts, canReschedule, onReschedule, canMarkDone, onMarkDone, markDoneLoading }: Props) {
+export function ScheduleGrid({ dayCells, hasPlannedWorkouts, weekSessions, canReschedule, onReschedule, canMarkDone, onMarkDone, markDoneLoading, onLogSrpe, logSrpeLoading }: Props) {
   const [expandedDay, setExpandedDay] = useState<string | null>(null)
   const [rpePickerFor, setRpePickerFor] = useState<string | null>(null)
   const [selectedRPE, setSelectedRPE] = useState<number | null>(null)
@@ -85,6 +88,8 @@ export function ScheduleGrid({ dayCells, hasPlannedWorkouts, canReschedule, onRe
           ) ?? cell.activities[0]
 
           const showRpePicker = rpePickerFor === cell.dateStr
+          const sessionForDate = weekSessions.find((s) => s.date === cell.dateStr)
+          const needsSrpe = cell.status === 'completed' && cell.planned != null && (sessionForDate?.srpe == null)
 
           return (
             <div
@@ -171,8 +176,8 @@ export function ScheduleGrid({ dayCells, hasPlannedWorkouts, canReschedule, onRe
                     </div>
                   )}
 
-                  {/* RPE picker (shown after tapping Mark as done) */}
-                  {showRpePicker && (
+                  {/* RPE picker — shown for: 1) mark-as-done flow, 2) completed workouts missing sRPE */}
+                  {(showRpePicker || needsSrpe) && (
                     <div className="mt-3 pt-2 border-t border-border-subtle">
                       <div className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold mb-2">Session RPE</div>
                       <div className="text-[12px] text-text-secondary mb-2">How hard was this session?</div>
@@ -200,30 +205,35 @@ export function ScheduleGrid({ dayCells, hasPlannedWorkouts, canReschedule, onRe
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
-                            if (selectedRPE != null) {
+                            if (selectedRPE == null) return
+                            if (needsSrpe && !showRpePicker) {
+                              onLogSrpe(cell, selectedRPE)
+                            } else {
                               onMarkDone(cell, selectedRPE)
                               setRpePickerFor(null)
-                              setSelectedRPE(null)
                             }
+                            setSelectedRPE(null)
                           }}
-                          disabled={selectedRPE == null || markDoneLoading === cell.planned?.id}
+                          disabled={selectedRPE == null || markDoneLoading === cell.planned?.id || logSrpeLoading === cell.dateStr}
                           className="flex-1 py-2 rounded-xl bg-accent-green/15 text-accent-green text-[12px] font-semibold
                                      disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                         >
-                          {markDoneLoading === cell.planned?.id ? 'Saving...' : 'Done'}
+                          {(markDoneLoading === cell.planned?.id || logSrpeLoading === cell.dateStr) ? 'Saving...' : needsSrpe && !showRpePicker ? 'Log RPE' : 'Done'}
                         </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setRpePickerFor(null); setSelectedRPE(null) }}
-                          className="px-3 py-2 rounded-xl text-text-muted text-[12px] font-medium"
-                        >
-                          Cancel
-                        </button>
+                        {showRpePicker && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setRpePickerFor(null); setSelectedRPE(null) }}
+                            className="px-3 py-2 rounded-xl text-text-muted text-[12px] font-medium"
+                          >
+                            Cancel
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}
 
-                  {/* Action buttons (hidden when RPE picker is shown) */}
-                  {!showRpePicker && (canReschedule(cell) || canMarkDone(cell)) && (
+                  {/* Action buttons (hidden when RPE picker is shown for mark-as-done) */}
+                  {!showRpePicker && !needsSrpe && (canReschedule(cell) || canMarkDone(cell)) && (
                     <div className="mt-3 pt-2 border-t border-border-subtle flex items-center gap-4">
                       {canMarkDone(cell) && (
                         <button

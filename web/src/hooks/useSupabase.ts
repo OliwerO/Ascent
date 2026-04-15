@@ -421,6 +421,27 @@ export async function rescheduleWorkout(
 }
 
 /**
+ * Log sRPE for an already-completed workout (e.g. auto-completed via Garmin sync).
+ */
+export async function logSrpe(scheduledDate: string, sessionName: string | null, srpe: number): Promise<void> {
+  const { data: existing } = await supabase
+    .from('training_sessions')
+    .select('id')
+    .eq('date', scheduledDate)
+    .limit(1)
+  if (existing && existing.length > 0) {
+    await supabase
+      .from('training_sessions')
+      .update({ srpe })
+      .eq('id', existing[0].id)
+  } else {
+    await supabase
+      .from('training_sessions')
+      .insert({ date: scheduledDate, name: sessionName, srpe })
+  }
+}
+
+/**
  * Mark a planned workout as completed from the app, with optional sRPE.
  * Upserts a training_sessions row so the sRPE feeds into coaching decisions.
  */
