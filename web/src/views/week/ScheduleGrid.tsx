@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { Card } from '../../components/Card'
-import type { Activity, PlannedWorkout, PlannedExercise, TrainingSession } from '../../lib/types'
+import type { Activity, PlannedWorkout, PlannedExercise, TrainingSession, TrainingSet, ActivityDetails } from '../../lib/types'
 import { format } from 'date-fns'
 import { ChevronDown, ChevronUp, ArrowRightLeft, Check } from 'lucide-react'
 import { formatDuration, formatActivityType } from '../../lib/format'
 import { MountainActivityCard } from '../../components/MountainActivityCard'
+import { WorkoutComparison } from '../../components/WorkoutComparison'
 import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES, CYCLING_ACTIVITY_TYPES } from '../../lib/constants'
 
 type DayStatus = 'completed' | 'adjusted' | 'rescheduled' | 'skipped' | 'planned' | 'missed' | 'today' | 'rest' | 'mountain' | 'cycling'
@@ -44,6 +45,9 @@ interface Props {
   dayCells: DayCell[]
   hasPlannedWorkouts: boolean
   weekSessions: TrainingSession[]
+  trainingSets: TrainingSet[]
+  activityDetails: ActivityDetails[]
+  allMountainActivities: Activity[]
   canReschedule: (cell: DayCell) => boolean
   onReschedule: (cell: DayCell) => void
   canMarkDone: (cell: DayCell) => boolean
@@ -53,7 +57,7 @@ interface Props {
   logSrpeLoading: string | null
 }
 
-export function ScheduleGrid({ dayCells, hasPlannedWorkouts, weekSessions, canReschedule, onReschedule, canMarkDone, onMarkDone, markDoneLoading, onLogSrpe, logSrpeLoading }: Props) {
+export function ScheduleGrid({ dayCells, hasPlannedWorkouts, weekSessions, trainingSets, activityDetails, allMountainActivities, canReschedule, onReschedule, canMarkDone, onMarkDone, markDoneLoading, onLogSrpe, logSrpeLoading }: Props) {
   const [expandedDay, setExpandedDay] = useState<string | null>(null)
   const [rpePickerFor, setRpePickerFor] = useState<string | null>(null)
   const [selectedRPE, setSelectedRPE] = useState<number | null>(null)
@@ -149,30 +153,41 @@ export function ScheduleGrid({ dayCells, hasPlannedWorkouts, weekSessions, canRe
                 </div>
               </button>
 
-              {isExpanded && cell.planned?.workout_definition && !hasMountainActivity && (
+              {isExpanded && cell.planned?.workout_definition && !hasMountainActivity && (() => {
+                const exercises = cell.planned!.workout_definition.exercises ?? []
+                const isCompleted = cell.status === 'completed'
+                const sessionForSets = weekSessions.find((s) => s.date === cell.dateStr)
+                const setsForDay = sessionForSets ? trainingSets.filter((s) => s.session_id === sessionForSets.id) : []
+                const showComparison = isCompleted && setsForDay.length > 0
+
+                return (
                 <div className="mt-3 pt-3 border-t border-border-subtle space-y-1.5">
-                  {cell.planned.workout_definition.warmup?.length > 0 && (
+                  {cell.planned!.workout_definition.warmup?.length > 0 && (
                     <div className="text-[11px] text-text-muted mb-2">
-                      Warmup: {cell.planned.workout_definition.warmup.map((w) => w.name).join(', ')}
+                      Warmup: {cell.planned!.workout_definition.warmup.map((w) => w.name).join(', ')}
                     </div>
                   )}
-                  {(cell.planned.workout_definition.exercises ?? []).map((ex: PlannedExercise, i: number) => (
-                    <div key={i} className="flex items-baseline justify-between text-[12px]">
-                      <span className="text-text-primary truncate pr-2">{ex.name}</span>
-                      <span className="text-text-muted shrink-0 font-data">
-                        {ex.sets}×{ex.reps}
-                        {ex.weight_kg != null && ` @ ${ex.weight_kg}kg`}
-                      </span>
-                    </div>
-                  ))}
-                  {cell.planned.workout_definition.rpe_range && (
+                  {showComparison ? (
+                    <WorkoutComparison exercises={exercises} actualSets={setsForDay} />
+                  ) : (
+                    (exercises).map((ex: PlannedExercise, i: number) => (
+                      <div key={i} className="flex items-baseline justify-between text-[12px]">
+                        <span className="text-text-primary truncate pr-2">{ex.name}</span>
+                        <span className="text-text-muted shrink-0 font-data">
+                          {ex.sets}×{ex.reps}
+                          {ex.weight_kg != null && ` @ ${ex.weight_kg}kg`}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                  {cell.planned!.workout_definition.rpe_range && (
                     <div className="text-[11px] text-text-dim mt-2">
-                      Target RPE: {cell.planned.workout_definition.rpe_range[0]}–{cell.planned.workout_definition.rpe_range[1]}
+                      Target RPE: {cell.planned!.workout_definition.rpe_range[0]}–{cell.planned!.workout_definition.rpe_range[1]}
                     </div>
                   )}
-                  {cell.planned.adjustment_reason && (
+                  {cell.planned!.adjustment_reason && (
                     <div className="text-[11px] text-accent-blue mt-2 italic">
-                      Adjusted: {cell.planned.adjustment_reason}
+                      Adjusted: {cell.planned!.adjustment_reason}
                     </div>
                   )}
 
@@ -256,14 +271,21 @@ export function ScheduleGrid({ dayCells, hasPlannedWorkouts, weekSessions, canRe
                     </div>
                   )}
                 </div>
-              )}
+                )
+              })()}
 
               {isExpanded && hasMountainActivity && (
                 <div className="mt-3 pt-3 border-t border-border-subtle">
                   {cell.activities
                     .filter((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type) || MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type))
                     .map((a, i) => (
-                      <MountainActivityCard key={a.garmin_activity_id ?? i} activity={a} showDate={false} />
+                      <MountainActivityCard
+                        key={a.garmin_activity_id ?? i}
+                        activity={a}
+                        showDate={false}
+                        details={a.garmin_activity_id ? activityDetails.find((d) => d.garmin_activity_id === a.garmin_activity_id) : null}
+                        allMountainActivities={allMountainActivities}
+                      />
                     ))}
                 </div>
               )}

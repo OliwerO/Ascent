@@ -5,7 +5,7 @@ import type {
   DailySummary, HRVRow, SleepRow, Activity, DailyMetrics,
   BodyComposition, TrainingSession, TrainingSet, SubjectiveWellness,
   Goal, CoachingLogEntry, PlannedWorkout, PerformanceScore,
-  ExerciseProgression,
+  ExerciseProgression, ActivityDetails,
 } from '../lib/types'
 
 const MAX_RETRIES = 2
@@ -315,6 +315,21 @@ export function usePerformanceScores(days = 90) {
     }
     return data ?? []
   }, [days, rt])
+}
+
+export function useActivityDetails(garminActivityIds: string[]) {
+  return useFetch<ActivityDetails[]>('activity_details', async () => {
+    if (!garminActivityIds.length) return []
+    const { data, error } = await supabase
+      .from('activity_details')
+      .select('garmin_activity_id,hr_zones,splits,weather')
+      .in('garmin_activity_id', garminActivityIds)
+    if (error) {
+      if (error.message?.includes('relation') || error.message?.includes('does not exist')) return []
+      throw error
+    }
+    return data ?? []
+  }, [garminActivityIds.join(',')])
 }
 
 export function useExerciseProgression(days = 60) {

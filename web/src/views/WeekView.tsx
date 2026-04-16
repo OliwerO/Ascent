@@ -3,7 +3,8 @@ import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
 import {
   useActivities, useSleep, useBodyComposition, useHRV, useDailyMetrics,
-  usePlannedWorkouts, useTrainingSessions, rescheduleWorkout, markWorkoutCompleted, logSrpe,
+  usePlannedWorkouts, useTrainingSessions, useTrainingSets, useActivityDetails,
+  rescheduleWorkout, markWorkoutCompleted, logSrpe,
 } from '../hooks/useSupabase'
 import type {
   Activity, SleepRow, BodyComposition, HRVRow, DailyMetrics,
@@ -21,6 +22,7 @@ import type { DayCell } from './week'
 
 export default function WeekView() {
   const activitiesHook = useActivities(14)
+  const allActivitiesHook = useActivities(180) // season-wide for mountain comparison
   const sleepHook = useSleep(14)
   const bodyCompHook = useBodyComposition(30)
   const hrvHook = useHRV(14)
@@ -166,6 +168,24 @@ export default function WeekView() {
     return sessionsHook.data.filter((s: TrainingSession) => isWithinInterval(parseISO(s.date), { start: weekStart, end: weekEnd }))
   }, [sessionsHook.data, weekStart, weekEnd])
 
+  // ─── Training sets for actual vs planned comparison ───
+  const weekSessionIds = useMemo(() => weekSessions.map((s) => s.id), [weekSessions])
+  const setsHook = useTrainingSets(weekSessionIds)
+
+  // ─── Activity details for mountain deep dive ───
+  const mountainActivityIds = useMemo(() => {
+    return weekActivities
+      .filter((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type) && a.garmin_activity_id != null)
+      .map((a) => a.garmin_activity_id!)
+  }, [weekActivities])
+  const activityDetailsHook = useActivityDetails(mountainActivityIds)
+
+  // All mountain activities for historical comparison
+  const allMountainActivities = useMemo(() => {
+    if (!allActivitiesHook.data) return []
+    return allActivitiesHook.data.filter((a: Activity) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type))
+  }, [allActivitiesHook.data])
+
   // ─── Load ───
   const isTrainingActivity = (a: Activity) => a.activity_type === 'strength_training' || SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type) || CYCLING_ACTIVITY_TYPES.has(a.activity_type)
   const strengthVolume = useMemo(() => (sessionsHook.data ?? []).filter((s: TrainingSession) => isWithinInterval(parseISO(s.date), { start: weekStart, end: weekEnd })).reduce((sum: number, s: TrainingSession) => sum + (s.total_volume_kg ?? 0), 0), [sessionsHook.data, weekStart, weekEnd])
@@ -265,7 +285,7 @@ export default function WeekView() {
       )}
 
       {/* Schedule grid */}
-      <ScheduleGrid dayCells={dayCells} hasPlannedWorkouts={hasPlannedWorkouts} weekSessions={weekSessions} canReschedule={canReschedule} onReschedule={setRescheduleSource} canMarkDone={canMarkDone} onMarkDone={handleMarkDone} markDoneLoading={markDoneLoading} onLogSrpe={handleLogSrpe} logSrpeLoading={logSrpeLoading} />
+      <ScheduleGrid dayCells={dayCells} hasPlannedWorkouts={hasPlannedWorkouts} weekSessions={weekSessions} trainingSets={setsHook.data ?? []} activityDetails={activityDetailsHook.data ?? []} allMountainActivities={allMountainActivities} canReschedule={canReschedule} onReschedule={setRescheduleSource} canMarkDone={canMarkDone} onMarkDone={handleMarkDone} markDoneLoading={markDoneLoading} onLogSrpe={handleLogSrpe} logSrpeLoading={logSrpeLoading} />
 
       {/* Load */}
       <Card title="Load this week">

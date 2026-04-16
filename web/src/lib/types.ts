@@ -264,6 +264,37 @@ export interface ExerciseProgression {
   progression_amount: number | null
 }
 
+// --- Activity details (splits, weather enrichment)
+export interface ActivityDetails {
+  garmin_activity_id: string
+  hr_zones: HRZone[] | null
+  splits: ActivitySplit[] | null
+  weather: ActivityWeather | null
+}
+
+export interface ActivitySplit {
+  distance?: number
+  duration?: number
+  elevationGain?: number
+  elevationLoss?: number
+  averageHR?: number
+  maxHR?: number
+  averageSpeed?: number
+  startElevation?: number
+  endElevation?: number
+  [key: string]: unknown
+}
+
+export interface ActivityWeather {
+  temp?: number
+  apparentTemp?: number
+  relativeHumidity?: number
+  windSpeed?: number
+  windDirection?: number
+  weatherType?: string
+  [key: string]: unknown
+}
+
 export interface ExerciseFeedback {
   id?: number
   session_date: string
