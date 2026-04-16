@@ -4,7 +4,7 @@ import { Card } from '../../components/Card'
 import { supabase } from '../../lib/supabase'
 import { buildHomeWorkout, restoreGymWorkout, countSubstitutions } from '../../lib/homeWorkout'
 import type { PlannedWorkout, WarmupExercise, PlannedExercise } from '../../lib/types'
-import { ChevronDown, Info, Home, Dumbbell, Send } from 'lucide-react'
+import { ChevronDown, Info, Home, Dumbbell, Send, RefreshCw } from 'lucide-react'
 
 interface CoachingPoint {
   icon: string
@@ -54,6 +54,8 @@ export function CoachingCard({
   const [showHomePreview, setShowHomePreview] = useState(false)
   const [pushing, setPushing] = useState(false)
   const [pushMsg, setPushMsg] = useState<string | null>(null)
+  const [evaluating, setEvaluating] = useState(false)
+  const [evalMsg, setEvalMsg] = useState<string | null>(null)
 
   const verdictColor = cardState === 'green' ? 'text-accent-green' : cardState === 'amber' ? 'text-accent-yellow' : 'text-accent-red'
 
@@ -92,6 +94,27 @@ export function CoachingCard({
       setTimeout(() => setPushMsg(null), 5000)
     } finally {
       setPushing(false)
+    }
+  }
+
+  const handleEvaluate = async () => {
+    if (evaluating) return
+    setEvaluating(true)
+    setEvalMsg(null)
+    try {
+      const resp = await fetch('/api/coach-trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-ascent-token': import.meta.env.VITE_SUPABASE_KEY ?? '' },
+        body: JSON.stringify({ date: todayStr }),
+      })
+      const data = await resp.json()
+      setEvalMsg(data.ok ? 'Evaluation queued — refresh in ~30s' : (data.error || 'Failed'))
+      setTimeout(() => setEvalMsg(null), 8000)
+    } catch {
+      setEvalMsg('Evaluation request failed')
+      setTimeout(() => setEvalMsg(null), 5000)
+    } finally {
+      setEvaluating(false)
     }
   }
 
@@ -216,6 +239,20 @@ export function CoachingCard({
       {pushMsg && (
         <div className={`mt-2 text-[12px] rounded-lg px-2.5 py-1.5 ${pushMsg.includes('queued') ? 'bg-accent-green/10 text-accent-green' : 'bg-accent-red/10 text-accent-red'}`}>
           {pushMsg}
+        </div>
+      )}
+
+      {/* Re-evaluate button — always available */}
+      <div className="mt-2 flex items-center gap-3">
+        <button onClick={handleEvaluate} disabled={evaluating}
+          className="flex items-center gap-1.5 text-[12px] text-text-muted hover:text-text-secondary transition-colors disabled:opacity-50">
+          <RefreshCw size={12} className={evaluating ? 'animate-spin' : ''} />
+          {evaluating ? 'Evaluating...' : 'Re-evaluate'}
+        </button>
+      </div>
+      {evalMsg && (
+        <div className={`mt-1.5 text-[12px] rounded-lg px-2.5 py-1.5 ${evalMsg.includes('queued') ? 'bg-accent-green/10 text-accent-green' : 'bg-accent-red/10 text-accent-red'}`}>
+          {evalMsg}
         </div>
       )}
 
