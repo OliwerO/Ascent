@@ -212,14 +212,12 @@ export default function TrendsView() {
     }))
 
   // --- Mountain Trends (deep analysis) ---
-  const mountainActivities = useMemo(() =>
-    (activities.data ?? [])
-      .filter((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type) && a.elevation_gain != null && a.elevation_gain > 0)
-      .slice()
-      .reverse()
-  , [activities.data])
+  const mountainActivities = (activities.data ?? [])
+    .filter((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type) && a.elevation_gain != null && a.elevation_gain > 0)
+    .slice()
+    .reverse()
 
-  const mountainTrends = useMemo(() => {
+  const mountainTrends = (() => {
     if (mountainActivities.length < 2) return null
 
     const withVam = mountainActivities.filter((a) => a.duration_seconds != null && a.duration_seconds > 0)
@@ -287,7 +285,7 @@ export default function TrendsView() {
       effTrendPct,
       chartData,
     }
-  }, [mountainActivities])
+  })()
 
   // --- Cycling performance ---
   const cyclingData = (activities.data ?? [])
