@@ -212,10 +212,12 @@ export default function TrendsView() {
     }))
 
   // --- Mountain Trends (deep analysis) ---
-  const mountainActivities = (activities.data ?? [])
-    .filter((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type) && a.elevation_gain != null && a.elevation_gain > 0)
-    .slice()
-    .reverse()
+  const mountainActivities = useMemo(() =>
+    (activities.data ?? [])
+      .filter((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type) && a.elevation_gain != null && a.elevation_gain > 0)
+      .slice()
+      .reverse()
+  , [activities.data])
 
   const mountainTrends = useMemo(() => {
     if (mountainActivities.length < 2) return null
