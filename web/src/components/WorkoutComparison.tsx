@@ -11,17 +11,31 @@ function matchSets(sets: TrainingSet[], exerciseName: string): TrainingSet[] {
   )
 }
 
-function formatActual(sets: TrainingSet[]): { text: string; hit: boolean } {
-  if (sets.length === 0) return { text: '\u2014', hit: false }
+interface ActualResult {
+  text: string
+  hit: boolean
+  weightDelta: number | null  // actual - planned (kg)
+  repsShort: boolean | null   // true if any set missed target reps
+}
+
+function formatActual(sets: TrainingSet[], planned?: PlannedExercise): ActualResult {
+  if (sets.length === 0) return { text: '\u2014', hit: false, weightDelta: null, repsShort: null }
   const weights = [...new Set(sets.map((s) => s.weight_kg).filter(Boolean))]
   const reps = sets.map((s) => s.reps).filter(Boolean)
+
+  // Compute deltas vs planned
+  const actualWeight = weights.length === 1 ? weights[0] : (weights.length > 0 ? Math.max(...(weights as number[])) : null)
+  const weightDelta = actualWeight != null && planned?.weight_kg != null ? actualWeight - planned.weight_kg : null
+  const plannedRepsNum = planned?.reps != null ? Number(planned.reps) : null
+  const repsShort = plannedRepsNum != null && reps.length > 0 ? reps.some((r) => r != null && r < plannedRepsNum) : null
+
   if (weights.length === 1) {
-    return { text: `${sets.length}\u00D7${reps.join('/')} @ ${weights[0]}kg`, hit: true }
+    return { text: `${sets.length}\u00D7${reps.join('/')} @ ${weights[0]}kg`, hit: true, weightDelta, repsShort }
   }
   if (weights.length > 1) {
-    return { text: sets.map((s) => `${s.reps}@${s.weight_kg}`).join(', '), hit: true }
+    return { text: sets.map((s) => `${s.reps}@${s.weight_kg}`).join(', '), hit: true, weightDelta, repsShort }
   }
-  return { text: `${sets.length}\u00D7${reps.join('/')}`, hit: true }
+  return { text: `${sets.length}\u00D7${reps.join('/')}`, hit: true, weightDelta, repsShort }
 }
 
 interface Props {
@@ -41,7 +55,7 @@ export function WorkoutComparison({ exercises, actualSets }: Props) {
     const targetStr = ex.weight_kg
       ? `${ex.sets}\u00D7${ex.reps} @ ${ex.weight_kg}kg`
       : `${ex.sets}\u00D7${ex.reps}`
-    const actual = formatActual(matched)
+    const actual = formatActual(matched, ex)
 
     totalExercises++
     if (actual.hit) hitsCount++
@@ -78,10 +92,25 @@ export function WorkoutComparison({ exercises, actualSets }: Props) {
                 </td>
                 <td className="py-1.5 text-text-secondary font-mono whitespace-nowrap">{row.targetStr}</td>
                 {hasAnyActual && (
-                  <td className={`py-1.5 font-mono font-semibold whitespace-nowrap ${
-                    row.actual.hit ? 'text-accent-green' : 'text-text-dim'
-                  }`}>
-                    {row.actual.text}
+                  <td className="py-1.5 font-mono whitespace-nowrap">
+                    <span className={`font-semibold ${row.actual.hit ? 'text-accent-green' : 'text-text-dim'}`}>
+                      {row.actual.text}
+                    </span>
+                    {row.actual.hit && (row.actual.weightDelta !== null || row.actual.repsShort !== null) && (
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        {row.actual.weightDelta !== null && row.actual.weightDelta !== 0 && (
+                          <span className={`text-[10px] font-semibold ${row.actual.weightDelta > 0 ? 'text-accent-green' : 'text-accent-red'}`}>
+                            {row.actual.weightDelta > 0 ? '+' : ''}{row.actual.weightDelta}kg
+                          </span>
+                        )}
+                        {row.actual.repsShort === true && (
+                          <span className="text-[10px] text-accent-yellow">reps short</span>
+                        )}
+                        {row.actual.weightDelta === 0 && row.actual.repsShort === false && (
+                          <span className="text-[10px] text-accent-green">on target</span>
+                        )}
+                      </div>
+                    )}
                   </td>
                 )}
               </tr>

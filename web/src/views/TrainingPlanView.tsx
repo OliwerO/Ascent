@@ -720,11 +720,18 @@ function ExerciseStatusGrid({ progression }: { progression: ExerciseProgression[
       <div className="grid grid-cols-2 gap-2">
         {latestByExercise.map((p) => {
           const badge = PROGRESSION_BADGES[p.progression_applied] ?? { label: p.progression_applied, color: 'bg-bg-primary/60 text-text-dim' }
+          const hasActual = p.actual_sets != null || p.actual_weight_kg != null
+          const weightDelta = (p.actual_weight_kg != null && p.planned_weight_kg != null)
+            ? p.actual_weight_kg - p.planned_weight_kg : null
+          const repsMet = p.actual_reps_per_set != null && p.planned_reps != null
+            ? p.actual_reps_per_set.every((r) => r >= (p.planned_reps ?? 0)) : null
+
           return (
             <div key={p.exercise_name} className="bg-bg-primary/50 rounded-xl px-3 py-2.5">
               <div className="text-[12px] font-semibold text-text-primary truncate">
                 {p.exercise_name.replace('Barbell ', '').replace('Dumbbell ', '')}
               </div>
+              {/* Planned line */}
               <div className="flex items-center gap-2 mt-1.5">
                 {p.planned_weight_kg != null && p.planned_weight_kg > 0 && (
                   <span className="text-[13px] font-bold text-text-primary">
@@ -740,12 +747,55 @@ function ExerciseStatusGrid({ progression }: { progression: ExerciseProgression[
                   {p.progression_amount > 0 ? '+' : ''}{p.progression_amount}kg
                 </div>
               )}
+              {/* Actual performance line */}
+              {hasActual && (
+                <div className="mt-1.5 pt-1.5 border-t border-border-subtle/50">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-text-dim">Actual:</span>
+                    <span className="text-[11px] font-mono text-text-secondary">
+                      {p.actual_sets != null && p.actual_reps_per_set != null
+                        ? `${p.actual_sets}×${formatActualReps(p.actual_reps_per_set)}`
+                        : p.actual_sets != null ? `${p.actual_sets} sets` : ''}
+                      {p.actual_weight_kg != null && p.actual_weight_kg > 0
+                        ? ` @ ${p.actual_weight_kg}kg` : ''}
+                    </span>
+                  </div>
+                  {/* Delta indicators */}
+                  <div className="flex items-center gap-2 mt-0.5">
+                    {weightDelta != null && weightDelta !== 0 && (
+                      <span className={`text-[10px] font-semibold ${weightDelta > 0 ? 'text-accent-green' : 'text-accent-red'}`}>
+                        {weightDelta > 0 ? '+' : ''}{weightDelta}kg
+                      </span>
+                    )}
+                    {repsMet != null && (
+                      <span className={`text-[10px] ${repsMet ? 'text-accent-green' : 'text-accent-yellow'}`}>
+                        {repsMet ? 'reps hit' : 'reps short'}
+                      </span>
+                    )}
+                    {p.actual_rpe != null && (
+                      <span className={`text-[10px] ${
+                        p.actual_rpe <= (p.planned_rpe ?? 7) ? 'text-text-muted' :
+                        p.actual_rpe <= (p.planned_rpe ?? 7) + 1 ? 'text-accent-yellow' : 'text-accent-red'
+                      }`}>
+                        RPE {p.actual_rpe.toFixed(1)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )
         })}
       </div>
     </Card>
   )
+}
+
+/** Format actual reps array compactly: [8,8,8] → "8" ; [8,8,7] → "8/8/7" */
+function formatActualReps(reps: number[]): string {
+  if (reps.length === 0) return '—'
+  const allSame = reps.every((r) => r === reps[0])
+  return allSame ? String(reps[0]) : reps.join('/')
 }
 
 // ═══════════════════════════════════════════════════════════════════
