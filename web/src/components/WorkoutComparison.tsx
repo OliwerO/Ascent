@@ -4,38 +4,44 @@ function normalizeExName(name: string): string {
   return name.toLowerCase().replace(/[_\s-]+/g, ' ').replace(/&/g, 'and').trim()
 }
 
+/** Try exact match first, then fuzzy (contains) for Garmin name variations */
 function matchSets(sets: TrainingSet[], exerciseName: string): TrainingSet[] {
   const norm = normalizeExName(exerciseName)
-  return sets.filter(
+  // Exact match
+  const exact = sets.filter(
     (s) => s.exercises?.name != null && normalizeExName(s.exercises.name) === norm && s.set_type === 'working'
   )
+  if (exact.length > 0) return exact
+  // Fuzzy: check if either name contains the other (handles "Turkish Get-Up" vs "Turkish Getup" etc.)
+  const words = norm.split(' ').filter((w) => w.length > 2)
+  return sets.filter((s) => {
+    if (s.exercises?.name == null || s.set_type !== 'working') return false
+    const sNorm = normalizeExName(s.exercises.name)
+    return words.every((w) => sNorm.includes(w)) || sNorm.split(' ').filter((w) => w.length > 2).every((w) => norm.includes(w))
+  })
 }
 
-interface ActualResult {
-  text: string
-  hit: boolean
-  weightDelta: number | null  // actual - planned (kg)
-  repsShort: boolean | null   // true if any set missed target reps
+interface ActualDelta {
+  tracked: boolean
+  weightDelta: number | null
+  repsShort: boolean
+  actualWeight: number | null
+  setsMismatch: boolean  // different number of sets
+  setsActual: number
 }
 
-function formatActual(sets: TrainingSet[], planned?: PlannedExercise): ActualResult {
-  if (sets.length === 0) return { text: '\u2014', hit: false, weightDelta: null, repsShort: null }
-  const weights = [...new Set(sets.map((s) => s.weight_kg).filter(Boolean))]
-  const reps = sets.map((s) => s.reps).filter(Boolean)
+function computeDelta(sets: TrainingSet[], planned: PlannedExercise): ActualDelta {
+  if (sets.length === 0) return { tracked: false, weightDelta: null, repsShort: false, actualWeight: null, setsMismatch: false, setsActual: 0 }
 
-  // Compute deltas vs planned
-  const actualWeight = weights.length === 1 ? weights[0] : (weights.length > 0 ? Math.max(...(weights as number[])) : null)
-  const weightDelta = actualWeight != null && planned?.weight_kg != null ? actualWeight - planned.weight_kg : null
-  const plannedRepsNum = planned?.reps != null ? Number(planned.reps) : null
-  const repsShort = plannedRepsNum != null && reps.length > 0 ? reps.some((r) => r != null && r < plannedRepsNum) : null
+  const weights = [...new Set(sets.map((s) => s.weight_kg).filter((w): w is number => w != null))]
+  const reps = sets.map((s) => s.reps).filter((r): r is number => r != null)
+  const actualWeight = weights.length > 0 ? Math.max(...weights) : null
+  const weightDelta = actualWeight != null && planned.weight_kg != null ? actualWeight - planned.weight_kg : null
+  const plannedReps = Number(planned.reps) || 0
+  const repsShort = plannedReps > 0 && reps.length > 0 && reps.some((r) => r < plannedReps)
+  const setsMismatch = sets.length !== planned.sets
 
-  if (weights.length === 1) {
-    return { text: `${sets.length}\u00D7${reps.join('/')} @ ${weights[0]}kg`, hit: true, weightDelta, repsShort }
-  }
-  if (weights.length > 1) {
-    return { text: sets.map((s) => `${s.reps}@${s.weight_kg}`).join(', '), hit: true, weightDelta, repsShort }
-  }
-  return { text: `${sets.length}\u00D7${reps.join('/')}`, hit: true, weightDelta, repsShort }
+  return { tracked: true, weightDelta, repsShort, actualWeight, setsMismatch, setsActual: sets.length }
 }
 
 interface Props {
@@ -47,21 +53,14 @@ export function WorkoutComparison({ exercises, actualSets }: Props) {
   if (exercises.length === 0) return null
 
   const hasAnyActual = actualSets.length > 0
-  let hitsCount = 0
-  let totalExercises = 0
 
   const rows = exercises.map((ex) => {
     const matched = matchSets(actualSets, ex.name)
-    const targetStr = ex.weight_kg
-      ? `${ex.sets}\u00D7${ex.reps} @ ${ex.weight_kg}kg`
-      : `${ex.sets}\u00D7${ex.reps}`
-    const actual = formatActual(matched, ex)
-
-    totalExercises++
-    if (actual.hit) hitsCount++
-
-    return { name: ex.name, note: ex.note, targetStr, actual }
+    const delta = computeDelta(matched, ex)
+    return { name: ex.name, planned: ex, delta }
   })
+
+  const tracked = rows.filter((r) => r.delta.tracked).length
 
   return (
     <div className="space-y-2">
@@ -69,54 +68,50 @@ export function WorkoutComparison({ exercises, actualSets }: Props) {
         <div className="flex items-center justify-between">
           <span className="text-[11px] text-text-muted uppercase tracking-wider font-semibold">Plan vs Actual</span>
           <span className={`text-[11px] font-semibold ${
-            hitsCount === totalExercises ? 'text-accent-green' : hitsCount >= totalExercises * 0.7 ? 'text-accent-yellow' : 'text-accent-red'
+            tracked === rows.length ? 'text-accent-green' : tracked >= rows.length * 0.7 ? 'text-accent-yellow' : 'text-accent-red'
           }`}>
-            {hitsCount}/{totalExercises} tracked
+            {tracked}/{rows.length} tracked
           </span>
         </div>
       )}
-      <div className="overflow-x-auto -mx-3 px-3">
-        <table className="w-full text-[12px]">
-          <thead>
-            <tr className="text-text-muted border-b border-border-subtle">
-              <th className="text-left py-1 font-semibold text-[10px] uppercase tracking-wider">Exercise</th>
-              <th className="text-left py-1 font-semibold text-[10px] uppercase tracking-wider">Target</th>
-              {hasAnyActual && <th className="text-left py-1 font-semibold text-[10px] uppercase tracking-wider">Actual</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.name} className="border-b border-border-subtle/50 last:border-0">
-                <td className="py-1.5 text-text-primary pr-2">
-                  <span className="truncate block max-w-[140px]">{row.name}</span>
-                </td>
-                <td className="py-1.5 text-text-secondary font-mono whitespace-nowrap">{row.targetStr}</td>
-                {hasAnyActual && (
-                  <td className="py-1.5 font-mono whitespace-nowrap">
-                    <span className={`font-semibold ${row.actual.hit ? 'text-accent-green' : 'text-text-dim'}`}>
-                      {row.actual.text}
-                    </span>
-                    {row.actual.hit && (row.actual.weightDelta !== null || row.actual.repsShort !== null) && (
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        {row.actual.weightDelta !== null && row.actual.weightDelta !== 0 && (
-                          <span className={`text-[10px] font-semibold ${row.actual.weightDelta > 0 ? 'text-accent-green' : 'text-accent-red'}`}>
-                            {row.actual.weightDelta > 0 ? '+' : ''}{row.actual.weightDelta}kg
-                          </span>
-                        )}
-                        {row.actual.repsShort === true && (
-                          <span className="text-[10px] text-accent-yellow">reps short</span>
-                        )}
-                        {row.actual.weightDelta === 0 && row.actual.repsShort === false && (
-                          <span className="text-[10px] text-accent-green">on target</span>
-                        )}
-                      </div>
+      <div className="space-y-1">
+        {rows.map((row) => {
+          const { delta } = row
+          const targetStr = row.planned.weight_kg
+            ? `${row.planned.sets}\u00D7${row.planned.reps} @ ${row.planned.weight_kg}kg`
+            : `${row.planned.sets}\u00D7${row.planned.reps}`
+
+          return (
+            <div key={row.name} className="flex items-center justify-between py-1 border-b border-border-subtle/50 last:border-0">
+              <div className="text-[12px] text-text-primary truncate pr-2 flex-1 min-w-0">{row.name}</div>
+              <div className="text-[12px] text-text-secondary font-mono whitespace-nowrap pr-3">{targetStr}</div>
+              <div className="shrink-0 min-w-[70px] text-right">
+                {!delta.tracked ? (
+                  <span className="text-[11px] text-text-dim">&mdash;</span>
+                ) : delta.weightDelta === 0 && !delta.repsShort && !delta.setsMismatch ? (
+                  <span className="text-[11px] text-accent-green font-semibold">&#10003;</span>
+                ) : (
+                  <div className="flex items-center justify-end gap-1.5">
+                    {delta.weightDelta != null && delta.weightDelta !== 0 && (
+                      <span className={`text-[11px] font-semibold ${delta.weightDelta > 0 ? 'text-accent-green' : 'text-accent-red'}`}>
+                        {delta.weightDelta > 0 ? '+' : ''}{delta.weightDelta}kg
+                      </span>
                     )}
-                  </td>
+                    {delta.setsMismatch && (
+                      <span className="text-[10px] text-accent-yellow">{delta.setsActual}/{row.planned.sets}s</span>
+                    )}
+                    {delta.repsShort && (
+                      <span className="text-[10px] text-accent-yellow">reps&#x2193;</span>
+                    )}
+                    {delta.weightDelta === 0 && !delta.setsMismatch && delta.repsShort && (
+                      <span className="text-[10px] text-accent-yellow">reps&#x2193;</span>
+                    )}
+                  </div>
                 )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
