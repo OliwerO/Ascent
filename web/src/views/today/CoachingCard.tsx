@@ -28,7 +28,13 @@ interface Props {
   readiness: number | null
   todayPlanned: PlannedWorkout | null
   todayAdjustment: { message?: string } | null
-  todayRationale: { rule?: string | null; inputs?: Record<string, unknown> | null; kb_refs?: string[] | null } | null
+  todayRationale: {
+    rule?: string | null
+    inputs?: Record<string, unknown> | null
+    kb_refs?: string[] | null
+    message?: string | null
+    decision_type?: string | null
+  } | null
   todayStr: string
   todayIsHome: boolean
 }
@@ -234,23 +240,31 @@ export function CoachingCard({
           <button onClick={() => setShowRationale(!showRationale)}
             className="flex items-center gap-1 text-[11px] text-text-muted hover:text-text-secondary transition-colors">
             <Info size={11} />
-            {showRationale ? 'Hide rationale' : 'Why?'}
+            {showRationale ? 'Hide rationale' : 'Why this decision?'}
           </button>
           {showRationale && (
-            <div className="mt-1.5 text-[11px] text-text-muted bg-bg-inset rounded-lg px-2.5 py-2 space-y-1">
-              {todayRationale.rule && (
-                <div><span className="text-text-dim">Rule:</span> {todayRationale.rule.replace(/[._]/g, ' ')}</div>
+            <div className="mt-1.5 text-[12px] bg-bg-inset rounded-lg px-3 py-2.5 space-y-2">
+              {/* Primary: the coaching message (human-written by the daily agent) */}
+              {todayRationale.message && (
+                <div className="text-text-secondary leading-relaxed">{todayRationale.message}</div>
               )}
+
+              {/* Signal pills — compact recovery snapshot */}
               {todayRationale.inputs && (
-                <div><span className="text-text-dim">Inputs:</span> {
-                  Object.entries(todayRationale.inputs)
-                    .filter(([, v]) => v != null)
-                    .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`)
-                    .join(' · ')
-                }</div>
+                <div className="flex flex-wrap gap-1.5">
+                  <RationalePills inputs={todayRationale.inputs} />
+                </div>
               )}
-              {todayRationale.kb_refs && todayRationale.kb_refs.length > 0 && (
-                <div><span className="text-text-dim">Ref:</span> {todayRationale.kb_refs.join(', ')}</div>
+
+              {/* Rule + KB refs — compact footer */}
+              {(todayRationale.rule || (todayRationale.kb_refs && todayRationale.kb_refs.length > 0)) && (
+                <div className="text-[10px] text-text-dim pt-1 border-t border-border-subtle">
+                  {todayRationale.rule && <span>{formatRuleId(todayRationale.rule)}</span>}
+                  {todayRationale.rule && todayRationale.kb_refs && todayRationale.kb_refs.length > 0 && <span> · </span>}
+                  {todayRationale.kb_refs && todayRationale.kb_refs.length > 0 && (
+                    <span>{todayRationale.kb_refs.map(formatKbRef).join(', ')}</span>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -318,6 +332,116 @@ export function CoachingCard({
         </div>
       )}
     </Card>
+  )
+}
+
+/** Map rule IDs like "all_green.train_as_planned" or "R-TAP" to readable labels */
+function formatRuleId(rule: string): string {
+  const map: Record<string, string> = {
+    'R-TAP': 'Train as planned',
+    'all_green.train_as_planned': 'All signals green',
+    'recovery.hrv_low.rest': 'HRV low → rest',
+    'recovery.hrv_low.lighten': 'HRV low → lighten',
+    'recovery.sleep_short.lighten': 'Short sleep → lighten',
+    'recovery.unbalanced_sleep_short.rest': 'Unbalanced + short sleep → rest',
+    'recovery.bb_low.rest': 'Body battery low → rest',
+    'recovery.tr_low.rest': 'Training readiness low → rest',
+    'recovery.multi_signal.rest': 'Multiple signals degraded → rest',
+    'mountain.monday_cap': 'Post-mountain Monday RPE cap',
+    'mountain.2x_consolidation': 'Mountain week → consolidated template',
+  }
+  return map[rule] ?? rule.replace(/[._-]/g, ' ')
+}
+
+/** Make KB refs like "domain-1.1" more readable */
+function formatKbRef(ref: string): string {
+  if (ref.startsWith('domain-')) return `KB ${ref.replace('domain-', '§')}`
+  return ref.replace(/-/g, ' ')
+}
+
+/** Signal indicator colors */
+function signalColor(key: string, value: unknown): string {
+  if (key === 'body_battery_highest') {
+    const n = Number(value)
+    if (n >= 70) return 'bg-accent-green/15 text-accent-green'
+    if (n >= 30) return 'bg-accent-yellow/15 text-accent-yellow'
+    return 'bg-accent-red/15 text-accent-red'
+  }
+  if (key === 'training_readiness_score') {
+    const n = Number(value)
+    if (n >= 60) return 'bg-accent-green/15 text-accent-green'
+    if (n >= 40) return 'bg-accent-yellow/15 text-accent-yellow'
+    return 'bg-accent-red/15 text-accent-red'
+  }
+  if (key === 'sleep_hours') {
+    const n = Number(value)
+    if (n >= 7) return 'bg-accent-green/15 text-accent-green'
+    if (n >= 6) return 'bg-accent-yellow/15 text-accent-yellow'
+    return 'bg-accent-red/15 text-accent-red'
+  }
+  if (key === 'hrv_status') {
+    const s = String(value).toUpperCase()
+    if (s === 'BALANCED') return 'bg-accent-green/15 text-accent-green'
+    if (s === 'UNBALANCED') return 'bg-accent-yellow/15 text-accent-yellow'
+    if (s === 'LOW') return 'bg-accent-red/15 text-accent-red'
+    return 'bg-bg-card text-text-dim'
+  }
+  if (key === 'mountain_days_3d') {
+    return Number(value) > 0 ? 'bg-accent-blue/15 text-accent-blue' : 'bg-bg-card text-text-dim'
+  }
+  if (key === 'hard_override') {
+    return value ? 'bg-accent-red/15 text-accent-red' : 'bg-bg-card text-text-dim'
+  }
+  return 'bg-bg-card text-text-muted'
+}
+
+/** Format a signal key-value pair as a compact label */
+function signalLabel(key: string, value: unknown): string | null {
+  if (value == null) return null
+  switch (key) {
+    case 'body_battery_highest': return `BB ${value}`
+    case 'training_readiness_score': return `TR ${value}`
+    case 'sleep_hours': return `${value}h sleep`
+    case 'hrv_status': {
+      const s = String(value).toUpperCase()
+      return s === 'NONE' ? null : `HRV ${s.toLowerCase()}`
+    }
+    case 'hrv_avg': return `HRV ${value}`
+    case 'hrv_weekly_avg': return null // shown with hrv_avg
+    case 'mountain_days_3d': return Number(value) > 0 ? `${value}d mountain` : null
+    case 'last_srpe': return `sRPE ${value}`
+    case 'hard_override': return value ? `Override: ${value}` : null
+    case 'recovery_action': return value ? `→ ${value}` : null
+    case 'garmin_auth_ok': return null // internal, not useful to athlete
+    case 'sleep_score': return value ? `Sleep score ${value}` : null
+    default: return null
+  }
+}
+
+/** Render compact signal pills from coaching inputs */
+function RationalePills({ inputs }: { inputs: Record<string, unknown> }) {
+  // Ordered for readability: HRV → sleep → battery → readiness → mountain → sRPE → override
+  const order = [
+    'hrv_status', 'hrv_avg', 'sleep_hours', 'sleep_score',
+    'body_battery_highest', 'training_readiness_score',
+    'mountain_days_3d', 'last_srpe', 'hard_override', 'recovery_action',
+  ]
+  const pills: { label: string; color: string }[] = []
+  for (const key of order) {
+    if (!(key in inputs)) continue
+    const label = signalLabel(key, inputs[key])
+    if (!label) continue
+    pills.push({ label, color: signalColor(key, inputs[key]) })
+  }
+  if (pills.length === 0) return null
+  return (
+    <>
+      {pills.map((p, i) => (
+        <span key={i} className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${p.color}`}>
+          {p.label}
+        </span>
+      ))}
+    </>
   )
 }
 
