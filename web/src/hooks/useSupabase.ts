@@ -21,7 +21,10 @@ function useFetch<T>(
   useEffect(() => {
     let cancelled = false
     // Only show loading spinner on initial fetch, not on realtime refetches
-    if (!hasFetched.current) setLoading(true)
+    if (!hasFetched.current) {
+      // Use queueMicrotask to avoid synchronous setState in effect body
+      queueMicrotask(() => { if (!cancelled) setLoading(true) })
+    }
     fetcher()
       .then((d) => { if (!cancelled) { setData(d); hasFetched.current = true } })
       .catch((e) => { if (!cancelled) setError(e.message) })

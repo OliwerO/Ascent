@@ -34,6 +34,7 @@ export default function TodayView() {
   const [showHomePreview, setShowHomePreview] = useState(false)
   const [pushing, setPushing] = useState(false)
   const [pushMsg, setPushMsg] = useState<string | null>(null)
+  const [showRationale, setShowRationale] = useState(false)
 
   const recentActivities = activities.data ?? []
 
@@ -115,7 +116,6 @@ export default function TodayView() {
   const todayRationale = (coachingLog.data ?? []).find(
     (entry) => entry.date === todayStr && entry.rule != null
   )
-  const [showRationale, setShowRationale] = useState(false)
 
   const todaySession = todayPlanned
     ? todayPlanned.workout_definition?.session_label
@@ -247,8 +247,8 @@ export default function TodayView() {
 
   const todayIsHome = isHomeWorkout(todayPlanned?.workout_definition)
 
-  // Home workout preview diff
-  const homePreviewDiff = useMemo(() => {
+  // Home workout preview diff (plain computation — after early returns, no hooks allowed)
+  const homePreviewDiff = (() => {
     if (!todayPlanned?.workout_definition || todayIsHome) return []
     const homeWd = buildHomeWorkout(todayPlanned.workout_definition)
     const gymExercises = todayPlanned.workout_definition.exercises ?? []
@@ -262,7 +262,7 @@ export default function TodayView() {
         note: home.note,
       }
     }).filter(Boolean) as { gym: string; home: string; note?: string }[]
-  }, [todayPlanned?.workout_definition, todayIsHome])
+  })()
 
   const handlePushToGarmin = async () => {
     if (pushing) return

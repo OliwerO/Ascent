@@ -32,15 +32,17 @@ export default function GoalsView() {
   const now = new Date()
   const weekStart = startOfWeek(now, { weekStartsOn: 1 })
   const weekEnd = endOfWeek(now, { weekStartsOn: 1 })
+  const weekStartMs = weekStart.getTime()
+  const weekEndMs = weekEnd.getTime()
 
   const weeklyElevation = useMemo(
     () => Math.round((activitiesHook.data ?? [])
       .filter((a: Activity) => {
         const d = new Date(a.date)
-        return isWithinInterval(d, { start: weekStart, end: weekEnd }) && a.activity_type !== 'hang_gliding'
+        return isWithinInterval(d, { start: new Date(weekStartMs), end: new Date(weekEndMs) }) && a.activity_type !== 'hang_gliding'
       })
       .reduce((sum: number, a: Activity) => sum + (a.elevation_gain || 0), 0)),
-    [activitiesHook.data, weekStart.getTime(), weekEnd.getTime()]
+    [activitiesHook.data, weekStartMs, weekEndMs]
   )
 
   if (loading) return <LoadingState />
