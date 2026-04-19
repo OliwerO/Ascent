@@ -4,7 +4,7 @@ import { glassTooltipStyle, axisTickStyle, axisLineStyle } from '../lib/chartCon
 import {
   useHRV, useSleep, useDailyMetrics, useActivities, useSubjectiveWellness,
 } from '../hooks/useSupabase'
-import { format } from 'date-fns'
+import { format, subDays } from 'date-fns'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, ResponsiveContainer, Tooltip,
@@ -219,8 +219,9 @@ export default function RecoveryView() {
   const poorSleepNights7dRV = (sleep.data ?? []).slice(0, 7).filter(
     (s) => s.total_sleep_seconds != null && s.total_sleep_seconds / 3600 < 6
   ).length
+  const threeDaysAgoStr = format(subDays(new Date(), 3), 'yyyy-MM-dd')
   const mountainDays3dRV = (activities.data ?? []).filter(
-    (a) => MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type) && a.date >= format(new Date(Date.now() - 3 * 86400000), 'yyyy-MM-dd')
+    (a) => MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type) && a.date >= threeDaysAgoStr
   ).length
   const decision = computeCoachingState({
     hrvStatus: todayHRV?.status,
