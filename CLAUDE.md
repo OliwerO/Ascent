@@ -71,15 +71,24 @@ These are locked. Do not change without an explicit Opus session.
 - **Read first.** Understand existing patterns before proposing changes. Check how similar things are already done in the codebase.
 - **Check for existing solutions.** Before adding a new utility, search if one exists. Before creating a new table, check if an existing one covers the need.
 - **Understand the blast radius.** A change to `workout_push.py` affects workout generation, Garmin push, home workouts, and the React app. Trace the dependency chain.
+- **Surface ambiguity.** If a request has multiple valid interpretations, present them — don't pick silently. If assumptions are needed, state them explicitly before implementing.
 
 ### While Writing Code
-- **No dead code.** Don't leave commented-out blocks, unused imports, or TODO stubs. If something is removed, remove it completely.
+- **Clean up your own mess.** Remove imports, variables, and functions that your changes made unused. Don't delete pre-existing dead code unless asked — mention it instead.
 - **No premature abstraction.** Three similar lines are better than a helper used once. Extract only when there's a clear pattern.
 - **Explicit over clever.** Name variables and functions so the next reader (or future Claude session) understands without comments.
 - **TypeScript strict mode.** No `any` types. Fix type errors, don't suppress them.
 - **SQL migrations are append-only.** Never modify an applied migration. Create `sql/NNN_description.sql` for changes.
 - **Secrets in `.env` only.** Never in code, never in commits. Service key stays server-side.
 - **Rate-limit external APIs.** 1s between Garmin calls. Respect 429 responses with exponential backoff.
+
+### Define Done Before Starting
+Before implementing, state success criteria that can be verified:
+- Bug fix → "reproduce with X, verify fix with Y"
+- New feature → "these specific behaviors work, verified by Z"
+- Coaching logic change → "dry-run produces correct output for [date/scenario]"
+
+For multi-step work, plan as: Step → verify: [check]. Don't move to the next step until the current one is verified.
 
 ### After Writing Code
 - **Always run `cd web && npm run build`** before committing frontend changes. TypeScript errors block Vercel.
@@ -96,6 +105,7 @@ If the user (Oliwer) requests something that conflicts with good practices, **sa
 - **Duplicating logic** — If the same logic exists in Python and TypeScript (e.g., home workout map), flag that they must stay in sync and note it in both files.
 - **Modifying locked decisions** — The 8 critical rules above exist for evidence-based reasons. If the user wants to change one, recommend an Opus session to evaluate the tradeoff properly rather than making an ad-hoc change.
 - **Adding complexity for hypothetical futures** — Build for what's needed now. The user is not a developer; unnecessary abstraction layers create maintenance burden that falls on Claude Code sessions.
+- **Propose simpler alternatives unprompted.** If the requested approach is more complex than necessary, present the simpler path first — even if not asked.
 
 ## Data Integrity
 
