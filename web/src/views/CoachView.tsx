@@ -139,15 +139,12 @@ export default function CoachView() {
     latestTurn?.role === 'user' &&
     (latestTurn.status === 'pending' || latestTurn.status === 'in_progress')
 
-  const handleNew = async () => {
+  const handleNew = () => {
+    // Don't create a DB row eagerly — wait until first message is sent.
+    // Clears selection so the next send starts a fresh conversation.
+    setSelectedId(null)
     setSendError(null)
-    try {
-      const conv = await createCoachConversation()
-      setSelectedId(conv.id)
-      setInput('')
-    } catch (e) {
-      setSendError(e instanceof Error ? e.message : 'Failed to start conversation')
-    }
+    setInput('')
   }
 
   const handleSend = async () => {
@@ -181,7 +178,9 @@ export default function CoachView() {
   if (loading) return <LoadingState />
   if (error) return <div className="text-accent-red text-sm">{error}</div>
 
-  const convs = conversations ?? []
+  // Hide conversations that never got a first message — they have no title
+  // and no turns. These accumulate if the user tapped + without sending.
+  const convs = (conversations ?? []).filter((c) => c.title !== null)
 
   return (
     <div className="space-y-3">
