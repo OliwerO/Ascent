@@ -4,7 +4,7 @@
 Checks for:
   - sql/030_wellness_late_override.sql  (trigger fn_wellness_late_override)
   - sql/031_status_state_machine.sql    (trigger fn_planned_workouts_status_guard)
-  - sql/032_coach_conversations.sql     (tables coach_conversations, coach_turns)
+  - sql/036_coach_conversations.sql     (tables coach_conversations, coach_turns)
 
 Usage:
     venv/bin/python scripts/verify_migrations.py
@@ -52,7 +52,7 @@ CHECKS = [
         """,
     },
     {
-        "migration": "032_coach_conversations.sql",
+        "migration": "036_coach_conversations.sql",
         "description": "Coach conversations + turns tables",
         "check_sql": """
             SELECT 1 FROM information_schema.tables
