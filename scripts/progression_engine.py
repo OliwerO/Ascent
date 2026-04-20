@@ -1005,6 +1005,78 @@ def backfill_actuals(sb, session_date: str) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Missing weight data detection (Gap 10)
+# ---------------------------------------------------------------------------
+
+
+def check_missing_weight_data(sb, lookback_days: int = 14) -> list[dict]:
+    """Detect recent training sessions where exercises have missing weight data.
+
+    When Garmin doesn't record weight_kg for working sets (e.g., TGU firmware
+    limitation), the engine silently skips them. This function flags those
+    sessions so the coaching context can surface "incomplete session data."
+
+    Returns:
+        List of dicts with: date, exercise_name, total_sets, sets_missing_weight
+    """
+    from datetime import date, timedelta
+
+    cutoff = (date.today() - timedelta(days=lookback_days)).isoformat()
+    try:
+        # Get recent training sessions
+        sessions = sb.table("training_sessions").select(
+            "id, date"
+        ).gte("date", cutoff).execute()
+
+        if not sessions.data:
+            return []
+
+        session_ids = [s["id"] for s in sessions.data]
+        session_dates = {s["id"]: s["date"] for s in sessions.data}
+
+        # Get all working sets for these sessions
+        sets_result = sb.table("training_sets").select(
+            "session_id, weight_kg, exercises(name)"
+        ).in_("session_id", session_ids).eq(
+            "set_type", "working"
+        ).execute()
+
+        if not sets_result.data:
+            return []
+
+        # Group by session + exercise, check for missing weights
+        from collections import defaultdict
+        exercise_sets: dict[tuple[int, str], dict] = defaultdict(
+            lambda: {"total": 0, "missing": 0}
+        )
+
+        for s in sets_result.data:
+            ex_name = s.get("exercises", {}).get("name") if s.get("exercises") else None
+            if not ex_name:
+                continue
+            key = (s["session_id"], ex_name)
+            exercise_sets[key]["total"] += 1
+            if s.get("weight_kg") is None:
+                exercise_sets[key]["missing"] += 1
+
+        alerts = []
+        for (session_id, exercise_name), counts in exercise_sets.items():
+            if counts["missing"] > 0:
+                alerts.append({
+                    "date": session_dates.get(session_id, "unknown"),
+                    "exercise_name": exercise_name,
+                    "total_sets": counts["total"],
+                    "sets_missing_weight": counts["missing"],
+                })
+
+        return sorted(alerts, key=lambda a: a["date"], reverse=True)
+
+    except Exception as e:
+        log.warning("Failed to check missing weight data: %s", e)
+        return []
+
+
+# ---------------------------------------------------------------------------
 # CLI — test progression for an exercise
 # ---------------------------------------------------------------------------
 

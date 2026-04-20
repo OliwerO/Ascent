@@ -930,18 +930,51 @@ function LiftProgressionDetail({
     ? PROGRESSION_BADGES[latestDecision.progression_applied] ?? { label: latestDecision.progression_applied, color: 'bg-bg-primary/60 text-text-dim' }
     : null
 
-  const chartData = useMemo(() => {
+  // Projected progression: linear extrapolation from last actual weight
+  // using the standard increment for the equipment type
+  const projectedWeightsByWeek = (() => {
+    const map = new Map<number, number>()
+    // Find the latest week with actual data
+    let lastActualWeek = 0
+    let lastActualWeight = 0
+    for (let w = 8; w >= 1; w--) {
+      const actual = actualWeightsByWeek.get(w)
+      if (actual != null) {
+        if (w > lastActualWeek) { lastActualWeek = w; lastActualWeight = actual }
+        break
+      }
+    }
+    if (lastActualWeek === 0) return map
+    // Estimate increment per week from exercise name
+    const name = selectedLift.toLowerCase()
+    const increment = name.includes('kettlebell') || name.includes('kb ')
+      ? 2 : name.includes('dumbbell') || name.includes('lateral') || name.includes('db ')
+      ? 1.25 : 2.5
+    // Project forward from last actual
+    for (let w = lastActualWeek + 1; w <= 8; w++) {
+      if (isDeloadWeek(w)) {
+        map.set(w, lastActualWeight) // deload = same weight
+      } else {
+        const weeksAhead = w - lastActualWeek
+        map.set(w, lastActualWeight + increment * weeksAhead)
+      }
+    }
+    return map
+  })()
+
+  const chartData = (() => {
     return Array.from({ length: 8 }, (_, i) => {
       const weekNum = i + 1
       return {
         week: `Wk${weekNum}`,
         planned: plannedWeightsByWeek.get(weekNum) ?? null,
         actual: actualWeightsByWeek.get(weekNum) ?? null,
+        projected: projectedWeightsByWeek.get(weekNum) ?? null,
         deload: isDeloadWeek(weekNum),
         isCurrent: weekNum === currentWeek,
       }
     })
-  }, [plannedWeightsByWeek, actualWeightsByWeek, currentWeek])
+  })()
 
   return (
     <Card>
@@ -1018,6 +1051,7 @@ function LiftProgressionDetail({
               <Tooltip contentStyle={glassTooltipStyle} />
               <Line type="monotone" dataKey="planned" stroke="#646478" strokeDasharray="4 4" strokeWidth={1.5} dot={false} name="Planned" />
               <Line type="monotone" dataKey="actual" stroke="#a78bfa" strokeWidth={2.5} dot={{ r: 5, fill: '#a78bfa', stroke: '#16161e', strokeWidth: 2 }} connectNulls={false} name="Actual" />
+              <Line type="monotone" dataKey="projected" stroke="#34d399" strokeDasharray="2 4" strokeWidth={1.5} dot={false} connectNulls={false} name="Projected" />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -1031,6 +1065,10 @@ function LiftProgressionDetail({
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-gym inline-block" />
             Actual
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-5 h-px inline-block" style={{ borderTop: '1.5px dashed #34d399' }} />
+            Projected
           </span>
         </div>
 
