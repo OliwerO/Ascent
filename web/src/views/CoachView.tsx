@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { MessageCircle, Send, Plus, AlertCircle, Loader2 } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { MessageCircle, Send, Plus, AlertCircle, Loader2, Check, X } from 'lucide-react'
 import { LoadingState } from '../components/LoadingState'
 import {
   useCoachConversations,
@@ -16,10 +16,19 @@ function formatTime(iso: string): string {
   })
 }
 
-function TurnBubble({ turn }: { turn: CoachTurn }) {
+function TurnBubble({ turn, onConfirm, onReject }: {
+  turn: CoachTurn
+  onConfirm?: () => void
+  onReject?: () => void
+}) {
   const isUser = turn.role === 'user'
   const isError = turn.status === 'error'
   const isPending = turn.status === 'pending' || turn.status === 'in_progress'
+
+  const snapshot = turn.context_snapshot as Record<string, unknown> | null
+  const proposal = snapshot?.proposal as Record<string, unknown> | undefined
+  const proposalExecuted = snapshot?.proposal_executed as boolean | undefined
+  const hasActiveProposal = proposal && !proposalExecuted
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -29,6 +38,8 @@ function TurnBubble({ turn }: { turn: CoachTurn }) {
             ? 'bg-accent-green/20 text-text-primary border border-accent-green/30'
             : isError
             ? 'bg-accent-red/10 text-accent-red border border-accent-red/30'
+            : hasActiveProposal
+            ? 'bg-accent-yellow/10 text-text-primary border border-accent-yellow/30'
             : 'bg-bg-card text-text-primary border border-border-subtle'
         }`}
       >
@@ -45,6 +56,27 @@ function TurnBubble({ turn }: { turn: CoachTurn }) {
         <div className="whitespace-pre-wrap">
           {isError ? turn.error ?? 'Unknown error' : turn.content}
         </div>
+        {hasActiveProposal && onConfirm && onReject && (
+          <div className="flex gap-2 mt-3 pt-2 border-t border-accent-yellow/20">
+            <button
+              onClick={onConfirm}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-green/20 text-accent-green text-[12px] font-semibold hover:bg-accent-green/30 transition-colors min-h-[36px]"
+            >
+              <Check size={14} /> Apply
+            </button>
+            <button
+              onClick={onReject}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-red/10 text-accent-red text-[12px] font-semibold hover:bg-accent-red/20 transition-colors min-h-[36px]"
+            >
+              <X size={14} /> Skip
+            </button>
+          </div>
+        )}
+        {proposal && proposalExecuted && (
+          <div className="text-[11px] text-accent-green mt-1.5 flex items-center gap-1">
+            <Check size={11} /> Applied
+          </div>
+        )}
         <div className="text-[10px] text-text-dim mt-1">{formatTime(turn.created_at)}</div>
       </div>
     </div>
@@ -168,6 +200,30 @@ export default function CoachView() {
     }
   }
 
+  const handleConfirmProposal = useCallback(async () => {
+    if (!selectedId || sending) return
+    setSending(true)
+    try {
+      await sendCoachMessage(selectedId, 'CONFIRM_ACTION')
+    } catch (e) {
+      setSendError(e instanceof Error ? e.message : 'Failed to confirm')
+    } finally {
+      setSending(false)
+    }
+  }, [selectedId, sending])
+
+  const handleRejectProposal = useCallback(async () => {
+    if (!selectedId || sending) return
+    setSending(true)
+    try {
+      await sendCoachMessage(selectedId, 'REJECT_ACTION')
+    } catch (e) {
+      setSendError(e instanceof Error ? e.message : 'Failed to reject')
+    } finally {
+      setSending(false)
+    }
+  }, [selectedId, sending])
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -208,7 +264,14 @@ export default function CoachView() {
       >
         {selectedId ? (
           turns && turns.length > 0 ? (
-            turns.map((t) => <TurnBubble key={t.id} turn={t} />)
+            turns.map((t) => (
+              <TurnBubble
+                key={t.id}
+                turn={t}
+                onConfirm={handleConfirmProposal}
+                onReject={handleRejectProposal}
+              />
+            ))
           ) : (
             <div className="text-[12px] text-text-muted py-6 text-center">
               New conversation. Ask the coach anything.

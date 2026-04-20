@@ -37,10 +37,18 @@ SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ["SUPABASE_KEY"]
 
 SKILL_FILE = PROJECT_ROOT / "openclaw" / "skills" / "coach-chat" / "SKILL.md"
+COACH_ADJUST = PROJECT_ROOT / "scripts" / "coach_adjust.py"
+VENV_PYTHON = PROJECT_ROOT / "venv" / "bin" / "python"
 
 POLL_INTERVAL_S = 2.0
 CLI_TIMEOUT_S = 120
+ADJUST_TIMEOUT_S = 60
 SHUTDOWN = False
+
+CONFIRM_PREFIX = "CONFIRM_ACTION"
+REJECT_PREFIX = "REJECT_ACTION"
+PROPOSAL_START = "[PROPOSAL]"
+PROPOSAL_END = "[/PROPOSAL]"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -303,6 +311,110 @@ def call_claude_cli(
 
 
 # ---------------------------------------------------------------------------
+# Proposal parsing + execution
+# ---------------------------------------------------------------------------
+
+def parse_proposal(response: str) -> tuple[str, dict | None]:
+    """Extract [PROPOSAL] JSON from response. Returns (clean_text, proposal_dict)."""
+    start = response.find(PROPOSAL_START)
+    if start == -1:
+        return response, None
+
+    end = response.find(PROPOSAL_END, start)
+    if end == -1:
+        return response, None
+
+    json_str = response[start + len(PROPOSAL_START):end].strip()
+    clean_text = (response[:start].rstrip() + response[end + len(PROPOSAL_END):].lstrip()).strip()
+
+    try:
+        proposal = json.loads(json_str)
+    except json.JSONDecodeError:
+        log.warning("Failed to parse proposal JSON: %s", json_str[:200])
+        return response, None
+
+    if not isinstance(proposal, dict) or "action" not in proposal:
+        log.warning("Proposal missing 'action' key: %s", json_str[:200])
+        return response, None
+
+    return clean_text, proposal
+
+
+def find_pending_proposal(sb: Any, conversation_id: str) -> dict | None:
+    """Find the most recent assistant turn with a proposal in context_snapshot."""
+    result = (
+        sb.table("coach_turns")
+        .select("id,context_snapshot")
+        .eq("conversation_id", conversation_id)
+        .eq("role", "assistant")
+        .eq("status", "complete")
+        .order("created_at", desc=True)
+        .limit(10)
+        .execute()
+    )
+    for row in (result.data or []):
+        cs = row.get("context_snapshot") or {}
+        if cs.get("proposal") and not cs.get("proposal_executed"):
+            return row
+    return None
+
+
+def execute_proposal(sb: Any, proposal: dict, proposal_turn_id: str) -> str:
+    """Run coach_adjust.py for a confirmed proposal."""
+    action = proposal["action"]
+    target_date = proposal.get("date", date.today().isoformat())
+    details = proposal.get("details", {})
+    details_json = json.dumps(details)
+
+    python = str(VENV_PYTHON) if VENV_PYTHON.exists() else sys.executable
+    cmd = [
+        python, str(COACH_ADJUST),
+        "--action", action,
+        "--date", target_date,
+        "--channel", "app_coach",
+        "--details", details_json,
+    ]
+
+    log.info("Executing: %s --action %s --date %s", COACH_ADJUST.name, action, target_date)
+
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=ADJUST_TIMEOUT_S,
+        cwd=str(PROJECT_ROOT),
+    )
+
+    if result.returncode != 0:
+        stderr = result.stderr.strip()[:300]
+        log.error("coach_adjust failed (exit %d): %s", result.returncode, stderr)
+        return f"The adjustment failed: {stderr}"
+
+    try:
+        output = json.loads(result.stdout)
+        ok = output.get("ok", False)
+        message = output.get("user_message", output.get("message", ""))
+    except json.JSONDecodeError:
+        ok = result.returncode == 0
+        message = result.stdout.strip()[:300]
+
+    # Mark the proposal as executed so it can't be re-confirmed
+    cs = (sb.table("coach_turns")
+        .select("context_snapshot")
+        .eq("id", proposal_turn_id)
+        .single()
+        .execute()).data
+    snapshot = (cs or {}).get("context_snapshot", {}) or {}
+    snapshot["proposal_executed"] = True
+    snapshot["proposal_result"] = {"ok": ok, "message": message}
+    sb.table("coach_turns").update({"context_snapshot": snapshot}).eq("id", proposal_turn_id).execute()
+
+    if ok:
+        return f"Done — {message}" if message else "Done. Session updated."
+    return f"The adjustment couldn't be applied: {message}"
+
+
+# ---------------------------------------------------------------------------
 # Main processing
 # ---------------------------------------------------------------------------
 
@@ -328,6 +440,36 @@ def process_turn(sb: Any, turn: dict, live: bool) -> None:
             write_assistant_turn(sb, conversation_id, response)
             mark_turn(sb, turn_id, "complete")
             return
+
+        # Handle confirm/reject for pending proposals
+        content_upper = user_content.strip().upper()
+        if content_upper == CONFIRM_PREFIX or content_upper == "YES":
+            proposal_turn = find_pending_proposal(sb, conversation_id)
+            if proposal_turn:
+                proposal = proposal_turn["context_snapshot"]["proposal"]
+                log.info("Executing confirmed proposal: %s", proposal.get("action"))
+                result_msg = execute_proposal(sb, proposal, proposal_turn["id"])
+                write_assistant_turn(sb, conversation_id, result_msg)
+                mark_turn(sb, turn_id, "complete")
+                return
+            else:
+                write_assistant_turn(sb, conversation_id,
+                    "No pending proposal to confirm. Ask me to make a change and I'll propose it first.")
+                mark_turn(sb, turn_id, "complete")
+                return
+
+        if content_upper == REJECT_PREFIX or content_upper == "NO":
+            proposal_turn = find_pending_proposal(sb, conversation_id)
+            if proposal_turn:
+                # Mark proposal as rejected
+                cs = proposal_turn.get("context_snapshot", {}) or {}
+                cs["proposal_executed"] = True
+                cs["proposal_result"] = {"ok": False, "message": "Rejected by user"}
+                sb.table("coach_turns").update({"context_snapshot": cs}).eq("id", proposal_turn["id"]).execute()
+                write_assistant_turn(sb, conversation_id,
+                    "Got it — keeping today's session as-is. Let me know if you'd like something else.")
+                mark_turn(sb, turn_id, "complete")
+                return
 
         conv = get_conversation(sb, conversation_id)
         if not conv:
@@ -355,14 +497,22 @@ def process_turn(sb: Any, turn: dict, live: bool) -> None:
         finally:
             grounding_path.unlink(missing_ok=True)
 
+        # Check for proposals in the response
+        clean_text, proposal = parse_proposal(response)
+        snapshot: dict[str, Any] = ctx.copy()
+        if proposal:
+            snapshot["proposal"] = proposal
+            log.info("Proposal detected: action=%s", proposal.get("action"))
+
         write_assistant_turn(
             sb,
             conversation_id,
-            response,
-            context_snapshot=ctx,
+            clean_text,
+            context_snapshot=snapshot,
         )
         mark_turn(sb, turn_id, "complete")
-        log.info("Turn %s answered (%d chars)", turn_id[:8], len(response))
+        log.info("Turn %s answered (%d chars, proposal=%s)",
+                 turn_id[:8], len(clean_text), bool(proposal))
 
     except subprocess.TimeoutExpired:
         log.error("Turn %s timed out (%ds)", turn_id[:8], CLI_TIMEOUT_S)
