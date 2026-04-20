@@ -2,7 +2,7 @@ import { useState, useEffect, lazy, Suspense, useCallback, Component } from 'rea
 import type { ReactNode, ErrorInfo } from 'react'
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom'
 import { supabase } from './lib/supabase'
-import { Mountain, Calendar, Dumbbell, Heart, TrendingUp, Target, RefreshCw, Watch } from 'lucide-react'
+import { Mountain, Calendar, Dumbbell, Heart, TrendingUp, Target, RefreshCw, Watch, MessageCircle } from 'lucide-react'
 import { LoadingState } from './components/LoadingState'
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -32,6 +32,7 @@ const TrainingPlanView = lazy(() => import('./views/TrainingPlanView'))
 const RecoveryView = lazy(() => import('./views/RecoveryView'))
 const TrendsView = lazy(() => import('./views/TrendsView'))
 const GoalsView = lazy(() => import('./views/GoalsView'))
+const CoachView = lazy(() => import('./views/CoachView'))
 
 const tabs = [
   { path: '/', label: 'Today', icon: Mountain },
@@ -40,6 +41,7 @@ const tabs = [
   { path: '/recovery', label: 'Recovery', icon: Heart },
   { path: '/trends', label: 'Trends', icon: TrendingUp },
   { path: '/goals', label: 'Goals', icon: Target },
+  { path: '/coach', label: 'Coach', icon: MessageCircle },
 ] as const
 
 function AppShell() {
@@ -171,6 +173,7 @@ function AppShell() {
               <Route path="/recovery" element={<RecoveryView />} />
               <Route path="/trends" element={<TrendsView />} />
               <Route path="/goals" element={<GoalsView />} />
+              <Route path="/coach" element={<CoachView />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>

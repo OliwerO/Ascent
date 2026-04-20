@@ -302,3 +302,25 @@ export interface ExerciseFeedback {
   feel: 'light' | 'right' | 'heavy'
   notes: string | null
 }
+
+// --- Coach chat (in-app conversational coach)
+export interface CoachConversation {
+  id: string
+  started_at: string
+  ended_at: string | null
+  title: string | null
+  cli_session_id: string
+  status: 'active' | 'archived'
+}
+
+export interface CoachTurn {
+  id: string
+  conversation_id: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  created_at: string
+  status: 'pending' | 'in_progress' | 'complete' | 'error'
+  error: string | null
+  context_snapshot: Record<string, unknown> | null
+  kb_refs: string[] | null
+}

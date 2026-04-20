@@ -5,6 +5,7 @@ import type {
   DailySummary, HRVRow, SleepRow, Activity, DailyMetrics,
   BodyComposition, TrainingSession, TrainingSet, SubjectiveWellness,
   Goal, CoachingLogEntry, PlannedWorkout, PerformanceScore,
+  CoachConversation, CoachTurn,
   ExerciseProgression, ActivityDetails,
 } from '../lib/types'
 
@@ -315,6 +316,54 @@ export function usePerformanceScores(days = 90) {
     }
     return data ?? []
   }, [days, rt])
+}
+
+export function useCoachConversations() {
+  const rt = useRealtimeRefresh('coach_conversations')
+  return useFetch<CoachConversation[]>('coach_conversations', async () => {
+    const { data, error } = await supabase
+      .from('coach_conversations')
+      .select('*')
+      .order('started_at', { ascending: false })
+    if (error) throw error
+    return data ?? []
+  }, [rt])
+}
+
+export function useCoachTurns(conversationId: string | null) {
+  const rt = useRealtimeRefresh('coach_turns')
+  return useFetch<CoachTurn[]>('coach_turns', async () => {
+    if (!conversationId) return []
+    const { data, error } = await supabase
+      .from('coach_turns')
+      .select('*')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: true })
+    if (error) throw error
+    return data ?? []
+  }, [conversationId, rt])
+}
+
+export async function createCoachConversation(title: string | null = null): Promise<CoachConversation> {
+  const { data, error } = await supabase
+    .from('coach_conversations')
+    .insert({ title })
+    .select()
+    .single()
+  if (error) throw error
+  return data as CoachConversation
+}
+
+export async function sendCoachMessage(conversationId: string, content: string): Promise<void> {
+  const { error } = await supabase
+    .from('coach_turns')
+    .insert({
+      conversation_id: conversationId,
+      role: 'user',
+      content,
+      status: 'pending',
+    })
+  if (error) throw error
 }
 
 export function useActivityDetails(garminActivityIds: string[]) {
