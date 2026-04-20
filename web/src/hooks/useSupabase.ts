@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { format, subDays } from 'date-fns'
 import type {
@@ -6,7 +6,35 @@ import type {
   BodyComposition, TrainingSession, TrainingSet, SubjectiveWellness,
   Goal, CoachingLogEntry, PlannedWorkout, PerformanceScore,
   CoachConversation, CoachTurn,
+  ExerciseProgression, ActivityDetails,
 } from '../lib/types'
+
+const MAX_RETRIES = 2
+const RETRY_DELAY_MS = 1000
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** Track online/offline state globally so all hooks share one listener pair. */
+function useOnlineStatus(): boolean {
+  const [online, setOnline] = useState(
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  )
+
+  useEffect(() => {
+    const goOnline = () => setOnline(true)
+    const goOffline = () => setOnline(false)
+    window.addEventListener('online', goOnline)
+    window.addEventListener('offline', goOffline)
+    return () => {
+      window.removeEventListener('online', goOnline)
+      window.removeEventListener('offline', goOffline)
+    }
+  }, [])
+
+  return online
+}
 
 function useFetch<T>(
   _key: string,
@@ -16,23 +44,70 @@ function useFetch<T>(
   const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [offline, setOffline] = useState(false)
+  const [manualTick, setManualTick] = useState(0)
   const hasFetched = useRef(false)
+  const online = useOnlineStatus()
+
+  // Retry-when-back-online: bump manualTick so the effect re-runs
+  const prevOnlineRef = useRef(online)
+  useEffect(() => {
+    if (online && !prevOnlineRef.current) {
+      // Just came back online — trigger a refetch
+      setManualTick((t) => t + 1)
+    }
+    prevOnlineRef.current = online
+  }, [online])
 
   useEffect(() => {
     let cancelled = false
-    // Only show loading spinner on initial fetch, not on realtime refetches
-    if (!hasFetched.current) {
-      // Use queueMicrotask to avoid synchronous setState in effect body
-      queueMicrotask(() => { if (!cancelled) setLoading(true) })
-    }
-    fetcher()
-      .then((d) => { if (!cancelled) { setData(d); hasFetched.current = true } })
-      .catch((e) => { if (!cancelled) setError(e.message) })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, deps)
 
-  return { data, loading, error }
+    // If offline and we already have data, keep showing stale data
+    if (!online) {
+      setOffline(true)
+      if (!hasFetched.current) setLoading(false)
+      return
+    }
+
+    setOffline(false)
+
+    // Only show loading spinner on initial fetch (stale-while-revalidate)
+    if (!hasFetched.current) setLoading(true)
+
+    const fetchWithRetry = async (): Promise<void> => {
+      let lastError: string | null = null
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (cancelled) return
+        try {
+          const d = await fetcher()
+          if (!cancelled) {
+            setData(d)
+            setError(null)
+            hasFetched.current = true
+          }
+          return
+        } catch (e: unknown) {
+          lastError = e instanceof Error ? e.message : String(e)
+          if (attempt < MAX_RETRIES) {
+            await delay(RETRY_DELAY_MS)
+          }
+        }
+      }
+      // All retries exhausted
+      if (!cancelled) setError(lastError)
+    }
+
+    fetchWithRetry().finally(() => {
+      if (!cancelled) setLoading(false)
+    })
+
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [...deps, manualTick, online])
+
+  const refetch = useCallback(() => setManualTick((t) => t + 1), [])
+
+  return { data, loading, error, offline, refetch }
 }
 
 /**
@@ -122,7 +197,7 @@ export function useDailyMetrics(days = 7) {
   return useFetch<DailyMetrics[]>('daily_metrics', async () => {
     const { data, error } = await supabase
       .from('daily_metrics')
-      .select('date,body_battery_highest,body_battery_lowest,training_readiness_score,resting_hr,avg_stress_level,vo2max')
+      .select('date,body_battery_highest,body_battery_lowest,training_readiness_score,resting_hr,avg_stress_level,vo2max,vigorous_intensity_minutes,moderate_intensity_minutes')
       .gte('date', fmt(daysAgo(days)))
       .order('date', { ascending: false })
     if (error) throw error
@@ -161,7 +236,7 @@ export function useTrainingSets(sessionIds: number[]) {
     if (!sessionIds.length) return []
     const { data, error } = await supabase
       .from('training_sets')
-      .select('*, exercises(name, category)')
+      .select('*, exercises(name, category, muscle_groups)')
       .in('session_id', sessionIds)
       .order('set_number')
     if (error) throw error
@@ -218,7 +293,7 @@ export function usePlannedWorkouts(weeksBehind = 2, weeksAhead = 4) {
     const to = fmt(new Date(today().getTime() + weeksAhead * 7 * 86400000))
     const { data, error } = await supabase
       .from('planned_workouts')
-      .select('id,training_block,week_number,session_name,session_type,scheduled_date,scheduled_time,estimated_duration_minutes,workout_definition,status,actual_garmin_activity_id,compliance_score,adjustment_reason')
+      .select('id,training_block,week_number,session_name,session_type,scheduled_date,scheduled_time,estimated_duration_minutes,workout_definition,status,actual_garmin_activity_id,compliance_score,adjustment_reason,updated_at')
       .gte('scheduled_date', from)
       .lte('scheduled_date', to)
       .order('scheduled_date', { ascending: true })
@@ -291,6 +366,37 @@ export async function sendCoachMessage(conversationId: string, content: string):
   if (error) throw error
 }
 
+export function useActivityDetails(garminActivityIds: string[]) {
+  return useFetch<ActivityDetails[]>('activity_details', async () => {
+    if (!garminActivityIds.length) return []
+    const { data, error } = await supabase
+      .from('activity_details')
+      .select('garmin_activity_id,hr_zones,splits,weather')
+      .in('garmin_activity_id', garminActivityIds)
+    if (error) {
+      if (error.message?.includes('relation') || error.message?.includes('does not exist')) return []
+      throw error
+    }
+    return data ?? []
+  }, [garminActivityIds.join(',')])
+}
+
+export function useExerciseProgression(days = 60) {
+  const rt = useRealtimeRefresh('exercise_progression')
+  return useFetch<ExerciseProgression[]>('exercise_progression', async () => {
+    const { data, error } = await supabase
+      .from('exercise_progression')
+      .select('exercise_name,date,planned_sets,planned_reps,planned_weight_kg,planned_rpe,actual_sets,actual_reps_per_set,actual_weight_kg,actual_rpe,progression_applied,progression_amount')
+      .gte('date', fmt(daysAgo(days)))
+      .order('date', { ascending: false })
+    if (error) {
+      if (error.message?.includes('relation') || error.message?.includes('does not exist')) return []
+      throw error
+    }
+    return data ?? []
+  }, [days, rt])
+}
+
 /**
  * Reschedule a planned workout to a new date.
  * If another workout already exists on the target date, swaps them.
@@ -304,7 +410,7 @@ export async function rescheduleWorkout(
     // Swap: move the target workout to the source's old date
     const { data: source } = await supabase
       .from('planned_workouts')
-      .select('scheduled_date')
+      .select('scheduled_date, session_name')
       .eq('id', workoutId)
       .single()
     if (!source) throw new Error('Workout not found')
@@ -313,7 +419,7 @@ export async function rescheduleWorkout(
       .from('planned_workouts')
       .update({
         scheduled_date: source.scheduled_date,
-        status: 'adjusted',
+        status: 'rescheduled',
         adjustment_reason: `Swapped with session on ${newDate}`,
       })
       .eq('id', existingWorkoutOnTarget.id)
@@ -323,16 +429,31 @@ export async function rescheduleWorkout(
       .from('planned_workouts')
       .update({
         scheduled_date: newDate,
-        status: 'adjusted',
+        status: 'rescheduled',
         adjustment_reason: `Moved from ${source.scheduled_date}`,
       })
       .eq('id', workoutId)
     if (e2) throw e2
+
+    // Audit trail: log the swap decision to coaching_log
+    await supabase.from('coaching_log').insert({
+      date: new Date().toISOString().slice(0, 10),
+      type: 'adjustment',
+      channel: 'app',
+      message: `Swapped ${source.session_name ?? 'session'} (${source.scheduled_date}) with ${existingWorkoutOnTarget.session_name ?? 'session'} (${newDate})`,
+      data_context: {
+        action: 'reschedule_swap',
+        source_workout_id: workoutId,
+        target_workout_id: existingWorkoutOnTarget.id,
+        original_date: source.scheduled_date,
+        new_date: newDate,
+      },
+    })
   } else {
     // Simple move
     const { data: source } = await supabase
       .from('planned_workouts')
-      .select('scheduled_date')
+      .select('scheduled_date, session_name')
       .eq('id', workoutId)
       .single()
     if (!source) throw new Error('Workout not found')
@@ -341,10 +462,97 @@ export async function rescheduleWorkout(
       .from('planned_workouts')
       .update({
         scheduled_date: newDate,
-        status: 'adjusted',
+        status: 'rescheduled',
         adjustment_reason: `Moved from ${source.scheduled_date}`,
       })
       .eq('id', workoutId)
     if (error) throw error
+
+    // Audit trail: log the move decision to coaching_log
+    await supabase.from('coaching_log').insert({
+      date: new Date().toISOString().slice(0, 10),
+      type: 'adjustment',
+      channel: 'app',
+      message: `Moved ${source.session_name ?? 'session'} from ${source.scheduled_date} to ${newDate}`,
+      data_context: {
+        action: 'reschedule_move',
+        workout_id: workoutId,
+        original_date: source.scheduled_date,
+        new_date: newDate,
+      },
+    })
   }
+}
+
+/**
+ * Log sRPE for an already-completed workout (e.g. auto-completed via Garmin sync).
+ */
+export async function logSrpe(scheduledDate: string, sessionName: string | null, srpe: number): Promise<void> {
+  const { data: existing } = await supabase
+    .from('training_sessions')
+    .select('id')
+    .eq('date', scheduledDate)
+    .limit(1)
+  if (existing && existing.length > 0) {
+    await supabase
+      .from('training_sessions')
+      .update({ srpe })
+      .eq('id', existing[0].id)
+  } else {
+    await supabase
+      .from('training_sessions')
+      .insert({ date: scheduledDate, name: sessionName, srpe })
+  }
+}
+
+/**
+ * Mark a planned workout as completed from the app, with optional sRPE.
+ * Upserts a training_sessions row so the sRPE feeds into coaching decisions.
+ */
+export async function markWorkoutCompleted(workoutId: number, srpe?: number): Promise<void> {
+  const { data: workout } = await supabase
+    .from('planned_workouts')
+    .select('session_name, scheduled_date, status')
+    .eq('id', workoutId)
+    .single()
+  if (!workout) throw new Error('Workout not found')
+
+  const { error } = await supabase
+    .from('planned_workouts')
+    .update({ status: 'completed' })
+    .eq('id', workoutId)
+  if (error) throw error
+
+  // Upsert training_sessions row with sRPE
+  if (srpe != null) {
+    const { data: existing } = await supabase
+      .from('training_sessions')
+      .select('id')
+      .eq('date', workout.scheduled_date)
+      .limit(1)
+    if (existing && existing.length > 0) {
+      await supabase
+        .from('training_sessions')
+        .update({ srpe, name: workout.session_name })
+        .eq('id', existing[0].id)
+    } else {
+      await supabase
+        .from('training_sessions')
+        .insert({ date: workout.scheduled_date, name: workout.session_name, srpe })
+    }
+  }
+
+  await supabase.from('coaching_log').insert({
+    date: new Date().toISOString().slice(0, 10),
+    type: 'adjustment',
+    channel: 'app',
+    message: `Marked ${workout.session_name ?? 'session'} (${workout.scheduled_date}) as completed${srpe != null ? ` — sRPE ${srpe}` : ''}`,
+    data_context: {
+      action: 'mark_completed',
+      workout_id: workoutId,
+      scheduled_date: workout.scheduled_date,
+      previous_status: workout.status,
+      srpe: srpe ?? null,
+    },
+  })
 }

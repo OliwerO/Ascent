@@ -1,0 +1,40 @@
+{
+  "block_dates": {
+    "block_1_start": "2026-04-01",
+    "block_1_end": "2026-04-28",
+    "block_2_start": "2026-04-29",
+    "block_2_end": "2026-05-26"
+  },
+  "deload_weeks": [4, 8],
+  "garmin_benchmarks": {
+    "BARBELL_BACK_SQUAT": 133.3,
+    "BARBELL_BENCH_PRESS": 102.9,
+    "DUMBBELL_BENCH_PRESS": 33.8,
+    "BARBELL_ROW": 30.0,
+    "OVERHEAD_BARBELL_PRESS": 66.7,
+    "TRAP_BAR_DEADLIFT": 120.0,
+    "DUMBBELL_LATERAL_RAISE": null,
+    "CHIN_UP": null,
+    "INCLINE_DUMBBELL_BENCH_PRESS": null,
+    "SEATED_CABLE_ROW": null,
+    "ONE_ARM_DUMBBELL_ROW": 80.0,
+    "DUMBBELL_BULGARIAN_SPLIT_SQUAT": null
+  },
+  "plate_increments": {
+    "barbell": 5.0,
+    "dumbbell": 2.5,
+    "kettlebell": 4.0,
+    "cable": 2.5,
+    "machine": 2.5,
+    "bodyweight": 0
+  },
+  "kb_weights": [4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 36, 40, 44, 48],
+  "validation_ranges": {
+    "resting_hr": {"min": 25, "max": 120},
+    "avg_hr": {"min": 30, "max": 230},
+    "max_hr": {"min": 30, "max": 230},
+    "min_hr": {"min": 25, "max": 200},
+    "total_sleep_seconds": {"min": 7200, "max": 57600},
+    "rmssd": {"min": 5, "max": 250}
+  }
+}

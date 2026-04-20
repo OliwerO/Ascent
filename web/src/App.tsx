@@ -75,7 +75,11 @@ function AppShell() {
   }, [refreshKey])
 
   const handleRefresh = useCallback(() => {
+    // Force a full re-fetch of all data by reloading the page.
+    // useFetch hooks only re-run on dep changes; without exposing refetch
+    // to every consumer, the heavy-handed reload is the most reliable.
     setRefreshKey((k) => k + 1)
+    window.location.reload()
   }, [])
 
   const handleSync = useCallback(async () => {
@@ -101,7 +105,7 @@ function AppShell() {
     <div className="min-h-screen bg-bg-primary">
       {/* Header */}
       <header className="sticky top-0 z-50 bg-bg-primary/90 backdrop-blur-xl border-b border-border-subtle pt-[env(safe-area-inset-top)]">
-        <div className="max-w-2xl mx-auto px-5 py-3 flex items-center justify-between">
+        <div className="max-w-[480px] mx-auto px-5 py-3 flex items-center justify-between">
           <h1
             className="text-[15px] font-semibold tracking-tight flex items-center gap-2 cursor-pointer"
             onClick={() => navigate('/')}
@@ -132,7 +136,7 @@ function AppShell() {
           </div>
         </div>
         {syncMsg && (
-          <div className="max-w-2xl mx-auto px-5 pb-2">
+          <div className="max-w-[480px] mx-auto px-5 pb-2">
             <div className={`text-[12px] px-3 py-1.5 rounded-xl ${
               syncMsg.includes('queued') ? 'bg-accent-green/10 text-accent-green' : 'bg-accent-red/10 text-accent-red'
             }`}>
@@ -144,7 +148,7 @@ function AppShell() {
 
       {/* Stale data warning */}
       {syncAgeHours !== null && syncAgeHours >= 6 && (
-        <div className="max-w-2xl mx-auto px-5 pt-2">
+        <div className="max-w-[480px] mx-auto px-5 pt-2">
           <div className={`text-[12px] px-3 py-2 rounded-xl flex items-center gap-2 ${
             syncAgeHours >= 24
               ? 'bg-accent-red/10 text-accent-red'
@@ -158,7 +162,7 @@ function AppShell() {
 
       {/* Content */}
       <main
-        className="max-w-2xl mx-auto px-4 py-4 pb-28 space-y-3"
+        className="max-w-[480px] mx-auto px-4 py-4 pb-28 space-y-3"
       >
         <ErrorBoundary>
           <Suspense fallback={<LoadingState />}>
@@ -178,7 +182,7 @@ function AppShell() {
 
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 bg-bg-primary/95 backdrop-blur-xl border-t border-border-subtle">
-        <div className="max-w-2xl mx-auto flex pb-[env(safe-area-inset-bottom)]">
+        <div className="max-w-[480px] mx-auto flex pb-[env(safe-area-inset-bottom)]">
           {tabs.map((tab) => {
             const Icon = tab.icon
             return (

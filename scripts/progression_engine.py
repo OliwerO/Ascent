@@ -14,26 +14,28 @@ Usage:
     # result.note = "+2.5kg — all sets hit 8+ reps last session"
 """
 
+import json
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 
 log = logging.getLogger("progression")
 
 # ---------------------------------------------------------------------------
-# Equipment config — plate-aware increments
+# Equipment config — loaded from config/training_constants.json
 # ---------------------------------------------------------------------------
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_CONSTANTS_PATH = _PROJECT_ROOT / "config" / "training_constants.json"
+with open(_CONSTANTS_PATH) as _f:
+    _CONSTANTS = json.load(_f)
+
 # Valid kettlebell weights (standard competition KBs)
-KB_WEIGHTS = [4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 36, 40, 44, 48]
+KB_WEIGHTS: list[int] = _CONSTANTS["kb_weights"]
 
 # Equipment type → minimum weight increment
-PLATE_INCREMENTS = {
-    "barbell": 5.0,     # 2.5kg plates × 2 sides (smallest available)
-    "dumbbell": 2.5,    # DB pairs go in 2.5kg steps
-    "kettlebell": 4.0,  # snapped to KB_WEIGHTS
-    "cable": 2.5,       # cable stack steps (gym-dependent)
-    "machine": 2.5,
-    "bodyweight": 0,
+PLATE_INCREMENTS: dict[str, float] = {
+    k: float(v) for k, v in _CONSTANTS["plate_increments"].items()
 }
 
 def resolve_exercise_name(name: str) -> str:
@@ -114,7 +116,8 @@ class ProgressionResult:
     weight_kg: float
     reps: int
     sets: int
-    applied: str   # "weight_increase", "hold", "rep_increase", "deload_reset", "deload_week", "first_session"
+    applied: str   # "weight_increase", "accelerated_increase", "hold", "rep_increase",
+                    #  "deload_reset", "deload_week", "add_set", "rpe_reduction", "first_session"
     note: str
     amount: float = 0.0  # kg change from last session
 
@@ -216,6 +219,7 @@ def calculate_next_weight(
     target_sets: int,
     current_week: int,
     start_kg: float | None = None,
+    target_rpe: float | None = None,
 ) -> ProgressionResult:
     """Determine the next workout weight based on actual performance.
 
@@ -226,6 +230,7 @@ def calculate_next_weight(
         target_sets: Target number of sets
         current_week: Current program week (1-8)
         start_kg: Fallback starting weight if no history exists
+        target_rpe: Target RPE for this exercise (for overshoot detection)
 
     Returns:
         ProgressionResult with weight, reps, sets, and progression decision
@@ -242,8 +247,13 @@ def calculate_next_weight(
             note="bodyweight exercise",
         )
 
-    # Deload weeks: same weight, reduced volume (volume handled by caller)
-    is_deload = current_week in (4, 8)
+    # Deload weeks: same weight, reduced volume (volume handled by caller).
+    # This check runs BEFORE stall detection — deload weeks always return
+    # last_weight unchanged. KB Halo oscillation (12→14→12kg) is caused by
+    # stall_reset on non-deload weeks, not a deload bug. The add_set
+    # intermediate step (Item 7) addresses this oscillation pattern.
+    # Skip planned deload if previous week was a natural deload (heavy mountain, minimal gym)
+    is_deload = current_week in (4, 8) and not _check_natural_deload(sb, current_week)
 
     # Query actual performance history
     history = get_exercise_history(sb, exercise_name, limit=30)
@@ -294,6 +304,43 @@ def calculate_next_weight(
             note=f"rated 'heavy' {heavy_streak} sessions in a row — holding until it feels easier",
         )
 
+    # Acceleration gate: light feel OR low avg sRPE → 2× standard increment
+    # KB §1.1: when all sets hit target reps with ease, accelerate progression
+    all_hit_target_early = all(r >= target_reps for r in last_reps_list)
+    if all_hit_target_early and all_same_weight:
+        should_accelerate = False
+        accel_reason = ""
+
+        light_streak = _count_light_streak(sb, exercise_name)
+        srpe_for_accel = _get_session_rpe_modifier(sb, exercise_name)
+
+        if light_streak >= 3 and (srpe_for_accel is None or srpe_for_accel == 0):
+            should_accelerate = True
+            accel_reason = f"light feel {light_streak} sessions + low sRPE"
+
+        if not should_accelerate:
+            avg_srpe = _get_avg_srpe(sb, exercise_name, sessions=2)
+            if avg_srpe is not None and avg_srpe <= 6.5:
+                should_accelerate = True
+                accel_reason = f"avg sRPE {avg_srpe:.1f} over 2 sessions"
+
+        if should_accelerate and (not has_rpe or last_rpe_max < 9):
+            new_weight = _accelerated_increase(last_weight, equipment)
+            increase = new_weight - last_weight
+            # Skip the per-exercise 10% cap for acceleration: the triggers
+            # (3+ light sessions OR avg sRPE ≤ 6.5) are conservative enough
+            # that a larger jump is warranted. The weekly volume cap (Phase 3)
+            # provides the aggregate safety net.
+            if increase > 0:
+                return ProgressionResult(
+                    weight_kg=new_weight,
+                    reps=target_reps,
+                    sets=target_sets,
+                    applied="accelerated_increase",
+                    amount=increase,
+                    note=f"{accel_reason} — accelerated +{increase:.1f}kg",
+                )
+
     # Session-level sRPE check — hold if the whole session felt brutal,
     # even when per-set RPE and per-exercise feel are fine
     srpe_mod = _get_session_rpe_modifier(sb, exercise_name)
@@ -317,6 +364,35 @@ def calculate_next_weight(
                 sets=target_sets,
                 applied="hold",
                 note=f"session RPE 8 with recent weight increase — consolidating at {last_weight}kg",
+            )
+
+    # Wellness check: poor wellness → mild conservatism (same as sRPE 8)
+    # KB: subjective wellness overrides wearables (Saw et al. 2016)
+    wellness_mod = _get_wellness_modifier(sb)
+    if wellness_mod is not None and wellness_mod >= 0.5 and all(r >= target_reps for r in last_reps_list):
+        sessions_at_wt = _count_sessions_at_weight(sessions, last_weight)
+        if sessions_at_wt <= 2:
+            return ProgressionResult(
+                weight_kg=last_weight,
+                reps=target_reps,
+                sets=target_sets,
+                applied="hold",
+                note=f"low wellness score — consolidating at {last_weight}kg",
+            )
+
+    # RPE overshoot: actual RPE consistently >1 above target for 2+ weeks → reduce weight
+    # KB §1.3: reduce loads 2.5-5% to address fatigue accumulation
+    if target_rpe is not None:
+        if _check_rpe_overshoot(sb, exercise_name, target_rpe, weeks=2):
+            drop_weight = round_to_plate(last_weight * 0.95, equipment)
+            reduction = drop_weight - last_weight
+            return ProgressionResult(
+                weight_kg=drop_weight,
+                reps=target_reps,
+                sets=target_sets,
+                applied="rpe_reduction",
+                amount=reduction,
+                note=f"RPE consistently >{target_rpe + 1:.0f} for 2+ weeks — reducing {abs(reduction):.1f}kg",
             )
 
     # Double progression check
@@ -343,7 +419,17 @@ def calculate_next_weight(
     stall_weeks = _count_stall_weeks(sessions, last_weight)
 
     if stall_weeks >= 3:
-        # Stall protocol: drop 10%, increase reps to 12, rebuild
+        # KB §1.1: try +1 set for 3-4 weeks before deload_reset
+        if not _was_add_set_tried(sb, exercise_name, weeks=4):
+            return ProgressionResult(
+                weight_kg=last_weight,
+                reps=target_reps,
+                sets=target_sets + 1,
+                applied="add_set",
+                amount=0,
+                note=f"stalled {stall_weeks} sessions — adding 1 set to break plateau",
+            )
+        # add_set already tried and still stalled → deload_reset
         drop_weight = round_to_plate(last_weight * 0.90, equipment)
         return ProgressionResult(
             weight_kg=drop_weight,
@@ -351,7 +437,7 @@ def calculate_next_weight(
             sets=target_sets,
             applied="deload_reset",
             amount=drop_weight - last_weight,
-            note=f"stalled {stall_weeks} sessions — dropping weight, rebuild at 12 reps",
+            note=f"stalled {stall_weeks} sessions (add_set tried) — dropping weight, rebuild at 12 reps",
         )
 
     if stall_weeks == 2 and not all_hit_target:
@@ -378,6 +464,19 @@ def calculate_next_weight(
                 sets=target_sets,
                 applied="hold",
                 note="next jump would exceed 10% cap — holding",
+            )
+
+        # Per-muscle-group weekly volume cap: block if any primary mover
+        # would exceed 10% week-over-week increase
+        if _check_muscle_group_volume_cap(
+            sb, exercise_name, new_weight, last_weight, target_sets, target_reps
+        ):
+            return ProgressionResult(
+                weight_kg=last_weight,
+                reps=target_reps,
+                sets=target_sets,
+                applied="hold",
+                note="weekly muscle group volume cap — increase would exceed 10% WoW growth",
             )
 
         return ProgressionResult(
@@ -452,6 +551,137 @@ def _count_heavy_streak(sb, exercise_name: str) -> int:
         return 0
 
 
+def _count_light_streak(sb, exercise_name: str) -> int:
+    """Count consecutive recent sessions where exercise was rated 'light'."""
+    try:
+        result = sb.table("exercise_feedback").select(
+            "session_date, feel"
+        ).eq(
+            "exercise_name", exercise_name
+        ).order(
+            "session_date", desc=True
+        ).limit(5).execute()
+
+        if not result.data:
+            return 0
+
+        streak = 0
+        for row in result.data:
+            if row["feel"] == "light":
+                streak += 1
+            else:
+                break
+        return streak
+    except Exception:
+        return 0
+
+
+def _accelerated_increase(weight_kg: float, equipment: str) -> float:
+    """Return weight with 2x normal increment (for acceleration triggers).
+
+    Used when light-feel or low-RPE signals indicate the athlete is ready
+    for faster progression than the standard minimum increment.
+    """
+    if equipment == "kettlebell":
+        # Skip one KB weight (e.g., 16 → 24 instead of 16 → 20)
+        first_up = next_plate_up(weight_kg, equipment)
+        return next_plate_up(first_up, equipment)
+
+    # For barbell/dumbbell: double the plate increment
+    increment = PLATE_INCREMENTS.get(equipment, 2.5)
+    return round_to_plate(weight_kg + 2 * increment, equipment)
+
+
+def _get_avg_srpe(sb, exercise_name: str, sessions: int = 2) -> float | None:
+    """Get average session RPE over last N sessions containing this exercise.
+
+    Returns None if fewer than `sessions` data points with sRPE exist.
+    """
+    try:
+        db_name = resolve_exercise_name(exercise_name)
+
+        ex = sb.table("exercises").select("id").eq("name", db_name).limit(1).execute()
+        if not ex.data:
+            return None
+        ex_id = ex.data[0]["id"]
+
+        # Get recent distinct session_ids for this exercise
+        recent_sets = sb.table("training_sets").select(
+            "session_id"
+        ).eq("exercise_id", ex_id).order("id", desc=True).limit(sessions * 3).execute()
+
+        if not recent_sets.data:
+            return None
+
+        # Deduplicate session IDs preserving order
+        seen = set()
+        session_ids = []
+        for s in recent_sets.data:
+            sid = s["session_id"]
+            if sid not in seen:
+                seen.add(sid)
+                session_ids.append(sid)
+            if len(session_ids) >= sessions:
+                break
+
+        if len(session_ids) < sessions:
+            return None
+
+        # Get sRPE for each session
+        sessions_data = sb.table("training_sessions").select(
+            "id, srpe"
+        ).in_("id", session_ids).execute()
+
+        srpe_values = [s["srpe"] for s in (sessions_data.data or []) if s.get("srpe") is not None]
+
+        if len(srpe_values) < sessions:
+            return None
+
+        return sum(srpe_values) / len(srpe_values)
+    except Exception:
+        return None
+
+
+def _check_rpe_overshoot(sb, exercise_name: str, target_rpe: float, weeks: int = 2) -> bool:
+    """Check if actual RPE consistently exceeds target by >1 for N+ weeks.
+
+    KB §1.3: "IF RPE consistently overshoots target by >1 RPE for ≥2 weeks
+    → flag as potential fatigue accumulation; reduce loads 2.5-5%."
+
+    Requires exercise_progression.actual_rpe to be populated (via backfill_actuals).
+    Returns True if overshoot detected.
+    """
+    try:
+        from datetime import date, timedelta
+        cutoff = (date.today() - timedelta(weeks=weeks)).isoformat()
+
+        result = sb.table("exercise_progression").select(
+            "actual_rpe, planned_rpe"
+        ).eq(
+            "exercise_name", exercise_name
+        ).gte(
+            "date", cutoff
+        ).order("date", desc=True).limit(weeks * 2).execute()
+
+        if not result.data:
+            return False
+
+        # Filter for rows with actual RPE data
+        rows_with_rpe = [r for r in result.data if r.get("actual_rpe") is not None]
+
+        if len(rows_with_rpe) < weeks:
+            return False
+
+        # Check if the most recent entries all overshoot by >1
+        for row in rows_with_rpe[:weeks]:
+            if row["actual_rpe"] <= target_rpe + 1.0:
+                return False
+
+        return True
+    except Exception:
+        return False
+
+
 def _get_session_rpe_modifier(sb, exercise_name: str) -> float | None:
     """Check the most recent session sRPE for a session containing this exercise.
 
@@ -523,6 +753,139 @@ def _count_stall_weeks(sessions: list[dict], current_weight: float) -> int:
     return count
 
 
+def _was_add_set_tried(sb, exercise_name: str, weeks: int = 4) -> bool:
+    """Check if 'add_set' was applied for this exercise in the last N weeks.
+
+    KB §1.1: try +1 set for 3-4 weeks before deload_reset.
+    """
+    try:
+        from datetime import date, timedelta
+        cutoff = (date.today() - timedelta(weeks=weeks)).isoformat()
+
+        result = sb.table("exercise_progression").select(
+            "id"
+        ).eq(
+            "exercise_name", exercise_name
+        ).eq(
+            "progression_applied", "add_set"
+        ).gte(
+            "date", cutoff
+        ).limit(1).execute()
+
+        return bool(result.data)
+    except Exception:
+        return False
+
+
+def _get_wellness_modifier(sb) -> float | None:
+    """Check today's/yesterday's subjective wellness for conservatism signal.
+
+    KB: subjective wellness overrides wearables (Saw et al. 2016).
+
+    Returns:
+        None — no wellness data
+        0    — wellness OK (composite >= 2.5)
+        0.5  — poor wellness (composite < 2.5), treat like sRPE 8
+    """
+    try:
+        result = sb.table("subjective_wellness").select(
+            "composite_score"
+        ).order("date", desc=True).limit(1).execute()
+
+        if not result.data or result.data[0].get("composite_score") is None:
+            return None
+
+        composite = result.data[0]["composite_score"]
+        if composite < 2.5:
+            return 0.5
+        return 0
+    except Exception:
+        return None
+
+
+def _check_natural_deload(sb, current_week: int) -> bool:
+    """Check if previous week had enough mountain activity to serve as natural deload.
+
+    KB §5: weeks with 3+ mountain days and 1 gym session function as partial deloads.
+    Returns True if the athlete already deloaded naturally.
+    """
+    try:
+        result = sb.table("weekly_training_load").select(
+            "mountain_days, gym_sessions"
+        ).order("week_start", desc=True).limit(2).execute()
+
+        if not result.data or len(result.data) < 2:
+            return False
+
+        # Second row is previous week (first is current)
+        prev_week = result.data[1]
+        mountain_days = prev_week.get("mountain_days") or 0
+        gym_sessions = prev_week.get("gym_sessions") or 0
+
+        return mountain_days >= 3 and gym_sessions <= 1
+    except Exception:
+        return False
+
+
+def _check_muscle_group_volume_cap(
+    sb,
+    exercise_name: str,
+    proposed_weight: float,
+    current_weight: float,
+    target_sets: int,
+    target_reps: int,
+) -> bool:
+    """Check if proposed weight increase would exceed 10% WoW volume for any primary mover.
+
+    Per-exercise gate: only checks this exercise's muscle groups.
+    A full-body session evaluates each exercise independently.
+
+    Returns True if the increase should be blocked.
+    """
+    try:
+        # Get muscle groups for this exercise
+        ex = sb.table("exercises").select(
+            "muscle_groups"
+        ).eq("name", exercise_name).limit(1).execute()
+
+        if not ex.data or not ex.data[0].get("muscle_groups"):
+            return False
+
+        muscle_groups = ex.data[0]["muscle_groups"]
+        if isinstance(muscle_groups, str):
+            import json
+            muscle_groups = json.loads(muscle_groups)
+
+        if not muscle_groups:
+            return False
+
+        # Get current and previous week volumes
+        weeks = sb.table("weekly_training_load").select(
+            "total_gym_volume_kg"
+        ).order("week_start", desc=True).limit(2).execute()
+
+        if not weeks.data or len(weeks.data) < 2:
+            return False
+
+        prev_vol = weeks.data[1].get("total_gym_volume_kg") or 0
+        if prev_vol == 0:
+            return False
+
+        curr_vol = weeks.data[0].get("total_gym_volume_kg") or 0
+
+        # Calculate the volume delta from this exercise's weight increase
+        volume_delta = (proposed_weight - current_weight) * target_sets * target_reps
+        projected_vol = curr_vol + volume_delta
+
+        # Check if projected exceeds 10% over previous
+        if projected_vol / prev_vol > 1.10:
+            return True
+
+        return False
+    except Exception:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Record progression decision
 # ---------------------------------------------------------------------------
@@ -544,6 +907,101 @@ def record_progression(sb, exercise_name: str, target_date: str, result: Progres
         }, on_conflict="exercise_name,date").execute()
     except Exception as e:
         log.warning("Failed to record progression for %s: %s", exercise_name, e)
+
+
+# ---------------------------------------------------------------------------
+# Actual performance backfill
+# ---------------------------------------------------------------------------
+
+
+def backfill_actuals(sb, session_date: str) -> int:
+    """Backfill exercise_progression.actual_* from training_sets for a given date.
+
+    Called after garmin_sync writes training_sets. Updates existing
+    exercise_progression rows (planned side must already exist from
+    record_progression) with actual performance data.
+
+    Args:
+        sb: Supabase client
+        session_date: ISO date string (e.g. "2026-04-01")
+
+    Returns:
+        Number of exercise_progression rows updated
+    """
+    try:
+        # Find training session(s) for this date
+        sessions = sb.table("training_sessions").select(
+            "id"
+        ).eq("date", session_date).execute()
+
+        if not sessions.data:
+            return 0
+
+        session_ids = [s["id"] for s in sessions.data]
+
+        # Get all working sets for these sessions
+        sets = sb.table("training_sets").select(
+            "exercise_id, weight_kg, reps, rpe, set_type"
+        ).in_("session_id", session_ids).eq("set_type", "working").execute()
+
+        if not sets.data:
+            return 0
+
+        # Get exercise names for the exercise IDs
+        exercise_ids = list(set(s["exercise_id"] for s in sets.data if s.get("exercise_id")))
+        if not exercise_ids:
+            return 0
+
+        exercises = sb.table("exercises").select(
+            "id, name"
+        ).in_("id", exercise_ids).execute()
+
+        id_to_name = {e["id"]: e["name"] for e in (exercises.data or [])}
+
+        # Group sets by exercise name
+        from collections import defaultdict
+        by_exercise: dict[str, list[dict]] = defaultdict(list)
+        for s in sets.data:
+            name = id_to_name.get(s.get("exercise_id"))
+            if name:
+                by_exercise[name].append(s)
+
+        # Update exercise_progression rows
+        updated = 0
+        for exercise_name, exercise_sets in by_exercise.items():
+            actual_sets = len(exercise_sets)
+            actual_reps = [s["reps"] for s in exercise_sets if s.get("reps") is not None]
+            weights = [s["weight_kg"] for s in exercise_sets if s.get("weight_kg")]
+            rpes = [s["rpe"] for s in exercise_sets if s.get("rpe") is not None]
+
+            actual_weight = max(weights) if weights else None
+            actual_rpe = round(sum(rpes) / len(rpes), 1) if rpes else None
+
+            # Only update rows that already exist (planned side written by record_progression)
+            existing = sb.table("exercise_progression").select("id").eq(
+                "exercise_name", exercise_name
+            ).eq("date", session_date).limit(1).execute()
+
+            if not existing.data:
+                continue
+
+            sb.table("exercise_progression").update({
+                "actual_sets": actual_sets,
+                "actual_reps_per_set": actual_reps,
+                "actual_weight_kg": actual_weight,
+                "actual_rpe": actual_rpe,
+            }).eq("exercise_name", exercise_name).eq("date", session_date).execute()
+
+            updated += 1
+            log.info("Backfilled actuals for %s on %s: %d sets, %s reps, %skg, RPE %s",
+                     exercise_name, session_date, actual_sets, actual_reps,
+                     actual_weight, actual_rpe)
+
+        return updated
+
+    except Exception as e:
+        log.warning("Failed to backfill actuals for %s: %s", session_date, e)
+        return 0
 
 
 # ---------------------------------------------------------------------------

@@ -43,7 +43,7 @@ function applyHomeWeight(exerciseName: string, gymWeight: number | null, equipme
 // ---------------------------------------------------------------------------
 
 export function buildHomeWorkout(gym: WorkoutDefinition): WorkoutDefinition {
-  const exercises: PlannedExercise[] = gym.exercises.map((ex) => {
+  const exercises: PlannedExercise[] = (gym.exercises ?? []).map((ex) => {
     const sub = HOME_SUBSTITUTIONS[ex.name]
     if (sub) {
       return {
@@ -78,7 +78,7 @@ export function restoreGymWorkout(home: WorkoutDefinition): WorkoutDefinition | 
 }
 
 export function countSubstitutions(gym: WorkoutDefinition): number {
-  return gym.exercises.filter((ex) => ex.name in HOME_SUBSTITUTIONS).length
+  return (gym.exercises ?? []).filter((ex) => ex.name in HOME_SUBSTITUTIONS).length
 }
 
 export function isHomeWorkout(wd: WorkoutDefinition | null | undefined): boolean {

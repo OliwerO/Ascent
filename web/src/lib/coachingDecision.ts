@@ -14,6 +14,14 @@ export interface CoachingInputs {
   bodyBattery: number | null
   trainingReadiness: number | null
   rhrElevated: boolean
+  // Recovery tip inputs (all optional for backwards compat)
+  deepSleepPct: number | null
+  remSleepPct: number | null
+  poorSleepNights7d: number
+  mountainDays3d: number
+  isDeload: boolean
+  lastSrpe: number | null
+  soreness: number | null // wellness_soreness (1-5, lower = more sore)
 }
 
 export interface CoachingDecision {
@@ -21,12 +29,15 @@ export interface CoachingDecision {
   label: string
   recommendation: string
   reasons: string[]
+  recoveryTip: string | null
 }
 
 export function computeCoachingState(inputs: CoachingInputs): CoachingDecision {
   const {
     hrvStatus, hrvVal, hrvWeeklyAvg, sleepHoursLastNight, sleep7dAvg,
     wellnessComposite, bodyBattery, trainingReadiness, rhrElevated,
+    deepSleepPct, remSleepPct, poorSleepNights7d, mountainDays3d,
+    isDeload, lastSrpe,
   } = inputs
 
   const hrvStatusLow = hrvStatus?.toUpperCase() === 'LOW'
@@ -83,5 +94,23 @@ export function computeCoachingState(inputs: CoachingInputs): CoachingDecision {
       ? "I'd train if the warmup feels good. Cap RPE around 6, cut accessory volume ~30%, and bail to mobility if it doesn't click."
       : "Full session as planned. Aim for the prescribed RPE and focus on quality."
 
-  return { state, label, recommendation, reasons }
+  // Recovery tip — pick highest priority that applies (max 1)
+  let recoveryTip: string | null = null
+  if (deepSleepPct != null && deepSleepPct < 15) {
+    recoveryTip = 'Deep sleep was low — cooler room, earlier screen cutoff, and consistent bedtime tend to help'
+  } else if (remSleepPct != null && remSleepPct < 18) {
+    recoveryTip = 'REM sleep trending low — alcohol, late caffeine, and irregular sleep times are common culprits'
+  } else if (sleepHoursLastNight != null && sleepHoursLastNight < 6) {
+    recoveryTip = 'Short sleep last night — a 20-min nap before training can partially compensate'
+  } else if (mountainDays3d > 0) {
+    recoveryTip = 'Hydration and protein intake support recovery after mountain days — 1.6-2.2g/kg/day protein target'
+  } else if (isDeload) {
+    recoveryTip = 'Deload week — extra sleep and light mobility maximize adaptation from the training block'
+  } else if (lastSrpe != null && lastSrpe >= 8) {
+    recoveryTip = 'Yesterday was a grinder — extra carbs and protein in the next 24h support recovery'
+  } else if (poorSleepNights7d >= 3) {
+    recoveryTip = 'Sleep has been short this week — even 30min earlier to bed compounds'
+  }
+
+  return { state, label, recommendation, reasons, recoveryTip }
 }

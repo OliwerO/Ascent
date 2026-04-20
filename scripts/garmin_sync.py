@@ -16,7 +16,7 @@ import logging
 import os
 import sys
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -54,16 +54,37 @@ log = logging.getLogger("garmin_sync")
 # ---------------------------------------------------------------------------
 
 
+MAX_RETRIES = 3
+BACKOFF_BASE = 2  # seconds — retries at 2s, 4s, 8s
+
+
 def api_call(fn, *args, **kwargs):
-    """Call a Garmin API function with rate limiting; return None on failure."""
+    """Call a Garmin API function with rate limiting and exponential backoff.
+
+    Retries on 429 (TooManyRequests) up to MAX_RETRIES times with exponential
+    backoff. Re-raises AuthExpiredError immediately (can't retry auth issues).
+    Returns None on other transient failures.
+    """
     time.sleep(API_DELAY)
-    try:
-        return fn(*args, **kwargs)
-    except (GarminConnectTooManyRequestsError, RateLimitCooldownError, AuthExpiredError):
-        raise  # must abort — continuing would deepen rate limit ban
-    except Exception as exc:
-        log.warning("API call %s failed: %s", fn.__name__, exc)
-        return None
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            return fn(*args, **kwargs)
+        except AuthExpiredError:
+            raise  # auth is dead, can't retry
+        except (GarminConnectTooManyRequestsError, RateLimitCooldownError) as exc:
+            if attempt < MAX_RETRIES:
+                wait = BACKOFF_BASE ** (attempt + 1)
+                log.warning("Rate limited on %s (attempt %d/%d), retrying in %ds...",
+                            fn.__name__, attempt + 1, MAX_RETRIES, wait)
+                time.sleep(wait)
+            else:
+                log.error("Rate limited on %s after %d retries, skipping",
+                          fn.__name__, MAX_RETRIES)
+                return None
+        except Exception as exc:
+            log.warning("API call %s failed: %s", fn.__name__, exc)
+            return None
+    return None
 
 
 def safe_json(obj):
@@ -103,19 +124,33 @@ def _safe_int(v):
 
 # ---------------------------------------------------------------------------
 # Data validation — reject/flag rules from CLAUDE.md
+# Ranges loaded from config/training_constants.json
 # ---------------------------------------------------------------------------
+
+_CONSTANTS_PATH = PROJECT_ROOT / "config" / "training_constants.json"
+with open(_CONSTANTS_PATH) as _f:
+    _CONSTANTS = json.load(_f)
+
+_VALIDATION_RANGES = _CONSTANTS["validation_ranges"]
+
+
+def _range_check(field: str):
+    """Build a reject-check lambda from validation_ranges config."""
+    r = _VALIDATION_RANGES[field]
+    return lambda v: v is not None and (v < r["min"] or v > r["max"])
+
 
 # Reject-level rules: data is physiologically impossible, discard before writing
 REJECT_RULES = {
-    "resting_hr": lambda v: v is not None and (v < 25 or v > 120),
-    "avg_hr": lambda v: v is not None and (v < 30 or v > 230),
-    "max_hr": lambda v: v is not None and (v < 30 or v > 230),
-    "min_hr": lambda v: v is not None and (v < 25 or v > 200),
+    "resting_hr": _range_check("resting_hr"),
+    "avg_hr": _range_check("avg_hr"),
+    "max_hr": _range_check("max_hr"),
+    "min_hr": _range_check("min_hr"),
 }
 
 # Sleep-specific reject rules
 SLEEP_REJECT_RULES = {
-    "total_sleep_seconds": lambda v: v is not None and (v < 7200 or v > 57600),  # <2h or >16h
+    "total_sleep_seconds": _range_check("total_sleep_seconds"),
 }
 
 
@@ -138,11 +173,12 @@ def validate_sleep(row: dict) -> dict:
 
 
 def validate_hrv(row: dict) -> dict:
-    """Validate HRV row. rMSSD outside 5-250 is rejected."""
+    """Validate HRV row. rMSSD outside configured range is rejected."""
+    _rmssd = _VALIDATION_RANGES["rmssd"]
     for field in ("weekly_avg", "last_night_avg", "last_night_5min_high"):
         val = row.get(field)
-        if val is not None and (val < 5 or val > 250):
-            log.warning("REJECT %s=%s (rMSSD out of 5-250 range)", field, val)
+        if val is not None and (val < _rmssd["min"] or val > _rmssd["max"]):
+            log.warning("REJECT %s=%s (rMSSD out of %s-%s range)", field, val, _rmssd["min"], _rmssd["max"])
             row[field] = None
     return row
 
@@ -219,6 +255,9 @@ def sync_daily_metrics(client: Garmin, sb, d: date) -> bool | None:
         "spo2_avg": spo2_avg,
         "respiration_avg": resp_avg,
         "raw_json": safe_json(stats),
+        # Explicit synced_at so upserts update the timestamp on every sync
+        # (the column default only fires on INSERT, not UPDATE)
+        "synced_at": datetime.now(timezone.utc).isoformat(),
     }
     row = validate_daily_metrics(row)
     sb.table("daily_metrics").upsert(row, on_conflict="date").execute()
@@ -267,8 +306,13 @@ def sync_hrv(client: Garmin, sb, d: date) -> bool | None:
         log.warning("No HRV data for %s", ds)
         return None
 
-    summary = data.get("hrvSummary", data) if isinstance(data, dict) else data
-    baseline = summary.get("baseline", {}) if isinstance(summary, dict) else {}
+    # Garmin sometimes returns {"hrvSummary": null}; .get() default doesn't apply
+    # to explicit None values, so use `or` to fall through to the data dict.
+    if isinstance(data, dict):
+        summary = data.get("hrvSummary") or data
+    else:
+        summary = data
+    baseline = (summary.get("baseline") if isinstance(summary, dict) else None) or {}
 
     row = {
         "date": ds,
@@ -424,6 +468,11 @@ def sync_activities(client: Garmin, sb, d: date) -> bool | None:
         # Sync per-set exercise data for strength activities
         try:
             _sync_training_session(client, sb, act, garmin_id)
+            # Backfill exercise_progression.actual_* from the synced training_sets
+            act_date = act.get("startTimeLocal", "")[:10]
+            if act_date:
+                from progression_engine import backfill_actuals
+                backfill_actuals(sb, act_date)
         except Exception as exc:
             log.warning("Training session sync failed for %s: %s", garmin_id, exc)
 
@@ -459,74 +508,112 @@ def _sync_activity_details(client: Garmin, sb, garmin_id: str):
 # Maps Garmin's CATEGORY/NAME to our exercises.name
 # ---------------------------------------------------------------------------
 
-GARMIN_EXERCISE_MAP = {
-    # Garmin (category, name) → exercises table name
-    ("BENCH_PRESS", "INCLINE_DUMBBELL_BENCH_PRESS"): "Dumbbell Incline Press",
-    ("BENCH_PRESS", "DUMBBELL_BENCH_PRESS"): "Dumbbell Bench Press",
-    ("BENCH_PRESS", "BARBELL_BENCH_PRESS"): "Barbell Bench Press",
-    ("BENCH_PRESS", "INCLINE_BARBELL_BENCH_PRESS"): "Incline Barbell Bench Press",
-    ("ROW", "CHEST_SUPPORTED_DUMBBELL_ROW"): "Chest-Supported Row",
-    ("ROW", "BARBELL_ROW"): "Barbell Row",
-    ("ROW", "SINGLE_ARM_DUMBBELL_ROW"): "Single-Arm DB Row",
-    ("ROW", "SEATED_CABLE_ROW"): "Seated Cable Row",
-    ("ROW", "CABLE_ROW"): "Cable Row",
-    ("SHOULDER_PRESS", "SINGLE_ARM_DUMBBELL_SHOULDER_PRESS"): "Landmine Press",
-    ("SHOULDER_PRESS", "OVERHEAD_PRESS"): "Overhead Press",
-    ("SHOULDER_PRESS", "BARBELL_OVERHEAD_PRESS"): "Overhead Press",
-    ("SHOULDER_PRESS", "DUMBBELL_SHOULDER_PRESS"): "Overhead Press",
-    ("PULL_UP", "CHIN_UP"): "Chin-Up",
-    ("PULL_UP", "PULL_UP"): "Pull-Up",
-    ("SQUAT", "BARBELL_BACK_SQUAT"): "Barbell Back Squat",
-    ("SQUAT", "BARBELL_FRONT_SQUAT"): "Barbell Front Squat",
-    ("SQUAT", "SPLIT_SQUAT"): "Bulgarian Split Squat",
-    ("DEADLIFT", "CONVENTIONAL_DEADLIFT"): "Conventional Deadlift",
-    ("DEADLIFT", "ROMANIAN_DEADLIFT"): "Romanian Deadlift",
-    ("DEADLIFT", "TRAP_BAR_DEADLIFT"): "Trap Bar Deadlift",
-    ("DEADLIFT", "SUMO_DEADLIFT"): "Sumo Deadlift",
-    ("CORE", "KNEELING_AB_WHEEL"): "Ab Wheel Rollout",
-    ("CORE", "DEAD_BUG"): "Dead Bugs",
-    ("HIP_STABILITY", "QUADRUPED_WITH_LEG_LIFT"): "Bird Dogs",
-    ("PLANK", "PLANK"): "Plank",
-    ("PLANK", "COPENHAGEN_PLANK"): "Copenhagen Plank",
-    ("CARRY", "FARMERS_WALK"): "Suitcase Carry",
-    ("CARRY", "SUITCASE_CARRY"): "Suitcase Carry",
-    ("TOTAL_BODY", "KETTLEBELL_SWING"): "Kettlebell Swing",
-    ("TOTAL_BODY", "TURKISH_GET_UP"): "Turkish Get-Up",
-    ("TOTAL_BODY", "KETTLEBELL_CLEAN_AND_PRESS"): "KB Clean & Press",
-    ("SHOULDER_STABILITY", "KETTLEBELL_HALO"): "Kettlebell Halo",
-    ("LATERAL_RAISE", "LATERAL_RAISE"): "Lateral Raise",
-    ("CURL", "BARBELL_CURL"): "Barbell Curl",
-    ("CURL", "DUMBBELL_CURL"): "Dumbbell Curl",
-    ("CURL", "HAMMER_CURL"): "Hammer Curl",
-    ("TRICEPS_EXTENSION", "TRICEP_PUSHDOWN"): "Tricep Pushdown",
-    ("TRICEPS_EXTENSION", "SKULL_CRUSHER"): "Skull Crusher",
-    ("LAT_PULL", "LAT_PULLDOWN"): "Lat Pulldown",
-    ("HIP_RAISE", "HIP_THRUST"): "Hip Thrust",
-    ("LEG_CURL", "LEG_CURL"): "Leg Curl",
-    ("LEG_EXTENSION", "LEG_EXTENSION"): "Leg Extension",
-    ("CALF_RAISE", "CALF_RAISE"): "Calf Raise",
-    ("LUNGE", "WALKING_LUNGE"): "Walking Lunge",
-    ("FLY", "CABLE_FLY"): "Cable Fly",
-    ("DIP", "DIP"): "Dip",
-    ("SQUAT", "GOBLET_SQUAT"): "Barbell Front Squat",
-    ("LEG_PRESS", "LEG_PRESS"): "Leg Press",
-    ("ROW", "T_BAR_ROW"): "Barbell Row",
-    ("ROW", "INVERTED_ROW"): "Barbell Row",
-    ("BENCH_PRESS", "CLOSE_GRIP_BENCH_PRESS"): "Barbell Bench Press",
-    ("BENCH_PRESS", "PUSH_UP"): "Push-Up",
-    ("SHOULDER_PRESS", "ARNOLD_PRESS"): "Overhead Press",
-    ("LATERAL_RAISE", "DUMBBELL_LATERAL_RAISE"): "Lateral Raise",
-    ("CURL", "CABLE_CURL"): "Barbell Curl",
-    ("TRICEPS_EXTENSION", "OVERHEAD_TRICEP_EXTENSION"): "Overhead Tricep Extension",
-    ("CORE", "PLANK"): "Plank",
-    ("CORE", "PALLOF_PRESS"): "Pallof Walkouts",
-    ("CORE", "COPENHAGEN_PLANK"): "Copenhagen Plank",
-    ("CORE", "HANGING_LEG_RAISE"): "Hanging Leg Raise",
-    ("HIP_RAISE", "GLUTE_BRIDGE"): "Hip Thrust",
-    ("TOTAL_BODY", "CLEAN_AND_JERK"): "KB Clean & Press",
-    ("SHRUG", "BARBELL_SHRUG"): "Barbell Row",
-    ("FACE_PULL", "FACE_PULL"): "Face Pull",
-}
+# ─── Reverse map: Garmin (category, name) → Ascent exercise name ──────────
+#
+# Built in two layers:
+#  1. Auto-generated from workout_push.py's GARMIN_EXERCISE_MAP so every
+#     (category, name) pair we push to Garmin round-trips correctly.
+#  2. Manual entries for Garmin auto-detected names (freestyle sessions,
+#     or when the watch classifies exercises differently from what we pushed).
+#
+# The auto-generated layer prevents the class of bug where we push
+# OVERHEAD_BARBELL_PRESS but can't resolve it back because only
+# OVERHEAD_PRESS and BARBELL_OVERHEAD_PRESS were in the manual map.
+
+def _build_reverse_map() -> dict[tuple[str, str], str]:
+    """Build (category, garmin_name) → ascent_name from the push map + manual extras."""
+    # Import push-side map (ascent_name → (category, garmin_name))
+    from workout_push import GARMIN_EXERCISE_MAP as PUSH_MAP
+
+    # Auto-reverse: every push entry becomes a pull entry.
+    # Skip warmup proxy entries (multiple exercises → same ARM_CIRCLES)
+    # by keeping the first mapping for each (category, name) pair.
+    reverse: dict[tuple[str, str], str] = {}
+    for ascent_name, (cat, garmin_name) in PUSH_MAP.items():
+        key = (cat, garmin_name)
+        if key not in reverse:
+            reverse[key] = ascent_name
+
+    # Manual extras: Garmin auto-detect names that differ from what we push.
+    # These handle freestyle sessions or watch-guessed classifications.
+    manual = {
+        ("SHOULDER_PRESS", "OVERHEAD_PRESS"): "Overhead Press",
+        ("SHOULDER_PRESS", "BARBELL_OVERHEAD_PRESS"): "Overhead Press",
+        ("SHOULDER_PRESS", "DUMBBELL_SHOULDER_PRESS"): "DB Overhead Press",
+        ("SHOULDER_PRESS", "SINGLE_ARM_DUMBBELL_SHOULDER_PRESS"): "Landmine Press",
+        ("SHOULDER_PRESS", "ARNOLD_PRESS"): "Overhead Press",
+        ("BENCH_PRESS", "BARBELL_BENCH_PRESS"): "Barbell Bench Press",
+        ("BENCH_PRESS", "INCLINE_BARBELL_BENCH_PRESS"): "Incline Barbell Bench Press",
+        ("BENCH_PRESS", "CLOSE_GRIP_BENCH_PRESS"): "Barbell Bench Press",
+        ("BENCH_PRESS", "PUSH_UP"): "Push-Up",
+        ("ROW", "SINGLE_ARM_DUMBBELL_ROW"): "Single-Arm DB Row",
+        ("ROW", "CABLE_ROW"): "Cable Row",
+        ("ROW", "T_BAR_ROW"): "Barbell Row",
+        ("ROW", "INVERTED_ROW"): "Band-Assisted Inverted Row",
+        ("SQUAT", "SPLIT_SQUAT"): "Bulgarian Split Squat",
+        ("SQUAT", "GOBLET_SQUAT"): "Goblet Squat Hold",
+        ("DEADLIFT", "CONVENTIONAL_DEADLIFT"): "Conventional Deadlift",
+        ("DEADLIFT", "ROMANIAN_DEADLIFT"): "Romanian Deadlift",
+        ("DEADLIFT", "SUMO_DEADLIFT"): "Sumo Deadlift",
+        ("DEADLIFT", "SINGLE_LEG_DEADLIFT"): "Single-Leg RDL",
+        ("CORE", "KNEELING_AB_WHEEL"): "Ab Wheel Rollout",
+        ("CORE", "DEAD_BUG"): "Dead Bugs",
+        ("CORE", "PALLOF_PRESS"): "Pallof Walkouts",
+        ("CORE", "COPENHAGEN_PLANK"): "Copenhagen Plank",
+        ("CORE", "PLANK"): "Plank",
+        ("CORE", "HANGING_LEG_RAISE"): "Hanging Leg Raise",
+        ("HIP_STABILITY", "QUADRUPED_WITH_LEG_LIFT"): "Bird Dogs",
+        ("HIP_STABILITY", "DEAD_BUG"): "Dead Bugs",
+        ("HIP_STABILITY", "HIP_CIRCLES"): "90/90 Hip Switch",
+        ("PLANK", "PLANK"): "Plank",
+        ("PLANK", "COPENHAGEN_PLANK"): "Copenhagen Plank",
+        ("CARRY", "SUITCASE_CARRY"): "Suitcase Carry",
+        ("TOTAL_BODY", "KETTLEBELL_SWING"): "Kettlebell Swing",
+        ("TOTAL_BODY", "TURKISH_GET_UP"): "Turkish Get-Up",
+        ("TOTAL_BODY", "KETTLEBELL_CLEAN_AND_PRESS"): "KB Clean & Press",
+        ("TOTAL_BODY", "CLEAN_AND_JERK"): "KB Clean & Press",
+        ("SHOULDER_STABILITY", "KETTLEBELL_HALO"): "Kettlebell Halo",
+        ("LATERAL_RAISE", "LATERAL_RAISE"): "Lateral Raise",
+        ("LATERAL_RAISE", "DUMBBELL_LATERAL_RAISE"): "Lateral Raise",
+        ("CURL", "BARBELL_CURL"): "Barbell Curl",
+        ("CURL", "DUMBBELL_CURL"): "Dumbbell Curl",
+        ("CURL", "HAMMER_CURL"): "Hammer Curl",
+        ("CURL", "CABLE_CURL"): "Barbell Curl",
+        ("TRICEPS_EXTENSION", "TRICEP_PUSHDOWN"): "Tricep Pushdown",
+        ("TRICEPS_EXTENSION", "SKULL_CRUSHER"): "Skull Crusher",
+        ("TRICEPS_EXTENSION", "OVERHEAD_TRICEP_EXTENSION"): "Overhead Tricep Extension",
+        ("LAT_PULL", "LAT_PULLDOWN"): "Lat Pulldown",
+        ("HIP_RAISE", "HIP_THRUST"): "Hip Thrust",
+        ("HIP_RAISE", "GLUTE_BRIDGE"): "Hip Thrust",
+        ("LEG_CURL", "LEG_CURL"): "Leg Curl",
+        ("LEG_EXTENSION", "LEG_EXTENSION"): "Leg Extension",
+        ("CALF_RAISE", "CALF_RAISE"): "Calf Raise",
+        ("LUNGE", "WALKING_LUNGE"): "Walking Lunge",
+        ("FLY", "CABLE_FLY"): "Cable Fly",
+        ("DIP", "DIP"): "Dip",
+        ("LEG_PRESS", "LEG_PRESS"): "Leg Press",
+        ("SHRUG", "BARBELL_SHRUG"): "Barbell Row",
+        ("FACE_PULL", "FACE_PULL"): "Face Pull",
+    }
+
+    # Manual entries only fill gaps — push-derived entries take priority
+    for key, name in manual.items():
+        if key not in reverse:
+            reverse[key] = name
+
+    # Canonical DB name overrides: when multiple push-map aliases point to the
+    # same Garmin exercise, ensure the exercises-table-canonical name wins.
+    canonical_overrides = {
+        ("BENCH_PRESS", "INCLINE_DUMBBELL_BENCH_PRESS"): "Dumbbell Incline Press",
+        ("PULL_UP", "CHIN_UP"): "Chin-Up",
+        ("CARRY", "FARMERS_WALK"): "Suitcase Carry",
+        ("ROW", "SEATED_CABLE_ROW"): "Cable Row",
+    }
+    reverse.update(canonical_overrides)
+
+    return reverse
+
+GARMIN_EXERCISE_MAP = _build_reverse_map()
 
 # Cache: exercises.name → exercises.id (populated once per sync run)
 _exercise_id_cache: dict[str, int] = {}
@@ -547,17 +634,19 @@ def _get_exercise_id(sb, exercise_name: str) -> int | None:
 
 
 def _resolve_garmin_exercise(category: str, name: str) -> str | None:
-    """Map a Garmin exercise (category, name) to our exercises table name."""
-    # Direct mapping
+    """Map a Garmin exercise (category, name) to our exercises table name.
+
+    Uses exact (category, name) lookup only — no category-only fallback.
+    The reverse map is auto-generated from workout_push.py's push map,
+    so every exercise we push round-trips correctly. Unknown exercises
+    are logged for future mapping.
+    """
     mapped = GARMIN_EXERCISE_MAP.get((category, name))
     if mapped:
         return mapped
 
-    # Try category-only fallback (less specific)
-    for (cat, _), ex_name in GARMIN_EXERCISE_MAP.items():
-        if cat == category:
-            return ex_name
-
+    # No category-only fallback — better to have a gap than wrong data.
+    # The push-derived reverse map covers all exercises we prescribe.
     return None
 
 
@@ -633,6 +722,11 @@ def _sync_training_session(client: Garmin, sb, act: dict, garmin_id: str):
         if garmin_set.get("setType") == "REST":
             continue
 
+        # Skip 0-rep noise (warmup movements Garmin misclassifies as working sets)
+        reps_raw = garmin_set.get("repetitionCount")
+        if reps_raw is not None and reps_raw == 0:
+            continue
+
         exercises = garmin_set.get("exercises", [])
         if not exercises:
             continue
@@ -668,7 +762,7 @@ def _sync_training_session(client: Garmin, sb, act: dict, garmin_id: str):
     # Mark matching planned_workout as completed and link the activity ID
     planned = sb.table("planned_workouts").select("id, status").eq(
         "scheduled_date", act_date
-    ).in_("status", ["planned", "pushed", "adjusted"]).execute()
+    ).in_("status", ["planned", "pushed", "adjusted", "rescheduled"]).execute()
     if planned.data:
         sb.table("planned_workouts").update({
             "status": "completed",

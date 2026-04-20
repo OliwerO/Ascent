@@ -11,6 +11,13 @@ export const MOUNTAIN_ACTIVITY_TYPES = new Set([
   'hang_gliding',
 ])
 
+// Cycling activity types
+export const CYCLING_ACTIVITY_TYPES = new Set([
+  'road_biking',
+  'cycling',
+  'gravel_cycling',
+])
+
 // Self-powered mountain activities (exclude resort/lift-assisted)
 export const SELF_POWERED_MOUNTAIN_TYPES = new Set([
   'backcountry_skiing',

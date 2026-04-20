@@ -168,9 +168,11 @@ below for any date-specific overrides.
 | 2026-04-09 | mark_rest | Marked as rest day | Hard override triggered: training readiness 27 (threshold <40). Body battery only 30, mountain day yesterday (1228m). HRV balanced but recovery metrics overwhelmingly negative. | Pending |
 | 2026-04-09 | replace_session | Replaced session with Strength B: Upper + Core | Reverting stale-data rest override. Original adjustment made on fallback data (TR=27, BB=30). Fresh sync shows BB=98, resting HR 45, HRV balanced — all green. User confirms legs sore but upper body fi | Pending |
 | 2026-04-10 | replace_session | Replaced session with Strength C: Upper + Carry (legs removed) | Legs sore from Monday mountain day (1228m backcountry snowboarding) + two tours planned Sat/Sun. Removed Trap Bar Deadlift and Bulgarian Split Squat. Kept upper body and carries to preserve training s | Pending |
-| 2026-04-13 | mark_rest | Marked as rest day | Strength B moved to Thursday 04-09 (stale-data revert). No second B needed this week. Rest before Week 3. | Pending |
+| 2026-04-13 | mark_rest | ~~Superseded~~ | ~~Stale adjustment from Week 2 — replaced by restore below~~ | Yes |
 | 2026-04-09 | replace_session | Replaced session with Strength B: Upper + Core | Re-push with proper Garmin set grouping (RepeatGroupDTO fix). | Pending |
 | 2026-04-10 | replace_session | Replaced session with Strength C: Upper + Carry (legs removed) | Re-push with proper Garmin set grouping (RepeatGroupDTO fix). | Pending |
+| 2026-04-06 | mark_skipped | Marked as skipped | no strength activity recorded (auto-reconciled) | Pending |
+| 2026-04-13 | replace_session | Replaced session with Strength B: Upper + Core | Restored Week 3 Monday template. Previous rest was a stale adjustment from Week 2 reshuffling (Apr 9) that incorrectly carried into this week. | Yes |
 
 -----
 

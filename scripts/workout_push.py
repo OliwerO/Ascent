@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -29,6 +30,7 @@ from supabase import create_client
 # ---------------------------------------------------------------------------
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+VENV_PYTHON = PROJECT_ROOT / "venv" / "bin" / "python3"
 load_dotenv(PROJECT_ROOT / ".env")
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
@@ -44,15 +46,20 @@ logging.basicConfig(
 log = logging.getLogger("workout_push")
 
 # ---------------------------------------------------------------------------
-# Block / week determination
+# Block / week determination — loaded from config/training_constants.json
 # ---------------------------------------------------------------------------
 
-BLOCK_1_START = date(2026, 4, 1)   # Wednesday
-BLOCK_1_END = date(2026, 4, 28)
-BLOCK_2_START = date(2026, 4, 29)
-BLOCK_2_END = date(2026, 5, 26)
+_CONSTANTS_PATH = PROJECT_ROOT / "config" / "training_constants.json"
+with open(_CONSTANTS_PATH) as _f:
+    _CONSTANTS = json.load(_f)
 
-DELOAD_WEEKS = {4, 8}  # Week 4 and Week 8 are deloads
+_block_dates = _CONSTANTS["block_dates"]
+BLOCK_1_START = date.fromisoformat(_block_dates["block_1_start"])
+BLOCK_1_END = date.fromisoformat(_block_dates["block_1_end"])
+BLOCK_2_START = date.fromisoformat(_block_dates["block_2_start"])
+BLOCK_2_END = date.fromisoformat(_block_dates["block_2_end"])
+
+DELOAD_WEEKS = set(_CONSTANTS["deload_weeks"])
 
 
 def get_program_week(target_date: date) -> tuple[int, int]:
@@ -111,8 +118,8 @@ GARMIN_EXERCISE_MAP = {
     "Dumbbell Bench Press":     ("BENCH_PRESS",    "DUMBBELL_BENCH_PRESS"),
     "Barbell Row":              ("ROW",            "BARBELL_ROW"),
     "Kettlebell Swing":         ("HIP_RAISE",      "KETTLEBELL_SWING"),
-    "Kettlebell Halo":          ("WARM_UP",        "ARM_CIRCLES"),               # No exact match
-    "Turkish Get-Up":           ("CORE",           "TURKISH_GET_UP"),
+    "Kettlebell Halo":          ("SHOULDER_PRESS", "DUMBBELL_SHOULDER_PRESS"),   # Weighted shoulder/trap movement
+    "Turkish Get-Up":           ("TOTAL_BODY",     "TURKISH_GET_UP"),
 
     # Strength B (Monday)
     "Overhead Press":           ("SHOULDER_PRESS",  "OVERHEAD_BARBELL_PRESS"),
@@ -124,8 +131,8 @@ GARMIN_EXERCISE_MAP = {
     "Lat Pulldown":             ("PULL_UP",         "LAT_PULLDOWN"),
     "Dumbbell Incline Press":   ("BENCH_PRESS",     "INCLINE_DUMBBELL_BENCH_PRESS"),
     "Cable Row":                ("ROW",             "SEATED_CABLE_ROW"),
-    "Dead Bugs":                ("HIP_STABILITY",   "DEAD_BUG"),
-    "Copenhagen Plank":         ("SUSPENSION",      "SIDE_PLANK"),               # No exact match
+    "Dead Bugs":                ("CORE",            "DEAD_BUG"),
+    "Copenhagen Plank":         ("CORE",            "SIDE_PLANK"),               # Adductor-loaded side plank
     "Pallof Walkouts":          ("CORE",            "CABLE_CORE_PRESS"),
 
     # Strength C (Friday)
@@ -148,8 +155,8 @@ GARMIN_EXERCISE_MAP = {
     "Barbell Front Squat":      ("SQUAT",           "BARBELL_FRONT_SQUAT"),
     "DB Floor Press":           ("BENCH_PRESS",     "DUMBBELL_BENCH_PRESS"),
     "DB Swing":                 ("HIP_RAISE",       "KETTLEBELL_SWING"),          # Closest match
-    "DB Halo":                  ("WARM_UP",         "ARM_CIRCLES"),               # No exact match
-    "DB Turkish Get-Up":        ("CORE",            "TURKISH_GET_UP"),
+    "DB Halo":                  ("SHOULDER_PRESS",  "DUMBBELL_SHOULDER_PRESS"),   # Weighted shoulder/trap movement
+    "DB Turkish Get-Up":        ("TOTAL_BODY",      "TURKISH_GET_UP"),
     "Band-Assisted Inverted Row": ("ROW",           "INVERTED_ROW"),
     "Feet-Elevated Push-Up":    ("PUSH_UP",         "PUSH_UP"),
     "Band Row":                 ("ROW",             "BARBELL_ROW"),               # Closest match
@@ -159,41 +166,30 @@ GARMIN_EXERCISE_MAP = {
     "DB Farmer Carry":          ("CARRY",           "FARMERS_WALK"),
     "Jump Rope":                ("CARDIO",          "JUMP_ROPE"),
 
-    # Warm-up exercises
-    "Foam Roll T-Spine":        ("WARM_UP",         "ARM_CIRCLES"),              # No foam rolling in Garmin DB
-    "Ankle Mobilization":       ("WARM_UP",         "ANKLE_CIRCLES"),
-    "Goblet Squat Hold":        ("SQUAT",           "GOBLET_SQUAT"),
-    "World's Greatest Stretch":  ("WARM_UP",        "ARM_CIRCLES"),              # No exact match
-    "Bodyweight Squat":         ("SQUAT",           "BODY_WEIGHT_WALL_SQUAT"),
+    # Warm-up exercises (aligned with mobility_workout.EXERCISE_MAP)
+    "Foam Roll T-Spine":        ("WARM_UP",         "FOAM_ROLLER"),
+    "Ankle Mobilization":       ("WARM_UP",         "ANKLE_DORSIFLEXION_WITH_BAND"),
+    "Goblet Squat Hold":        ("WARM_UP",         "GOBLET_SQUAT"),
+    "World's Greatest Stretch": ("WARM_UP",         "WORLDS_GREATEST_STRETCH"),
+    "Bodyweight Squat":         ("WARM_UP",         "BODY_WEIGHT_SQUAT"),
     "90/90 Hip Switch":         ("HIP_STABILITY",   "HIP_CIRCLES"),
-    "Single-Leg RDL":           ("DEADLIFT",        "SINGLE_LEG_DEADLIFT"),
-    "Inchworm":                 ("CORE",            "INCHWORM"),
-    "Wall Slides":              ("WARM_UP",         "ARM_CIRCLES"),
-    "Band Pull-Aparts":        ("WARM_UP",          "ARM_CIRCLES"),              # No band pull-apart in Garmin DB
-    "Thread the Needle":        ("WARM_UP",         "ARM_CIRCLES"),              # No exact match
+    "Single-Leg RDL":           ("WARM_UP",         "SINGLE_LEG_DEADLIFT"),
+    "Inchworm":                 ("WARM_UP",         "INCHWORM"),
+    "Wall Slides":              ("WARM_UP",         "WALL_SLIDE"),
+    "Band Pull-Aparts":        ("WARM_UP",          "BAND_PULL_APART"),
+    "Thread the Needle":        ("WARM_UP",         "THORACIC_ROTATION"),
+    "Half-Kneeling OH Press":   ("WARM_UP",         "HALF_KNEELING_OVERHEAD_PRESS"),
 }
 
-# Garmin benchmark e1RMs (from user's Garmin Connect, as of Feb 2026)
+# Garmin benchmark e1RMs — loaded from config/training_constants.json
 # Used for benchmarkPercentage approach — Garmin calculates weight from these
-GARMIN_BENCHMARKS = {
-    "BARBELL_BACK_SQUAT": 133.3,
-    "BARBELL_BENCH_PRESS": 102.9,
-    "DUMBBELL_BENCH_PRESS": 33.8,      # per hand
-    "BARBELL_ROW": 30.0,
-    "OVERHEAD_BARBELL_PRESS": 66.7,
-    "TRAP_BAR_DEADLIFT": 120.0,         # using barbell deadlift benchmark
-    "DUMBBELL_LATERAL_RAISE": None,     # not set
-    "CHIN_UP": None,                     # bodyweight
-    "INCLINE_DUMBBELL_BENCH_PRESS": None,  # not set
-    "SEATED_CABLE_ROW": None,            # not set
-    "ONE_ARM_DUMBBELL_ROW": 80.0,        # per hand
-    "DUMBBELL_BULGARIAN_SPLIT_SQUAT": None,  # not set
-}
+GARMIN_BENCHMARKS: dict[str, float | None] = _CONSTANTS["garmin_benchmarks"]
 
 # Exercises where the Garmin name doesn't match the actual exercise
 # These get a note in the description field
 EXERCISE_NOTES = {
     "Kettlebell Halo":   "Actual exercise: Kettlebell Halo",
+    "DB Halo":           "Actual exercise: DB Halo",
     "Copenhagen Plank":  "Actual exercise: Copenhagen Plank",
     "Pallof Walkouts":   "Actual exercise: Pallof Walkouts",
     "KB Clean & Press":  "Actual exercise: KB Clean & Press",
@@ -514,6 +510,8 @@ def calculate_weight(
     sb=None,
     target_reps: int = 8,
     target_sets: int = 3,
+    target_rpe: float | None = None,
+    target_date: date | None = None,
 ) -> tuple[float | None, str]:
     """Apply smart progressive overload based on actual performance data.
 
@@ -536,11 +534,13 @@ def calculate_weight(
                 target_sets=target_sets,
                 current_week=week,
                 start_kg=start_kg,
+                target_rpe=target_rpe,
             )
 
             # Record the decision to exercise_progression table
-            from datetime import date
-            record_progression(sb, exercise_name, date.today().isoformat(), result,
+            from datetime import date as date_cls
+            prog_date = (target_date or date_cls.today()).isoformat()
+            record_progression(sb, exercise_name, prog_date, result,
                                planned_rpe=7.0 if block == 1 else 8.0)
 
             w = result.weight_kg
@@ -631,7 +631,13 @@ def build_warmup_step(
     duration_s: int | None = None,
     step_order: int = 0,
 ) -> dict:
-    """Build a Garmin warmup step (stepTypeId: 1) for pre-session mobility."""
+    """Build a Garmin warmup step as an interval (stepTypeId: 3).
+
+    Uses stepTypeId 3 ("interval") instead of 1 ("warmup") because Garmin
+    watches collapse multiple warmup-type steps into a single hidden phase.
+    Interval steps render individually on the watch, matching the behavior
+    of standalone mobility workouts (mobility_workout.py).
+    """
     # Safe fallback: ARM_CIRCLES is a known-valid Garmin warmup exerciseName
     # used elsewhere in GARMIN_EXERCISE_MAP for unmappable items. "OTHER"
     # triggers Garmin API "Invalid category" 400.
@@ -643,9 +649,9 @@ def build_warmup_step(
         "type": "ExecutableStepDTO",
         "stepOrder": step_order,
         "stepType": {
-            "stepTypeId": 1,
-            "stepTypeKey": "warmup",
-            "displayOrder": 1,
+            "stepTypeId": 3,
+            "stepTypeKey": "interval",
+            "displayOrder": 3,
         },
         "category": category,
         "exerciseName": garmin_exercise_name,
@@ -936,6 +942,8 @@ def build_garmin_workout(
             sb=sb,
             target_reps=ex["reps"],
             target_sets=ex["sets"],
+            target_rpe=ex.get("rpe_high"),
+            target_date=target_date,
         )
         progression_notes.append((ex["name"], weight, prog_note))
 
@@ -1045,6 +1053,7 @@ def format_weight_summary(session_key: str, block: int, week: int,
             weight, prog_note = calculate_weight(
                 ex["name"], ex["start_kg"], block, week, sb=sb,
                 target_reps=ex["reps"], target_sets=ex["sets"],
+                target_rpe=ex.get("rpe_high"),
             )
 
         if weight:
@@ -1380,7 +1389,7 @@ def link_garmin_workout_id(
                 "garmin_workout_id": workout_id,
                 "status": "pushed",
             }).eq("id", planned_id).in_(
-                "status", ["planned", "adjusted", "pushed"]
+                "status", ["planned", "adjusted", "rescheduled", "pushed"]
             ).execute()
         else:
             date_str = target_date.isoformat()
@@ -1388,7 +1397,7 @@ def link_garmin_workout_id(
                 "garmin_workout_id": workout_id,
                 "status": "pushed",
             }).eq("scheduled_date", date_str).in_(
-                "status", ["planned", "adjusted", "pushed"]
+                "status", ["planned", "adjusted", "rescheduled", "pushed"]
             ).execute()
         if result.data:
             log.info("Linked garmin_workout_id=%s to planned_workout (date=%s)", workout_id, target_date)
@@ -1403,6 +1412,38 @@ def link_garmin_workout_id(
 # ---------------------------------------------------------------------------
 # Garmin upload
 # ---------------------------------------------------------------------------
+
+
+def unschedule_old_workout(client, target_date: date, *, sb=None) -> None:
+    """Unschedule any existing Garmin workout for this date before pushing a new one.
+
+    Prevents duplicate workouts appearing on the watch when a session is
+    rescheduled or re-pushed after adjustment.
+    """
+    try:
+        link_sb = sb if sb else create_client(SUPABASE_URL, SUPABASE_KEY)
+        date_str = target_date.isoformat()
+        result = link_sb.table("planned_workouts").select(
+            "id, garmin_workout_id"
+        ).eq("scheduled_date", date_str).not_.is_("garmin_workout_id", "null").execute()
+
+        for row in result.data or []:
+            old_id = row["garmin_workout_id"]
+            try:
+                client.delete_workout(old_id)
+                log.info("Deleted old Garmin workout %s for %s", old_id, date_str)
+            except Exception:
+                # delete_workout may not exist; try unschedule
+                try:
+                    client.connectapi(
+                        f"/workout-service/schedule/{old_id}",
+                        method="DELETE",
+                    )
+                    log.info("Unscheduled old Garmin workout %s for %s", old_id, date_str)
+                except Exception as exc2:
+                    log.warning("Could not remove old Garmin workout %s: %s", old_id, exc2)
+    except Exception as exc:
+        log.warning("Failed to check for old workouts on %s: %s", target_date, exc)
 
 
 def upload_workout(client, workout: dict) -> str | None:
@@ -1490,12 +1531,61 @@ def main():
     else:
         session_key = get_session_for_date(target_date)
         if session_key is None:
-            log.error(
-                "Date %s is not a gym day (Mon/Wed/Fri). "
-                "Use --session to override or --date for a gym day.",
-                target_date,
-            )
-            sys.exit(1)
+            # Not a standard gym day — check if a workout was rescheduled here
+            sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+            date_str = target_date.isoformat()
+            pw = sb.table("planned_workouts").select(
+                "session_name, session_type, workout_definition"
+            ).eq("scheduled_date", date_str).in_(
+                "status", ["planned", "adjusted", "rescheduled", "pushed"]
+            ).limit(1).execute()
+
+            if pw.data:
+                session_type = pw.data[0].get("session_type", "")
+                session_name = pw.data[0].get("session_name", "")
+                if session_type == "mobility" or "mobility" in session_name.lower():
+                    # Delegate to mobility_workout.py
+                    import subprocess
+                    protocol = "T"  # Default mobility protocol
+                    if "protocol c" in session_name.lower():
+                        protocol = "C"
+                    elif "protocol a" in session_name.lower():
+                        protocol = "A"
+                    log.info(
+                        "Date %s has rescheduled mobility session '%s' — delegating to mobility_workout.py --protocol %s",
+                        target_date, session_name, protocol,
+                    )
+                    result = subprocess.run(
+                        [str(VENV_PYTHON), str(PROJECT_ROOT / "scripts" / "mobility_workout.py"),
+                         "--protocol", protocol, "--date", date_str, "--push"],
+                        capture_output=True, text=True,
+                    )
+                    if result.returncode == 0:
+                        log.info("Mobility push succeeded")
+                    else:
+                        log.error("Mobility push failed: %s", result.stderr[-500:] if result.stderr else "no output")
+                    sys.exit(result.returncode)
+                else:
+                    # Non-mobility, non-gym session on a non-gym day — try to extract session key
+                    wd = pw.data[0].get("workout_definition") or {}
+                    session_label = wd.get("session_label") or ""
+                    for candidate_key in ["A", "B", "C", "A2", "B2"]:
+                        if candidate_key in session_label:
+                            session_key = candidate_key
+                            break
+                    if not session_key:
+                        log.error(
+                            "Date %s has rescheduled session '%s' but cannot determine session key.",
+                            target_date, session_name,
+                        )
+                        sys.exit(1)
+                    log.info("Using rescheduled session key %s from '%s'", session_key, session_name)
+            else:
+                log.error(
+                    "Date %s is not a gym day (Mon/Wed/Fri) and has no rescheduled workout.",
+                    target_date,
+                )
+                sys.exit(1)
 
     # Determine block and week
     block, week = get_program_week(target_date)
@@ -1569,6 +1659,10 @@ def main():
     log.info("Connecting to Garmin Connect...")
     client = get_garmin_client()
 
+    # Remove any previously pushed workout for this date (prevents duplicates
+    # after reschedule or re-push)
+    unschedule_old_workout(client, target_date, sb=sb)
+
     workout_id = upload_workout(client, workout)
     if not workout_id:
         log.error("Workout upload failed.")
@@ -1588,6 +1682,65 @@ def main():
         )
 
     link_garmin_workout_id(workout_id, target_date, sb=sb)
+
+    # Sync progressed weights back to planned_workouts.workout_definition
+    # so the React app shows the same weights as the Garmin push.
+    sync_progressed_weights(target_date, workout.get("_progression_notes", []), sb=sb)
+
+
+def sync_progressed_weights(
+    target_date: date,
+    progression_notes: list[tuple[str, float | None, str]],
+    *,
+    sb=None,
+) -> None:
+    """Update planned_workouts.workout_definition with progressed weights.
+
+    After workout_push.py calculates progressive overload, the actual
+    weights sent to Garmin may differ from the original plan. This writes
+    the progressed weights back so the React app, coaching card, and lift
+    progression chart all show consistent numbers.
+    """
+    if not progression_notes:
+        return
+    try:
+        link_sb = sb if sb else create_client(SUPABASE_URL, SUPABASE_KEY)
+        date_str = target_date.isoformat()
+        result = link_sb.table("planned_workouts").select(
+            "id, workout_definition"
+        ).eq("scheduled_date", date_str).in_(
+            "status", ["planned", "adjusted", "rescheduled", "pushed"]
+        ).limit(1).execute()
+
+        if not result.data:
+            return
+
+        row = result.data[0]
+        wd = row["workout_definition"]
+        if not isinstance(wd, dict) or "exercises" not in wd:
+            return
+
+        # Build a name→weight lookup from progression notes
+        weight_by_name = {}
+        for name, weight, _note in progression_notes:
+            if weight is not None:
+                weight_by_name[name] = weight
+
+        # Update each exercise's weight_kg
+        changed = False
+        for ex in wd["exercises"]:
+            new_weight = weight_by_name.get(ex["name"])
+            if new_weight is not None and ex.get("weight_kg") != new_weight:
+                ex["weight_kg"] = new_weight
+                changed = True
+
+        if changed:
+            link_sb.table("planned_workouts").update({
+                "workout_definition": wd,
+            }).eq("id", row["id"]).execute()
+            log.info("Synced progressed weights back to planned_workouts for %s", date_str)
+    except Exception as exc:
+        log.warning("Failed to sync progressed weights: %s", exc)
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -175,6 +176,60 @@ def write_heartbeat() -> None:
         pass  # heartbeat failure shouldn't raise
 
 
+ALERT_STATE_FILE = PROJECT_ROOT / "logs" / "health_check_state.json"
+
+# Escalation intervals: first alert immediate, then 1h, then every 4h
+ESCALATION_INTERVALS = [
+    timedelta(seconds=0),   # 1st alert: immediate
+    timedelta(hours=1),     # 2nd alert: 1 hour after first
+    timedelta(hours=4),     # 3rd+: every 4 hours
+]
+
+
+def _load_alert_state() -> dict[str, Any]:
+    """Load persisted alert state from disk."""
+    try:
+        return json.loads(ALERT_STATE_FILE.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_alert_state(state: dict[str, Any]) -> None:
+    """Persist alert state to disk."""
+    ALERT_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    ALERT_STATE_FILE.write_text(json.dumps(state, indent=2))
+
+
+def _should_alert(issue_key: str, state: dict[str, Any], now: datetime) -> bool:
+    """Decide whether to send an alert based on escalation schedule.
+
+    Returns True if the alert should fire, and updates state in-place.
+    """
+    if issue_key not in state:
+        # First occurrence — record and alert immediately
+        state[issue_key] = {
+            "first_seen": now.isoformat(),
+            "last_alert": now.isoformat(),
+            "alert_count": 1,
+        }
+        return True
+
+    entry = state[issue_key]
+    last_alert = datetime.fromisoformat(entry["last_alert"])
+    count = entry["alert_count"]
+
+    # Pick the interval: use the last tier for 3rd+ alerts
+    tier = min(count, len(ESCALATION_INTERVALS) - 1)
+    interval = ESCALATION_INTERVALS[tier]
+
+    if now - last_alert >= interval:
+        entry["last_alert"] = now.isoformat()
+        entry["alert_count"] = count + 1
+        return True
+
+    return False
+
+
 def alert_slack(message: str) -> None:
     """Post alert to Slack (best effort)."""
     token = os.environ.get("SLACK_BOT_TOKEN")
@@ -201,22 +256,49 @@ def main():
         ("Sync Watcher", check_sync_watcher),
     ]
 
+    now = datetime.now(timezone.utc)
+    state = _load_alert_state()
     failures = []
+    current_issue_keys: set[str] = set()
+
     for name, check_fn in checks:
         ok, msg = check_fn()
         status = "OK" if ok else "FAIL"
         log.info("[%s] %s: %s", status, name, msg)
         if not ok:
-            failures.append(f"{name}: {msg}")
+            issue_key = name.lower().replace(" ", "_")
+            current_issue_keys.add(issue_key)
+            failures.append((issue_key, f"{name}: {msg}"))
 
     # Write heartbeat regardless of check results
     write_heartbeat()
 
+    # Clear resolved issues from state
+    resolved = [k for k in state if k not in current_issue_keys]
+    for k in resolved:
+        log.info("Issue resolved, clearing alert state: %s", k)
+        del state[k]
+
     if failures:
-        alert_msg = ":warning: *Ascent health check failures:*\n" + "\n".join(f"- {f}" for f in failures)
-        alert_slack(alert_msg)
+        # Only alert for issues that pass the escalation gate
+        alerts_to_send = []
+        for issue_key, detail in failures:
+            if _should_alert(issue_key, state, now):
+                count = state[issue_key]["alert_count"]
+                suffix = f" (alert #{count})" if count > 1 else ""
+                alerts_to_send.append(f"- {detail}{suffix}")
+            else:
+                log.info("Throttled alert for %s (next at escalation tier)", issue_key)
+
+        _save_alert_state(state)
+
+        if alerts_to_send:
+            alert_msg = ":warning: *Ascent health check failures:*\n" + "\n".join(alerts_to_send)
+            alert_slack(alert_msg)
+
         sys.exit(1)
 
+    _save_alert_state(state)
     log.info("All checks passed")
     sys.exit(0)
 

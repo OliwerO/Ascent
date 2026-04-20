@@ -12,6 +12,12 @@ export const MOUNTAIN_ACTIVITY_TYPES = new Set([
   'hang_gliding',
 ])
 
+export const CYCLING_ACTIVITY_TYPES = new Set([
+  'road_biking',
+  'cycling',
+  'gravel_cycling',
+])
+
 export const SELF_POWERED_MOUNTAIN_TYPES = new Set([
   'backcountry_skiing',
   'backcountry_snowboarding',

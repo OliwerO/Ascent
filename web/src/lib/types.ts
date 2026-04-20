@@ -89,6 +89,8 @@ export interface DailyMetrics {
   resting_hr: number | null
   avg_stress_level: number | null
   vo2max: number | null
+  vigorous_intensity_minutes: number | null
+  moderate_intensity_minutes: number | null
 }
 
 // --- Body composition
@@ -143,7 +145,7 @@ export interface TrainingSet {
   volume_kg: number | null
   estimated_1rm: number | null
   notes: string | null
-  exercises: { name: string; category: string } | null
+  exercises: { name: string; category: string; muscle_groups: string[] | null } | null
 }
 
 // --- Training status
@@ -210,10 +212,11 @@ export interface PlannedWorkout {
   scheduled_time: string | null
   estimated_duration_minutes: number | null
   workout_definition: WorkoutDefinition
-  status: 'planned' | 'pushed' | 'adjusted' | 'completed' | 'skipped'
+  status: 'planned' | 'pushed' | 'adjusted' | 'rescheduled' | 'completed' | 'skipped'
   actual_garmin_activity_id: string | null
   compliance_score: number | null
   adjustment_reason: string | null
+  updated_at: string | null
 }
 
 export interface WorkoutDefinition {
@@ -243,6 +246,53 @@ export interface PlannedExercise {
   note: string | null
   duration_s?: number
   distance_m?: number
+}
+
+// --- Exercise progression (engine decisions)
+export interface ExerciseProgression {
+  exercise_name: string
+  date: string
+  planned_sets: number | null
+  planned_reps: number | null
+  planned_weight_kg: number | null
+  planned_rpe: number | null
+  actual_sets: number | null
+  actual_reps_per_set: number[] | null
+  actual_weight_kg: number | null
+  actual_rpe: number | null
+  progression_applied: string
+  progression_amount: number | null
+}
+
+// --- Activity details (splits, weather enrichment)
+export interface ActivityDetails {
+  garmin_activity_id: string
+  hr_zones: HRZone[] | null
+  splits: ActivitySplit[] | null
+  weather: ActivityWeather | null
+}
+
+export interface ActivitySplit {
+  distance?: number
+  duration?: number
+  elevationGain?: number
+  elevationLoss?: number
+  averageHR?: number
+  maxHR?: number
+  averageSpeed?: number
+  startElevation?: number
+  endElevation?: number
+  [key: string]: unknown
+}
+
+export interface ActivityWeather {
+  temp?: number
+  apparentTemp?: number
+  relativeHumidity?: number
+  windSpeed?: number
+  windDirection?: number
+  weatherType?: string
+  [key: string]: unknown
 }
 
 export interface ExerciseFeedback {

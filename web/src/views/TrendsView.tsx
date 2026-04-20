@@ -1,90 +1,36 @@
-import { useMemo, useState, useCallback, Component } from 'react'
-import type { ReactNode, ErrorInfo } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
+import { CollapsibleSection } from '../components/CollapsibleSection'
+import { InfoPanel } from '../components/InfoPanel'
+import { SectionErrorBoundary } from '../components/SectionErrorBoundary'
+import { glassTooltipStyle, axisTickStyle, axisLineStyle } from '../lib/chartConfig'
 import { useHRV, useBodyComposition, useActivities, useDailyMetrics, useSleep, usePerformanceScores } from '../hooks/useSupabase'
 import type { HRVRow, BodyComposition, DailyMetrics, SleepRow, PerformanceScore } from '../lib/types'
 import { format, startOfWeek, subDays } from 'date-fns'
-import { RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
+import { formatActivityType } from '../lib/format'
+import { RefreshCw } from 'lucide-react'
 import { correlateLagged, loadImpact, describeR, type DayPoint } from '../lib/correlations'
-import { MOUNTAIN_ACTIVITY_TYPES } from '../lib/activityTypes'
+import { MOUNTAIN_ACTIVITY_TYPES, SELF_POWERED_MOUNTAIN_TYPES, CYCLING_ACTIVITY_TYPES } from '../lib/activityTypes'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, ResponsiveContainer, Tooltip, Legend,
 } from 'recharts'
 
-class SectionErrorBoundary extends Component<{ name: string; children: ReactNode }, { error: Error | null }> {
-  state = { error: null as Error | null }
-  static getDerivedStateFromError(error: Error) { return { error } }
-  componentDidCatch(error: Error, info: ErrorInfo) { console.error(`${this.props.name} crash:`, error, info) }
-  render() {
-    if (this.state.error) {
-      return (
-        <Card title={this.props.name}>
-          <div className="text-accent-red text-[13px]">Failed to render: {this.state.error.message}</div>
-        </Card>
-      )
-    }
-    return this.props.children
-  }
-}
-
-function CollapsibleSection({ title, defaultOpen = false, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
-  const [open, setOpen] = useState(defaultOpen)
-  return (
-    <div>
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between py-2 text-[11px] uppercase tracking-[0.06em] text-text-muted font-semibold"
-      >
-        {title}
-        <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && <div className="space-y-3">{children}</div>}
-    </div>
-  )
-}
-
-function InfoPanel({ title, children }: { title: string; children: React.ReactNode }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="mt-2">
-      <button onClick={() => setOpen(!open)} className="flex items-center gap-1 text-[12px] text-text-dim hover:text-text-muted transition-colors">
-        {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-        {title}
-      </button>
-      {open && (
-        <div className="mt-2 text-[12px] text-text-muted leading-relaxed bg-bg-primary/50 rounded-xl px-3 py-2.5 space-y-2">
-          {children}
-        </div>
-      )}
-    </div>
-  )
-}
-
-const darkTooltipStyle = {
-  backgroundColor: '#16161e',
-  border: '1px solid #262636',
-  borderRadius: '12px',
-  color: '#f0f0f5',
-  fontSize: '12px',
-}
-
-const axisTickStyle = { fill: '#646478', fontSize: 11 }
-const axisLineStyle = { stroke: '#262636' }
-
-function classifyActivity(type: string | null | undefined): 'ski' | 'hike' | 'fly' | null {
+function classifyActivity(type: string | null | undefined): 'ski' | 'hike' | 'fly' | 'bike' | null {
   if (!type) return null
   const t = type.toLowerCase()
   if (t.includes('ski') || t.includes('snowboard') || t.includes('backcountry')) return 'ski'
   if (t.includes('hik') || t.includes('trail') || t.includes('mountaineering')) return 'hike'
   if (t.includes('hang_gliding') || t.includes('paraglid')) return 'fly'
+  if (CYCLING_ACTIVITY_TYPES.has(type)) return 'bike'
   return null
 }
 
 const elevationColors: Record<string, string> = {
   ski: '#38bdf8',
   hike: '#22c55e',
+  bike: '#f59e0b',
 }
 
 export default function TrendsView() {
@@ -209,7 +155,7 @@ export default function TrendsView() {
       (weeklyElevation[weekKey].byType[actType] || 0) + a.elevation_gain
   }
 
-  const elevationTypes = ['ski', 'hike']
+  const elevationTypes = ['ski', 'hike', 'bike']
   const elevationChartData = Object.entries(weeklyElevation)
     .sort(([a], [b]) => (weekDates[a]?.getTime() ?? 0) - (weekDates[b]?.getTime() ?? 0))
     .map(([week, data]) => ({
@@ -220,17 +166,14 @@ export default function TrendsView() {
       ),
     }))
 
-  // --- Hill Score + Endurance Score trends (plain computation — after early return) ---
-  const fitnessScoreData = (() => {
-    const scores = perfScores.data ?? []
-    return scores
-      .filter((d: PerformanceScore) => d.hill_score != null || d.endurance_score != null)
-      .map((d: PerformanceScore) => ({
-        date: format(new Date(d.date), 'MMM d'),
-        hill: d.hill_score,
-        endurance: d.endurance_score,
-      }))
-  })()
+  // --- Hill Score + Endurance Score trends ---
+  const fitnessScoreData = (perfScores.data ?? [])
+    .filter((d: PerformanceScore) => d.hill_score != null || d.endurance_score != null)
+    .map((d: PerformanceScore) => ({
+      date: format(new Date(d.date), 'MMM d'),
+      hill: d.hill_score,
+      endurance: d.endurance_score,
+    }))
 
   // Deduplicate consecutive identical values to reduce chart noise
   const fitnessScoreDeduped = fitnessScoreData.filter(
@@ -254,22 +197,121 @@ export default function TrendsView() {
   })()
 
   // --- VAM trend (vertical ascent rate from mountain activities) ---
-  const vamData = (() => {
-    const mountainActs = (activities.data ?? [])
-      .filter((a) =>
-        MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type) &&
-        a.elevation_gain != null && a.elevation_gain > 200 &&
-        a.duration_seconds != null && a.duration_seconds > 1800
-      )
-      .slice()
-      .reverse()
-      .map((a) => ({
-        date: format(new Date(a.date), 'MMM d'),
-        vam: Math.round(((a.elevation_gain ?? 0) / (a.duration_seconds ?? 1)) * 3600),
-        name: String(a.activity_name ?? a.activity_type),
-      }))
-    return mountainActs
+  const vamData = (activities.data ?? [])
+    .filter((a) =>
+      MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type) &&
+      a.elevation_gain != null && a.elevation_gain > 200 &&
+      a.duration_seconds != null && a.duration_seconds > 1800
+    )
+    .slice()
+    .reverse()
+    .map((a) => ({
+      date: format(new Date(a.date), 'MMM d'),
+      vam: Math.round(((a.elevation_gain ?? 0) / (a.duration_seconds ?? 1)) * 3600),
+      name: String(a.activity_name ?? a.activity_type),
+    }))
+
+  // --- Mountain Trends (deep analysis) ---
+  const mountainActivities = (activities.data ?? [])
+    .filter((a) => SELF_POWERED_MOUNTAIN_TYPES.has(a.activity_type) && a.elevation_gain != null && a.elevation_gain > 0)
+    .slice()
+    .reverse()
+
+  const mountainTrends = (() => {
+    if (mountainActivities.length < 2) return null
+
+    const withVam = mountainActivities.filter((a) => a.duration_seconds != null && a.duration_seconds > 0)
+    const vams = withVam.map((a) => Math.round(((a.elevation_gain ?? 0) / (a.duration_seconds ?? 1)) * 3600))
+    const hrs = mountainActivities.map((a) => a.avg_hr).filter((v): v is number => v != null)
+    const elevations = mountainActivities.map((a) => a.elevation_gain).filter((v): v is number => v != null)
+    const durations = mountainActivities.map((a) => (a.duration_seconds ?? 0) / 3600).filter((v) => v > 0)
+    const tes = mountainActivities.map((a) => a.training_effect_aerobic).filter((v): v is number => v != null)
+
+    // Split into halves for trend direction
+    const half = Math.floor(withVam.length / 2)
+    const recentVams = vams.slice(half)
+    const olderVams = vams.slice(0, half)
+    const recentHRs = hrs.slice(Math.floor(hrs.length / 2))
+    const olderHRs = hrs.slice(0, Math.floor(hrs.length / 2))
+
+    const avg = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : null
+    const max = (arr: number[]) => arr.length > 0 ? Math.max(...arr) : null
+
+    const avgVam = avg(vams)
+    const avgVamRecent = avg(recentVams)
+    const avgVamOlder = avg(olderVams)
+    const vamTrendPct = avgVamOlder && avgVamRecent ? Math.round(((avgVamRecent - avgVamOlder) / avgVamOlder) * 100) : null
+
+    const avgHR = avg(hrs)
+    const avgHRRecent = avg(recentHRs)
+    const avgHROlder = avg(olderHRs)
+    const hrTrendPct = avgHROlder && avgHRRecent ? Math.round(((avgHRRecent - avgHROlder) / avgHROlder) * 100) : null
+
+    // Efficiency: VAM per HR beat (higher = fitter)
+    const efficiencies = withVam
+      .filter((a) => a.avg_hr != null && a.avg_hr > 0)
+      .map((a) => Math.round(((a.elevation_gain ?? 0) / (a.duration_seconds ?? 1)) * 3600) / a.avg_hr!)
+    const effRecent = avg(efficiencies.slice(Math.floor(efficiencies.length / 2)))
+    const effOlder = avg(efficiencies.slice(0, Math.floor(efficiencies.length / 2)))
+    const effTrendPct = effOlder && effRecent ? Math.round(((effRecent - effOlder) / effOlder) * 100) : null
+
+    // Per-activity chart data with VAM + HR + efficiency
+    const chartData = withVam
+      .filter((a) => a.avg_hr != null)
+      .map((a) => {
+        const v = Math.round(((a.elevation_gain ?? 0) / (a.duration_seconds ?? 1)) * 3600)
+        return {
+          date: format(new Date(a.date), 'MMM d'),
+          vam: v,
+          hr: a.avg_hr!,
+          efficiency: a.avg_hr! > 0 ? +(v / a.avg_hr!).toFixed(2) : null,
+          name: a.activity_name ?? formatActivityType(a.activity_type),
+          elev: Math.round(a.elevation_gain ?? 0),
+        }
+      })
+
+    return {
+      count: mountainActivities.length,
+      totalElevation: Math.round(elevations.reduce((a, b) => a + b, 0)),
+      totalHours: Math.round(durations.reduce((a, b) => a + b, 0) * 10) / 10,
+      avgVam: avgVam != null ? Math.round(avgVam) : null,
+      bestVam: max(vams),
+      vamTrendPct,
+      avgHR: avgHR != null ? Math.round(avgHR) : null,
+      hrTrendPct,
+      avgTE: avg(tes) != null ? Math.round(avg(tes)! * 10) / 10 : null,
+      avgElev: avg(elevations) != null ? Math.round(avg(elevations)!) : null,
+      avgDuration: avg(durations) != null ? Math.round(avg(durations)! * 10) / 10 : null,
+      effTrendPct,
+      chartData,
+    }
   })()
+
+  // --- Cycling performance ---
+  const cyclingData = (activities.data ?? [])
+    .filter((a) =>
+      CYCLING_ACTIVITY_TYPES.has(a.activity_type) &&
+      (a.duration_seconds ?? 0) > 300 &&
+      (a.distance_meters ?? 0) > 1000
+    )
+    .slice()
+    .reverse()
+    .map((a) => {
+      const speedKmh = (a.avg_speed ?? 0) * 3.6
+      const elevGain = a.elevation_gain ?? 0
+      const durH = (a.duration_seconds ?? 1) / 3600
+      const vam = elevGain > 0 ? Math.round(elevGain / durH) : null
+      const hrEff = a.avg_hr && a.avg_hr > 0 ? +(speedKmh / a.avg_hr).toFixed(3) : null
+      return {
+        date: format(new Date(a.date), 'MMM d'),
+        speed: +speedKmh.toFixed(1),
+        vam,
+        hrEff,
+        name: String(a.activity_name ?? a.activity_type),
+        distKm: +((a.distance_meters ?? 0) / 1000).toFixed(1),
+        elevGain: Math.round(elevGain),
+      }
+    })
 
   // --- Insights / correlations ---
   const hrvSeries: DayPoint[] = (hrv.data ?? []).map((d: HRVRow) => ({ date: d.date, value: d.last_night_avg }))
@@ -377,7 +419,7 @@ export default function TrendsView() {
               </defs>
               <XAxis dataKey="date" tick={{ ...axisTickStyle, fontSize: 10 }} axisLine={axisLineStyle} tickLine={false} interval="preserveStartEnd" />
               <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={35} domain={['dataMin - 10', 'dataMax + 10']} />
-              <Tooltip contentStyle={darkTooltipStyle} />
+              <Tooltip contentStyle={glassTooltipStyle} />
               <Area type="monotone" dataKey="baselineHigh" stroke="none" fill="url(#baselineGrad90)" fillOpacity={1} stackId="baseline" connectNulls />
               <Area type="monotone" dataKey="baselineLow" stroke="none" fill="#0a0a0f" fillOpacity={1} stackId="baseline" connectNulls />
               <Area type="monotone" dataKey="value" stroke="#60a5fa" fill="url(#hrvGrad90)" strokeWidth={2} dot={false} connectNulls />
@@ -460,7 +502,7 @@ export default function TrendsView() {
               <XAxis dataKey="date" tick={{ ...axisTickStyle, fontSize: 10 }} axisLine={axisLineStyle} tickLine={false} interval="preserveStartEnd" />
               <YAxis yAxisId="w" tick={axisTickStyle} axisLine={false} tickLine={false} width={40} unit=" kg" domain={['dataMin - 1', 'dataMax + 1']} />
               <YAxis yAxisId="m" orientation="right" tick={axisTickStyle} axisLine={false} tickLine={false} width={40} unit=" kg" domain={['dataMin - 1', 'dataMax + 1']} />
-              <Tooltip contentStyle={darkTooltipStyle} />
+              <Tooltip contentStyle={glassTooltipStyle} />
               <Legend wrapperStyle={{ color: '#a0a0b8', fontSize: 11 }} />
               <Line yAxisId="w" type="monotone" dataKey="weight" stroke="none" dot={{ fill: '#60a5fa', r: 2, opacity: 0.3 }} name="Daily weight" connectNulls legendType="none" />
               <Line yAxisId="w" type="monotone" dataKey="weightEWMA" stroke="#60a5fa" strokeWidth={2.5} dot={false} name="Weight (trend)" connectNulls />
@@ -483,7 +525,7 @@ export default function TrendsView() {
               </defs>
               <XAxis dataKey="date" tick={{ ...axisTickStyle, fontSize: 10 }} axisLine={axisLineStyle} tickLine={false} interval="preserveStartEnd" />
               <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={35} unit="%" domain={['dataMin - 1', 'dataMax + 1']} />
-              <Tooltip contentStyle={darkTooltipStyle} />
+              <Tooltip contentStyle={glassTooltipStyle} />
               <Area type="monotone" dataKey="bodyFat" stroke="#a78bfa" fill="url(#bfGrad)" strokeWidth={2} dot={{ fill: '#a78bfa', r: 3 }} name="Body Fat %" connectNulls />
             </AreaChart>
           </ResponsiveContainer>
@@ -524,7 +566,7 @@ export default function TrendsView() {
           </div>
 
           {hasSegmental && (
-            <div className="border-t border-border pt-3">
+            <div className="border-t border-border-subtle pt-3">
               <div className="text-[11px] text-text-muted mb-2.5 uppercase tracking-[0.06em] font-semibold">Segmental Muscle Mass</div>
               <div className="space-y-2.5">
                 {/* Arms */}
@@ -615,7 +657,7 @@ export default function TrendsView() {
           </InfoPanel>
 
           {latestComp && (
-            <div className="grid grid-cols-3 gap-3 pt-3 border-t border-border">
+            <div className="grid grid-cols-3 gap-3 pt-3 border-t border-border-subtle">
               <div>
                 <div className="text-[11px] text-text-muted font-semibold">Lean Mass</div>
                 <div className="data-value-sm text-text-primary mt-0.5">
@@ -648,7 +690,7 @@ export default function TrendsView() {
             <BarChart data={elevationChartData}>
               <XAxis dataKey="week" tick={{ ...axisTickStyle, fontSize: 10 }} axisLine={axisLineStyle} tickLine={false} />
               <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={45} unit="m" />
-              <Tooltip contentStyle={darkTooltipStyle} />
+              <Tooltip contentStyle={glassTooltipStyle} />
               <Legend wrapperStyle={{ color: '#a0a0b8', fontSize: 12 }} />
               {elevationTypes.map((type) => (
                 <Bar
@@ -698,7 +740,7 @@ export default function TrendsView() {
             <LineChart data={fitnessScoreDeduped}>
               <XAxis dataKey="date" tick={{ ...axisTickStyle, fontSize: 10 }} axisLine={axisLineStyle} tickLine={false} interval="preserveStartEnd" />
               <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={35} domain={['dataMin - 5', 'dataMax + 5']} />
-              <Tooltip contentStyle={darkTooltipStyle} />
+              <Tooltip contentStyle={glassTooltipStyle} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <Line type="monotone" dataKey="hill" name="Hill Score" stroke="#38bdf8" strokeWidth={2} dot={false} connectNulls />
               <Line type="monotone" dataKey="endurance" name="Endurance" stroke="#34d399" strokeWidth={2} dot={false} connectNulls />
@@ -725,7 +767,7 @@ export default function TrendsView() {
             <BarChart data={vamData}>
               <XAxis dataKey="date" tick={{ ...axisTickStyle, fontSize: 10 }} axisLine={axisLineStyle} tickLine={false} interval="preserveStartEnd" />
               <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={40} />
-              <Tooltip contentStyle={darkTooltipStyle} />
+              <Tooltip contentStyle={glassTooltipStyle} />
               <Bar dataKey="vam" name="VAM (m/h)" radius={[4, 4, 0, 0]} fill="#38bdf8" />
             </BarChart>
           </ResponsiveContainer>
@@ -740,6 +782,139 @@ export default function TrendsView() {
           <p>VAM (Velocit&agrave; Ascensionale Media) is your average climbing speed in meters per hour. It{"'"}s influenced by terrain, snow conditions, and pack weight — so individual values vary.</p>
           <p>The trend matters more than single values. If you see VAM increasing while HR stays the same (or drops), your mountain fitness is improving.</p>
         </InfoPanel>
+      </Card>
+
+      {/* Mountain Trends Analysis */}
+      {mountainTrends != null && (
+        <Card title="Mountain Performance Analysis" subtitle={`${mountainTrends.count} activities over 90 days — ${mountainTrends.totalElevation.toLocaleString()}m total elevation, ${mountainTrends.totalHours}h`}>
+          {/* Key metrics grid */}
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div>
+              <div className="text-[10px] text-text-dim uppercase tracking-wider">Avg VAM</div>
+              <div className="text-lg font-bold text-mountain font-data">{mountainTrends.avgVam ?? '\u2014'}<span className="text-[11px] text-text-muted ml-0.5 font-normal">m/h</span></div>
+              {mountainTrends.vamTrendPct != null && (
+                <div className={`text-[11px] font-semibold ${mountainTrends.vamTrendPct > 0 ? 'text-accent-green' : mountainTrends.vamTrendPct < -5 ? 'text-accent-red' : 'text-text-muted'}`}>
+                  {mountainTrends.vamTrendPct > 0 ? '+' : ''}{mountainTrends.vamTrendPct}% trend
+                </div>
+              )}
+            </div>
+            <div>
+              <div className="text-[10px] text-text-dim uppercase tracking-wider">Avg HR</div>
+              <div className="text-lg font-bold text-text-secondary font-data">{mountainTrends.avgHR ?? '\u2014'}<span className="text-[11px] text-text-muted ml-0.5 font-normal">bpm</span></div>
+              {mountainTrends.hrTrendPct != null && (
+                <div className={`text-[11px] font-semibold ${mountainTrends.hrTrendPct < 0 ? 'text-accent-green' : mountainTrends.hrTrendPct > 3 ? 'text-accent-red' : 'text-text-muted'}`}>
+                  {mountainTrends.hrTrendPct > 0 ? '+' : ''}{mountainTrends.hrTrendPct}% trend
+                </div>
+              )}
+            </div>
+            <div>
+              <div className="text-[10px] text-text-dim uppercase tracking-wider">Efficiency</div>
+              <div className="text-lg font-bold text-accent-blue font-data">
+                {mountainTrends.effTrendPct != null ? (
+                  <span className={mountainTrends.effTrendPct > 0 ? 'text-accent-green' : mountainTrends.effTrendPct < -5 ? 'text-accent-red' : 'text-text-secondary'}>
+                    {mountainTrends.effTrendPct > 0 ? '+' : ''}{mountainTrends.effTrendPct}%
+                  </span>
+                ) : '\u2014'}
+              </div>
+              <div className="text-[10px] text-text-dim">VAM/HR trend</div>
+            </div>
+          </div>
+
+          {/* Secondary stats */}
+          <div className="grid grid-cols-4 gap-2 mb-4 pt-3 border-t border-border-subtle">
+            <div className="text-center">
+              <div className="text-[10px] text-text-dim uppercase tracking-wider">Best VAM</div>
+              <div className="text-[14px] font-bold text-mountain font-data">{mountainTrends.bestVam ?? '\u2014'}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-[10px] text-text-dim uppercase tracking-wider">Avg Elev</div>
+              <div className="text-[14px] font-bold text-text-secondary font-data">{mountainTrends.avgElev ?? '\u2014'}m</div>
+            </div>
+            <div className="text-center">
+              <div className="text-[10px] text-text-dim uppercase tracking-wider">Avg Duration</div>
+              <div className="text-[14px] font-bold text-text-secondary font-data">{mountainTrends.avgDuration ?? '\u2014'}h</div>
+            </div>
+            <div className="text-center">
+              <div className="text-[10px] text-text-dim uppercase tracking-wider">Avg TE</div>
+              <div className={`text-[14px] font-bold font-data ${(mountainTrends.avgTE ?? 0) >= 3 ? 'text-accent-green' : 'text-text-secondary'}`}>
+                {mountainTrends.avgTE ?? '\u2014'}
+              </div>
+            </div>
+          </div>
+
+          {/* VAM + HR dual-axis chart */}
+          {mountainTrends.chartData.length > 2 && (
+            <div>
+              <div className="text-[11px] text-text-muted uppercase tracking-wider font-semibold mb-2">VAM vs HR per Activity</div>
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={mountainTrends.chartData}>
+                  <XAxis dataKey="date" tick={{ ...axisTickStyle, fontSize: 9 }} axisLine={axisLineStyle} tickLine={false} interval="preserveStartEnd" />
+                  <YAxis yAxisId="vam" tick={axisTickStyle} axisLine={false} tickLine={false} width={38} />
+                  <YAxis yAxisId="hr" orientation="right" tick={axisTickStyle} axisLine={false} tickLine={false} width={38} />
+                  <Tooltip contentStyle={glassTooltipStyle} />
+                  <Legend wrapperStyle={{ color: '#a0a0b8', fontSize: 11 }} />
+                  <Line yAxisId="vam" type="monotone" dataKey="vam" stroke="#38bdf8" strokeWidth={2} dot={{ r: 3, fill: '#38bdf8' }} name="VAM (m/h)" />
+                  <Line yAxisId="hr" type="monotone" dataKey="hr" stroke="#ef4444" strokeWidth={1.5} dot={{ r: 2, fill: '#ef4444' }} name="Avg HR" strokeDasharray="4 2" />
+                </LineChart>
+              </ResponsiveContainer>
+              <div className="text-[10px] text-text-dim mt-1 text-center">VAM rising while HR drops or stays flat = improving mountain fitness</div>
+            </div>
+          )}
+
+          {/* Efficiency chart */}
+          {mountainTrends.chartData.filter((d) => d.efficiency != null).length > 2 && (
+            <div className="mt-3 pt-3 border-t border-border-subtle">
+              <div className="text-[11px] text-text-muted uppercase tracking-wider font-semibold mb-2">Cardiac Efficiency (VAM / HR)</div>
+              <ResponsiveContainer width="100%" height={120}>
+                <AreaChart data={mountainTrends.chartData.filter((d) => d.efficiency != null)}>
+                  <defs>
+                    <linearGradient id="effGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#34d399" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#34d399" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="date" tick={{ ...axisTickStyle, fontSize: 9 }} axisLine={axisLineStyle} tickLine={false} interval="preserveStartEnd" />
+                  <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={35} />
+                  <Tooltip contentStyle={glassTooltipStyle} />
+                  <Area type="monotone" dataKey="efficiency" stroke="#34d399" fill="url(#effGrad)" strokeWidth={2} dot={{ fill: '#34d399', r: 3 }} name="Efficiency" connectNulls />
+                </AreaChart>
+              </ResponsiveContainer>
+              <div className="text-[10px] text-text-dim mt-1 text-center">Higher = more elevation per heartbeat — the best single fitness indicator</div>
+            </div>
+          )}
+
+          <InfoPanel title="Reading these trends">
+            <p><strong>VAM trend</strong> compares your recent half of activities against the older half. Positive = you{"'"}re climbing faster.</p>
+            <p><strong>HR trend</strong> same comparison for average HR. Negative = your heart works less for similar effort — fitter.</p>
+            <p><strong>Efficiency (VAM/HR)</strong> combines both. Rising efficiency is the clearest signal of improving mountain fitness, because it normalises for route difficulty.</p>
+            <p>Context matters: cold temps, heavy packs, and technical terrain all lower VAM without meaning you{"'"}re less fit.</p>
+          </InfoPanel>
+        </Card>
+      )}
+
+      {/* Cycling Performance */}
+      <Card title="Cycling Performance" subtitle="Avg speed trend across rides (>5 min, >1 km). Increasing speed at same HR = better fitness.">
+        {cyclingData.length > 1 ? (
+          <ResponsiveContainer width="100%" height={160}>
+            <LineChart data={cyclingData}>
+              <XAxis dataKey="date" tick={{ ...axisTickStyle, fontSize: 10 }} axisLine={axisLineStyle} tickLine={false} interval="preserveStartEnd" />
+              <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={40} unit=" km/h" />
+              <Tooltip contentStyle={glassTooltipStyle} />
+              <Line type="monotone" dataKey="speed" name="Avg speed (km/h)" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: '#f59e0b' }} />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : cyclingData.length === 1 ? (
+          <div className="space-y-1 text-[13px]">
+            <div className="text-text-primary font-semibold">{cyclingData[0].name}</div>
+            <div className="text-text-muted">
+              {cyclingData[0].distKm} km · {cyclingData[0].speed} km/h avg
+              {cyclingData[0].elevGain > 0 && <span className="ml-2">{cyclingData[0].elevGain}m elev</span>}
+              {cyclingData[0].vam != null && <span className="ml-2">VAM {cyclingData[0].vam} m/h</span>}
+            </div>
+          </div>
+        ) : (
+          <div className="text-text-muted text-[14px]">No cycling activities yet</div>
+        )}
       </Card>
 
       </SectionErrorBoundary>

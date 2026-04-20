@@ -83,6 +83,7 @@ EXERCISE_MAP: dict[str, tuple[str, str]] = {
     "Prone I-T-Y":              ("WARM_UP",       "PRONE_I_T_Y"),
     "Leg Swings":               ("WARM_UP",       "LEG_SWING"),
     "Spiderman Lunge":          ("WARM_UP",       "SPIDERMAN_LUNGE"),
+    "Overhead Band Distraction": ("WARM_UP",      "OTHER"),
 }
 
 # 1–2 sentence cues sourced from domain-9 §9.1–9.6. Used by health-coach SKILL
@@ -119,16 +120,21 @@ EXERCISE_CUES: dict[str, str] = {
     "Prone I-T-Y":              "Lower trap, mid-trap, serratus — 8 reps each shape. Critical for brake toggle endurance.",
     "Leg Swings":               "Standing, full ROM hip swings — sagittal then frontal plane.",
     "Spiderman Lunge":          "Walking — deep lunge, same-side arm overhead reach, touring + pack pattern.",
+    "Overhead Band Distraction": "Band anchored behind at waist, loop around upper arm, step forward, small circles. Opens subacromial space.",
 }
 
 
 # ---------------------------------------------------------------------------
 # Protocols
 # Step format: (name, description, side, reps_or_none, duration_s_or_none)
+# "__REST__" entries become Garmin rest/transition steps on the watch.
 # ---------------------------------------------------------------------------
 
-PROTOCOL_A: list[tuple[str, str, str | None, int | None, int | None]] = [
+_StepTuple = tuple[str, str, str | None, int | None, int | None]
+
+PROTOCOL_A: list[_StepTuple] = [
     ("Cat-Cow",            "Spinal segmental wake-up", None, None, 60),
+    ("__REST__",           "Transition to half-kneeling", None, None, 10),
     ("Ankle Mobilization", "Knee over 2nd-3rd toe, heel planted", "R", None, 30),
     ("Ankle Mobilization", "Knee over 2nd-3rd toe, heel planted", "L", None, 30),
     ("Ankle Mobilization", "Set 2", "R", None, 30),
@@ -137,8 +143,10 @@ PROTOCOL_A: list[tuple[str, str, str | None, int | None, int | None]] = [
     ("Hip Flexor Stretch", "Squeeze glute, tuck pelvis, reach arm overhead", "L", None, 30),
     ("Hip Flexor Stretch", "Set 2", "R", None, 30),
     ("Hip Flexor Stretch", "Set 2", "L", None, 30),
+    ("__REST__",           "Transition to seated", None, None, 10),
     ("90/90 Hip Stretch",  "Sit tall, lean forward with straight spine", "R", None, 45),
     ("90/90 Hip Stretch",  "Sit tall, lean forward with straight spine", "L", None, 45),
+    ("__REST__",           "Transition to side-lying", None, None, 10),
     ("Thoracic Rotation",  "5 reps + 5s end-range hold", "R", 5, None),
     ("Thoracic Rotation",  "5 reps + 5s end-range hold", "L", 5, None),
     ("Figure-4 Stretch",   "Ankle over opposite knee, pull toward chest", "R", None, 30),
@@ -147,98 +155,152 @@ PROTOCOL_A: list[tuple[str, str, str | None, int | None, int | None]] = [
 
 # Protocol B variants — keyed by the strength session_key they precede.
 # 'A' = squat day (B1), 'B' = upper-body day (B3), 'C' = hinge day (B2).
-PROTOCOL_B_BY_TARGET: dict[str, list[tuple[str, str, str | None, int | None, int | None]]] = {
-    "A": [  # Squat day → ankle/hip/thoracic
+# Sets aligned with KB §9.6 Protocol B prescriptions.
+PROTOCOL_B_BY_TARGET: dict[str, list[_StepTuple]] = {
+    "A": [  # Squat day → ankle/hip/thoracic (KB B1: 2×10 ankle, 3×15s goblet, 2×5 squat)
         ("Foam Roll T-Spine",        "Segmental T-spine extension",     None, None, 120),
+        ("__REST__",                  "Transition to half-kneeling",     None, None, 10),
         ("Ankle Mobilization",       "Banded if available",              "R", 10, None),
         ("Ankle Mobilization",       "Banded if available",              "L", 10, None),
+        ("Ankle Mobilization",       "Set 2",                            "R", 10, None),
+        ("Ankle Mobilization",       "Set 2",                            "L", 10, None),
+        ("__REST__",                  "Get kettlebell",                   None, None, 10),
         ("Goblet Squat Hold",        "Prying, 8–12 kg KB",               None, None, 15),
+        ("Goblet Squat Hold",        "Set 2",                             None, None, 15),
+        ("Goblet Squat Hold",        "Set 3",                             None, None, 15),
+        ("__REST__",                  "Transition",                       None, None, 10),
         ("World's Greatest Stretch", "Elbow to instep, rotate, reach",   "R", 3, None),
         ("World's Greatest Stretch", "Elbow to instep, rotate, reach",   "L", 3, None),
         ("Bodyweight Squat",         "3s pause at bottom",               None, 5, None),
+        ("Bodyweight Squat",         "Set 2",                             None, 5, None),
     ],
-    "B": [  # Upper-body day → thoracic/shoulder/scapular
+    "B": [  # Upper-body day → thoracic/shoulder/scapular (KB B3: 2×8 wall, 2×10 band, 2×8 thread, 2×5 press)
         ("Foam Roll T-Spine", "Segmental T-spine extension + lats",  None, None, 120),
+        ("__REST__",           "Transition to standing",               None, None, 10),
         ("Wall Slides",       "Back flat, slide arms up",            None, 8, None),
+        ("Wall Slides",       "Set 2",                                None, 8, None),
         ("Band Pull-Aparts",  "Light band, slow tempo",              None, 10, None),
+        ("Band Pull-Aparts",  "Set 2",                                None, 10, None),
+        ("__REST__",           "Transition to quadruped",              None, None, 10),
         ("Thread the Needle", "Quadruped thoracic rotation",         "R", 8, None),
         ("Thread the Needle", "Quadruped thoracic rotation",         "L", 8, None),
+        ("Thread the Needle", "Set 2",                                "R", 8, None),
+        ("Thread the Needle", "Set 2",                                "L", 8, None),
+        ("__REST__",           "Transition to half-kneeling",          None, None, 10),
         ("Half-Kneeling OH Press", "5 kg DB — overhead mobility",    "R", 5, None),
         ("Half-Kneeling OH Press", "5 kg DB — overhead mobility",    "L", 5, None),
+        ("Half-Kneeling OH Press", "Set 2",                           "R", 5, None),
+        ("Half-Kneeling OH Press", "Set 2",                           "L", 5, None),
     ],
-    "C": [  # Hinge day → hamstring/hip/posterior chain
+    "C": [  # Hinge day → hamstring/hip/posterior chain (KB B2: 2×5 90/90, 2×6 SL-RDL, 2×8 GM)
         ("Foam Roll Hamstrings",     "30s per area per side",           None, None, 120),
-        ("90/90 Hip Switch",         "Dynamic transitions",              None, 10, None),
+        ("__REST__",                  "Transition to seated",            None, None, 10),
+        ("90/90 Hip Switch",         "5 transitions each direction",     None, 10, None),
+        ("90/90 Hip Switch",         "Set 2",                            None, 10, None),
+        ("__REST__",                  "Transition to standing",           None, None, 10),
         ("Single-Leg RDL",           "Bodyweight, slow eccentric",       "R", 6, None),
         ("Single-Leg RDL",           "Bodyweight, slow eccentric",       "L", 6, None),
+        ("Single-Leg RDL",           "Set 2",                            "R", 6, None),
+        ("Single-Leg RDL",           "Set 2",                            "L", 6, None),
         ("Inchworm",                 "Walk out → downdog → walk in",     None, 5, None),
         ("Good Morning",             "Hinge + reach, BW",                None, 8, None),
+        ("Good Morning",             "Set 2",                            None, 8, None),
     ],
 }
 
-# Protocol C — dedicated 40–45 min session. Compressed to a single ordered list
-# (Garmin steps) with phase markers in description text.
-PROTOCOL_C: list[tuple[str, str, str | None, int | None, int | None]] = [
+# Protocol C — dedicated 40–45 min session. Five phases, aligned with KB §9.6.
+# Multi-set exercises now match KB prescriptions. __REST__ steps provide
+# transition time between position changes.
+PROTOCOL_C: list[_StepTuple] = [
     # Phase 1: Foam rolling preparation (5 min)
     ("Foam Roll T-Spine",     "Phase 1: segmental extension at 4–5 segments", None, None, 90),
-    ("Foam Roll Hamstrings",  "Phase 1: include rectus femoris on the front", "R", None, 30),
-    ("Foam Roll Hamstrings",  "Phase 1",                                       "L", None, 30),
+    ("Foam Roll Hamstrings",  "Phase 1: quads + rectus femoris on front",      "R", None, 30),
+    ("Foam Roll Hamstrings",  "Phase 1: quads + rectus femoris on front",      "L", None, 30),
     ("Figure-4 Stretch",      "Phase 1: glute / piriformis release",           "R", None, 30),
     ("Figure-4 Stretch",      "Phase 1: glute / piriformis release",           "L", None, 30),
     ("Foam Roll Lats",        "Phase 1: side-lying, roller at armpit",         "R", None, 30),
     ("Foam Roll Lats",        "Phase 1: side-lying, roller at armpit",         "L", None, 30),
     # Phase 2: Dynamic mobility flow (8 min)
+    ("__REST__",               "Transition to Phase 2: dynamic flow",          None, None, 10),
     ("Cat-Cow",                "Phase 2: 10 full-spine cycles",                None, None, 60),
     ("World's Greatest Stretch","Phase 2",                                     "R", 3, None),
     ("World's Greatest Stretch","Phase 2",                                     "L", 3, None),
+    ("__REST__",               "Transition to seated",                          None, None, 10),
     ("90/90 Hip Switch",       "Phase 2: 6 transitions each direction",        None, 12, None),
+    ("__REST__",               "Transition to standing",                        None, None, 10),
     ("Spiderman Lunge",        "Phase 2: deep lunge + overhead reach",         "R", 5, None),
     ("Spiderman Lunge",        "Phase 2: deep lunge + overhead reach",         "L", 5, None),
     ("Leg Swings",             "Phase 2: sagittal + frontal, full ROM",        None, 20, None),
-    # Phase 3: Loaded stretching (12 min)
+    # Phase 3: Loaded stretching (12 min) — KB: 3×20s goblet, 2×6/side lunge,
+    # 2×8 tempo RDL, 2×5 jefferson, 2×5/side OH press
+    ("__REST__",               "Get kettlebell for Phase 3",                    None, None, 10),
     ("Goblet Squat Hold",      "Phase 3: prying, 12–16 kg KB, 20s holds",      None, None, 20),
     ("Goblet Squat Hold",      "Phase 3 set 2",                                None, None, 20),
     ("Goblet Squat Hold",      "Phase 3 set 3",                                None, None, 20),
+    ("__REST__",               "Transition",                                    None, None, 10),
     ("Reverse Lunge",          "Phase 3: deficit, 3s pause at bottom",         "R", 6, None),
     ("Reverse Lunge",          "Phase 3: deficit, 3s pause at bottom",         "L", 6, None),
+    ("Reverse Lunge",          "Phase 3 set 2",                                "R", 6, None),
+    ("Reverse Lunge",          "Phase 3 set 2",                                "L", 6, None),
     ("Tempo RDL",              "Phase 3: 4s eccentric, 2s pause",              None, 8, None),
-    ("Jefferson Curl",         "Phase 3: light load, total control",           None, 5, None),
+    ("Tempo RDL",              "Phase 3 set 2",                                None, 8, None),
+    ("Jefferson Curl",         "Phase 3: light load, 5s down 5s up",           None, 5, None),
+    ("Jefferson Curl",         "Phase 3 set 2",                                None, 5, None),
+    ("__REST__",               "Transition to half-kneeling",                   None, None, 10),
     ("Half-Kneeling OH Press", "Phase 3: 8 kg KB",                             "R", 5, None),
     ("Half-Kneeling OH Press", "Phase 3: 8 kg KB",                             "L", 5, None),
-    # Phase 4: Static stretching (10 min)
-    ("Couch Stretch",          "Phase 4: 45s, work toward upright torso",      "R", None, 45),
+    ("Half-Kneeling OH Press", "Phase 3 set 2",                                "R", 5, None),
+    ("Half-Kneeling OH Press", "Phase 3 set 2",                                "L", 5, None),
+    # Phase 4: Static stretching (10 min) — KB: 2×45s/side couch, 30s gastroc +
+    # 30s soleus each side, 60s/side pigeon, 2×45s thoracic, 45s/side pec
+    ("__REST__",               "Transition to Phase 4: static holds",           None, None, 10),
+    ("Couch Stretch",          "Phase 4: work toward upright torso",            "R", None, 45),
     ("Couch Stretch",          "Phase 4 set 2",                                "R", None, 45),
     ("Couch Stretch",          "Phase 4",                                       "L", None, 45),
     ("Couch Stretch",          "Phase 4 set 2",                                "L", None, 45),
-    ("Calf Stretch",           "Phase 4: gastroc + soleus",                    "R", None, 60),
-    ("Calf Stretch",           "Phase 4: gastroc + soleus",                    "L", None, 60),
+    ("__REST__",               "Transition to standing",                        None, None, 10),
+    ("Calf Stretch",           "Phase 4: gastroc — straight knee",             "R", None, 30),
+    ("Calf Stretch",           "Phase 4: gastroc — straight knee",             "L", None, 30),
+    ("Calf Stretch",           "Phase 4: soleus — bent knee",                  "R", None, 30),
+    ("Calf Stretch",           "Phase 4: soleus — bent knee",                  "L", None, 30),
+    ("__REST__",               "Transition to floor",                           None, None, 10),
     ("Pigeon Pose",            "Phase 4: hip ER capsular stretch",             "R", None, 60),
     ("Pigeon Pose",            "Phase 4: hip ER capsular stretch",             "L", None, 60),
-    ("Thoracic Rotation",      "Phase 4: supine extension on roller, Y arms", None, None, 45),
+    ("Thoracic Rotation",      "Phase 4: supine extension on roller, Y arms",  None, None, 45),
+    ("Thoracic Rotation",      "Phase 4 set 2",                                None, None, 45),
+    ("__REST__",               "Transition to doorway",                         None, None, 10),
     ("Doorway Pec Stretch",    "Phase 4: 90° forearm",                         "R", None, 45),
     ("Doorway Pec Stretch",    "Phase 4: 90° forearm",                         "L", None, 45),
-    # Phase 5: Sport-specific integration (5 min)
+    # Phase 5: Sport-specific integration (5 min) — KB adds overhead band distraction
+    ("__REST__",               "Transition to Phase 5",                         None, None, 10),
     ("Touring Stride",         "Phase 5: alternating deep lunges + arm drive", None, 16, None),
+    ("Overhead Band Distraction", "Phase 5: small circles, opens subacromial", "R", None, 30),
+    ("Overhead Band Distraction", "Phase 5: small circles, opens subacromial", "L", None, 30),
+    ("__REST__",               "Transition to prone",                           None, None, 10),
     ("Prone I-T-Y",            "Phase 5: 8 reps each shape — scapular endurance", None, 24, None),
 ]
 
 
 # Protocol T — Tuesday Mobility routine (25 min)
 # Source: openclaw/coaching-program.md §Mobility Routine.
-PROTOCOL_T: list[tuple[str, str, str | None, int | None, int | None]] = [
+PROTOCOL_T: list[_StepTuple] = [
     ("Foam Roll T-Spine",       "Segmental extension, 75s",          None, None, 75),
     ("Foam Roll Lats",          "Side-lying, 60s/side",              "R", None, 60),
     ("Foam Roll Lats",          "Side-lying, 60s/side",              "L", None, 60),
     ("Foam Roll Hamstrings",    "Quads/glutes/hams, 75s/side",       "R", None, 75),
     ("Foam Roll Hamstrings",    "Quads/glutes/hams, 75s/side",       "L", None, 75),
+    ("__REST__",                "Transition to dynamic flow",         None, None, 10),
     ("90/90 Hip Switch",        "10 switches per side",              None, 20, None),
     ("World's Greatest Stretch","5 reps per side",                   "R", 5, None),
     ("World's Greatest Stretch","5 reps per side",                   "L", 5, None),
     ("Cat-Cow",                 "10 cycles, slow",                   None, None, 60),
+    ("__REST__",                "Transition to side-lying",           None, None, 10),
     ("Thoracic Rotation",       "8 reps/side, side-lying open book", "R", 8, None),
     ("Thoracic Rotation",       "8 reps/side, side-lying open book", "L", 8, None),
+    ("__REST__",                "Transition to standing",             None, None, 10),
     ("Wall Slides",             "Shoulder CARs proxy, 5/side",       "R", 5, None),
     ("Wall Slides",             "Shoulder CARs proxy, 5/side",       "L", 5, None),
+    ("__REST__",                "Transition to floor",                None, None, 10),
     ("Pigeon Pose",             "60s/side, deep hip ER",             "R", None, 60),
     ("Pigeon Pose",             "60s/side, deep hip ER",             "L", None, 60),
     ("Couch Stretch",           "60s/side, hip flexor",              "R", None, 60),
@@ -249,11 +311,11 @@ PROTOCOL_T: list[tuple[str, str, str | None, int | None, int | None]] = [
 PROTOCOL_NAMES = {
     "A": "Protocol A: Daily Mobility (12 min)",
     "B": "Protocol B: Pre-Gym Warm-Up",
-    "C": "Protocol C: Dedicated Mobility (40 min)",
+    "C": "Protocol C: Dedicated Mobility (45 min)",
     "T": "Tuesday Mobility (25 min)",
 }
 
-PROTOCOL_DURATIONS = {"A": 12, "B": 12, "C": 40, "T": 25}
+PROTOCOL_DURATIONS = {"A": 12, "B": 12, "C": 45, "T": 25}
 
 
 # ---------------------------------------------------------------------------
@@ -327,6 +389,28 @@ YOGA_SPORT_TYPE = {
     "sportTypeKey": "yoga",
     "displayOrder": 6,
 }
+
+
+def build_transition_step(description: str, duration_s: int, step_order: int) -> dict:
+    """Build a Garmin rest/transition step — gives time to reposition."""
+    return {
+        "type": "ExecutableStepDTO",
+        "stepOrder": step_order,
+        "childStepId": None,
+        "description": description,
+        "stepType": {
+            "stepTypeId": 5,
+            "stepTypeKey": "rest",
+            "displayOrder": 5,
+        },
+        "endCondition": {
+            "conditionTypeId": 2,
+            "conditionTypeKey": "time",
+            "displayOrder": 2,
+            "displayable": True,
+        },
+        "endConditionValue": float(duration_s),
+    }
 
 
 def build_step(
@@ -411,6 +495,8 @@ def protocol_b_warmup_tuples(target: str) -> list[tuple[str, int | None, int | N
         raise ValueError(f"unknown target {target!r}")
     out: list[tuple[str, int | None, int | None]] = []
     for name, _desc, _side, reps, dur in PROTOCOL_B_BY_TARGET[target]:
+        if name == "__REST__":
+            continue  # workout_push.py manages its own rest steps
         out.append((name, reps, dur))
     return out
 
@@ -427,10 +513,15 @@ def build_step_list(
     monotonic when interleaved.
     """
     raw = _select_steps(protocol, target)
-    return [
-        build_step(name, desc, side, reps, dur, step_order=start_step_order + i)
-        for i, (name, desc, side, reps, dur) in enumerate(raw)
-    ]
+    steps: list[dict] = []
+    order = start_step_order
+    for name, desc, side, reps, dur in raw:
+        if name == "__REST__":
+            steps.append(build_transition_step(desc, dur or 10, order))
+        else:
+            steps.append(build_step(name, desc, side, reps, dur, step_order=order))
+        order += 1
+    return steps
 
 
 def build_workout(
@@ -492,6 +583,8 @@ def summarize_steps(protocol: Literal["A", "B", "C", "T"], target: str | None = 
     raw = _select_steps(protocol, target)
     out = []
     for name, _desc, side, reps, dur in raw:
+        if name == "__REST__":
+            continue  # transitions are Garmin-only; omit from Slack/app summaries
         out.append({
             "name": name,
             "side": side,

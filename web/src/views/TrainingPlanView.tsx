@@ -7,14 +7,15 @@ import {
   useTrainingSets,
   useCoachingLog,
   usePlannedWorkouts,
+  useExerciseProgression,
 } from '../hooks/useSupabase'
-import type { Activity, TrainingSession, TrainingSet, CoachingLogEntry, PlannedWorkout, WorkoutDefinition } from '../lib/types'
+import type { Activity, TrainingSession, TrainingSet, CoachingLogEntry, PlannedWorkout, WorkoutDefinition, ExerciseProgression } from '../lib/types'
 import {
   getProgramWeek,
   getWeekSchedule,
   isDeloadWeek,
 } from '../lib/program'
-import { format, startOfWeek, endOfWeek, isWithinInterval } from 'date-fns'
+import { format, startOfWeek, endOfWeek, isWithinInterval, parseISO } from 'date-fns'
 import {
   LineChart,
   Line,
@@ -26,19 +27,13 @@ import {
   Bar,
   Cell,
 } from 'recharts'
-import { ChevronDown, ChevronRight, Mountain, Dumbbell } from 'lucide-react'
+import { ChevronDown, ChevronRight, Mountain, Dumbbell, Info } from 'lucide-react'
 import { formatDuration } from '../lib/format'
 import { loadChangeColor } from '../lib/colors'
 import { MOUNTAIN_ACTIVITY_TYPES } from '../lib/constants'
 import { MountainActivityCard } from '../components/MountainActivityCard'
-
-const darkTooltipStyle = {
-  background: '#16161e',
-  border: '1px solid #262636',
-  borderRadius: 12,
-  fontSize: 12,
-  color: '#f0f0f5',
-}
+import { MuscleGroupRadar } from '../components/MuscleGroupRadar'
+import { glassTooltipStyle } from '../lib/chartConfig'
 
 // ─── Helpers ───────────────────────────────────────────────────────
 function fmtDate(d: Date): string {
@@ -61,6 +56,7 @@ export function TrainingPlanView() {
   const sessionsQuery = useTrainingSessions(60)
   const coachingQuery = useCoachingLog(7)
   const plannedQuery = usePlannedWorkouts()
+  const progressionQuery = useExerciseProgression(60)
 
   const sessionIds = useMemo(
     () => (sessionsQuery.data ?? []).map((s: TrainingSession) => s.id),
@@ -81,13 +77,16 @@ export function TrainingPlanView() {
   const sets = (setsQuery.data ?? []) as TrainingSet[]
   const coaching = (coachingQuery.data ?? []) as CoachingLogEntry[]
   const planned = (plannedQuery.data ?? []) as PlannedWorkout[]
+  const progression = (progressionQuery.data ?? []) as ExerciseProgression[]
 
   return (
     <div className="space-y-3 pb-8">
       <ProgramOverview activities={activities} sessions={sessions} planned={planned} />
       <WeekGrid activities={activities} planned={planned} />
       <TodaySession sessions={sessions} sets={sets} coaching={coaching} planned={planned} />
-      <LiftProgressionTracker sessions={sessions} sets={sets} planned={planned} />
+      <MuscleGroupRadar sets={sets} sessions={sessions} />
+      <ExerciseStatusGrid progression={progression} />
+      <LiftProgressionDetail sessions={sessions} sets={sets} planned={planned} progression={progression} />
       <EnduranceLoadTracker activities={activities} />
       <SessionHistory sessions={sessions} sets={sets} />
       <SystemArchitecture />
@@ -406,86 +405,112 @@ function WeekExpanded({
           )
         }
 
-        const pw = item.pw
-        const def = pw.workout_definition as WorkoutDefinition | null
-        const exercises = def?.exercises ?? []
-        const warmup = def?.warmup ?? []
-        const rpeLabel = deload
-          ? 'Deload 50% vol'
-          : def?.rpe_range
-            ? `RPE ${def.rpe_range[0]}-${def.rpe_range[1]}`
-            : ''
-        const sessionLabel = def?.session_name ?? pw.session_name
-
-        return (
-          <div key={pw.id} className="bg-bg-primary/50 rounded-xl px-4 py-3">
-            <div className="flex items-center gap-2 mb-2">
-              <Dumbbell size={15} className="text-gym shrink-0" />
-              <span className="text-[15px] font-semibold text-text-primary">
-                {sessionLabel}
-              </span>
-              {pw.status === 'completed' && (
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent-green/25 text-accent-green font-semibold">
-                  Done
-                </span>
-              )}
-              {pw.status === 'adjusted' && (
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent-yellow/25 text-accent-yellow font-semibold">
-                  Adjusted
-                </span>
-              )}
-              {pw.status === 'skipped' && (
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-bg-primary/60 text-text-dim font-semibold">
-                  Skipped
-                </span>
-              )}
-            </div>
-            <div className="text-[13px] text-text-muted mb-2">
-              {pw.scheduled_date} &middot; {rpeLabel}
-              {def?.estimated_duration_minutes && (
-                <span> &middot; ~{def.estimated_duration_minutes} min</span>
-              )}
-            </div>
-
-            {pw.status === 'adjusted' && pw.adjustment_reason && (
-              <div className="text-[13px] text-accent-yellow bg-accent-yellow/10 rounded-lg px-3 py-2 mb-3">
-                {pw.adjustment_reason}
-              </div>
-            )}
-
-            {warmup.length > 0 && <WarmupSection warmup={warmup} />}
-
-            <table className="w-full text-[14px]">
-              <thead>
-                <tr className="text-text-muted border-b border-border">
-                  <th className="text-left py-2 font-semibold pr-2 text-[12px] uppercase tracking-wider">Exercise</th>
-                  <th className="text-right py-2 font-semibold px-2 whitespace-nowrap text-[12px] uppercase tracking-wider">Sets×Reps</th>
-                  <th className="text-right py-2 font-semibold pl-2 w-20 text-[12px] uppercase tracking-wider">Weight</th>
-                </tr>
-              </thead>
-              <tbody>
-                {exercises.map((ex) => {
-                  const setsReps = deload
-                    ? `${Math.ceil(ex.sets / 2)}\u00D7${ex.reps}`
-                    : `${ex.sets}\u00D7${ex.reps}`
-                  return (
-                    <tr key={ex.name} className="border-b border-border-subtle last:border-0">
-                      <td className="py-2 pr-2 text-text-primary">
-                        {ex.name}
-                        {ex.note && <span className="text-text-dim ml-1.5 text-[12px]">({ex.note})</span>}
-                      </td>
-                      <td className="py-2 px-2 text-right font-mono text-text-secondary whitespace-nowrap">{setsReps}</td>
-                      <td className="py-2 pl-2 text-right font-mono text-text-primary font-semibold w-20">
-                        {ex.weight_kg != null && ex.weight_kg > 0 ? `${ex.weight_kg}kg` : '\u2014'}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )
+        return <GymSessionCard key={item.pw.id} pw={item.pw} deload={deload} />
       })}
+    </div>
+  )
+}
+
+// ─── Collapsible gym session card ────────────────────────────────
+function GymSessionCard({ pw, deload }: { pw: PlannedWorkout; deload: boolean }) {
+  const [open, setOpen] = useState(false)
+  const def = pw.workout_definition as WorkoutDefinition | null
+  const exercises = def?.exercises ?? []
+  const warmup = def?.warmup ?? []
+  const rpeLabel = deload
+    ? 'Deload 50% vol'
+    : def?.rpe_range
+      ? `RPE ${def.rpe_range[0]}-${def.rpe_range[1]}`
+      : ''
+  const sessionLabel = def?.session_name ?? pw.session_name
+
+  return (
+    <div className="bg-bg-primary/50 rounded-xl px-4 py-3">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full text-left flex items-center gap-2"
+      >
+        {open ? <ChevronDown size={14} className="text-text-dim shrink-0" /> : <ChevronRight size={14} className="text-text-dim shrink-0" />}
+        <Dumbbell size={15} className="text-gym shrink-0" />
+        <span className="text-[15px] font-semibold text-text-primary">
+          {sessionLabel}
+        </span>
+        {pw.status === 'completed' && (
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent-green/25 text-accent-green font-semibold">
+            Done
+          </span>
+        )}
+        {pw.status === 'adjusted' && (
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent-yellow/25 text-accent-yellow font-semibold">
+            Adjusted
+          </span>
+        )}
+        {pw.status === 'skipped' && (
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-bg-primary/60 text-text-dim font-semibold">
+            Skipped
+          </span>
+        )}
+        <span className="ml-auto text-[12px] text-text-dim">
+          {format(parseISO(pw.scheduled_date), 'EEE')}
+        </span>
+      </button>
+      <div className="text-[12px] text-text-muted mt-1 ml-6">
+        {pw.scheduled_date} &middot; {rpeLabel}
+        {def?.estimated_duration_minutes && (
+          <span> &middot; ~{def.estimated_duration_minutes} min</span>
+        )}
+      </div>
+
+      {/* Always show coach justification for adjusted sessions, even when collapsed */}
+      {pw.status === 'adjusted' && pw.adjustment_reason && (
+        <div className="mt-2 text-[12px] text-accent-yellow bg-accent-yellow/10 rounded-lg px-3 py-2">
+          <div className="flex items-center gap-1.5 text-[10px] text-accent-yellow/70 uppercase tracking-wider font-semibold mb-1">
+            <Info size={11} />
+            Coach decision
+            {pw.updated_at && (
+              <span className="text-text-dim normal-case tracking-normal font-normal ml-1">
+                {format(parseISO(pw.updated_at), 'MMM d')}
+              </span>
+            )}
+          </div>
+          {pw.adjustment_reason}
+        </div>
+      )}
+
+      {open && (
+        <div className="mt-3">
+          {warmup.length > 0 && <WarmupSection warmup={warmup} />}
+
+          <table className="w-full text-[14px]">
+            <thead>
+              <tr className="text-text-muted border-b border-border">
+                <th className="text-left py-2 font-semibold pr-2 text-[12px] uppercase tracking-wider">Exercise</th>
+                <th className="text-right py-2 font-semibold px-2 whitespace-nowrap text-[12px] uppercase tracking-wider">Sets×Reps</th>
+                <th className="text-right py-2 font-semibold pl-2 w-20 text-[12px] uppercase tracking-wider">Weight</th>
+              </tr>
+            </thead>
+            <tbody>
+              {exercises.map((ex) => {
+                const setsReps = deload
+                  ? `${Math.ceil(ex.sets / 2)}\u00D7${ex.reps}`
+                  : `${ex.sets}\u00D7${ex.reps}`
+                return (
+                  <tr key={ex.name} className="border-b border-border-subtle last:border-0">
+                    <td className="py-2 pr-2 text-text-primary">
+                      {ex.name}
+                      {ex.note && <span className="text-text-dim ml-1.5 text-[12px]">({ex.note})</span>}
+                    </td>
+                    <td className="py-2 px-2 text-right font-mono text-text-secondary whitespace-nowrap">{setsReps}</td>
+                    <td className="py-2 pl-2 text-right font-mono text-text-primary font-semibold w-20">
+                      {ex.weight_kg != null && ex.weight_kg > 0 ? `${ex.weight_kg}kg` : '\u2014'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
@@ -650,17 +675,143 @@ function TodaySession({
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// 4. Lift Progression Tracker
+// 4a. Exercise Status Grid (engine-aware)
 // ═══════════════════════════════════════════════════════════════════
 
-function LiftProgressionTracker({
+const PROGRESSION_BADGES: Record<string, { label: string; color: string }> = {
+  weight_increase:       { label: 'Progressing',   color: 'bg-accent-green/20 text-accent-green' },
+  accelerated_increase:  { label: 'Accelerated',   color: 'bg-accent-blue/20 text-accent-blue' },
+  hold:                  { label: 'Hold',           color: 'bg-accent-yellow/20 text-accent-yellow' },
+  rep_increase:          { label: 'Building reps',  color: 'bg-accent-yellow/20 text-accent-yellow' },
+  add_set:               { label: 'Extra set',      color: 'bg-orange-500/20 text-orange-400' },
+  rpe_reduction:         { label: 'RPE reduce',     color: 'bg-accent-red/20 text-accent-red' },
+  deload_reset:          { label: 'Deload reset',   color: 'bg-accent-red/20 text-accent-red' },
+  deload_week:           { label: 'Deload',         color: 'bg-bg-primary/60 text-text-dim' },
+  first_session:         { label: 'New',            color: 'bg-bg-primary/60 text-text-dim' },
+  bodyweight:            { label: 'Bodyweight',     color: 'bg-bg-primary/60 text-text-dim' },
+}
+
+function ExerciseStatusGrid({ progression }: { progression: ExerciseProgression[] }) {
+  const latestByExercise = useMemo(() => {
+    const today = format(new Date(), 'yyyy-MM-dd')
+    // Only show decisions for dates <= today (exclude future planned dates)
+    const pastOnly = progression.filter((p) => p.date <= today)
+    const map = new Map<string, ExerciseProgression>()
+    for (const p of pastOnly) {
+      if (!map.has(p.exercise_name)) {
+        map.set(p.exercise_name, p)
+      }
+    }
+    return Array.from(map.values())
+  }, [progression])
+
+  if (latestByExercise.length === 0) {
+    return (
+      <Card>
+        <div className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold mb-2">Exercise Status</div>
+        <div className="text-[13px] text-text-dim py-2">No progression data yet</div>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <div className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold mb-3">Exercise Status</div>
+      <div className="grid grid-cols-2 gap-2">
+        {latestByExercise.map((p) => {
+          const badge = PROGRESSION_BADGES[p.progression_applied] ?? { label: p.progression_applied, color: 'bg-bg-primary/60 text-text-dim' }
+          const hasActual = p.actual_sets != null || p.actual_weight_kg != null
+          const weightDelta = (p.actual_weight_kg != null && p.planned_weight_kg != null)
+            ? p.actual_weight_kg - p.planned_weight_kg : null
+          const repsMet = p.actual_reps_per_set != null && p.planned_reps != null
+            ? p.actual_reps_per_set.every((r) => r >= (p.planned_reps ?? 0)) : null
+
+          return (
+            <div key={p.exercise_name} className="bg-bg-primary/50 rounded-xl px-3 py-2.5">
+              <div className="text-[12px] font-semibold text-text-primary truncate">
+                {p.exercise_name.replace('Barbell ', '').replace('Dumbbell ', '')}
+              </div>
+              {/* Planned line */}
+              <div className="flex items-center gap-2 mt-1.5">
+                {p.planned_weight_kg != null && p.planned_weight_kg > 0 && (
+                  <span className="text-[13px] font-bold text-text-primary">
+                    {p.planned_weight_kg}kg
+                  </span>
+                )}
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${badge.color}`}>
+                  {badge.label}
+                </span>
+              </div>
+              {p.progression_amount != null && p.progression_amount !== 0 && (
+                <div className={`text-[11px] mt-1 ${p.progression_amount > 0 ? 'text-accent-green' : 'text-accent-red'}`}>
+                  {p.progression_amount > 0 ? '+' : ''}{p.progression_amount}kg
+                </div>
+              )}
+              {/* Actual performance line */}
+              {hasActual && (
+                <div className="mt-1.5 pt-1.5 border-t border-border-subtle/50">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-text-dim">Actual:</span>
+                    <span className="text-[11px] font-mono text-text-secondary">
+                      {p.actual_sets != null && p.actual_reps_per_set != null
+                        ? `${p.actual_sets}×${formatActualReps(p.actual_reps_per_set)}`
+                        : p.actual_sets != null ? `${p.actual_sets} sets` : ''}
+                      {p.actual_weight_kg != null && p.actual_weight_kg > 0
+                        ? ` @ ${p.actual_weight_kg}kg` : ''}
+                    </span>
+                  </div>
+                  {/* Delta indicators */}
+                  <div className="flex items-center gap-2 mt-0.5">
+                    {weightDelta != null && weightDelta !== 0 && (
+                      <span className={`text-[10px] font-semibold ${weightDelta > 0 ? 'text-accent-green' : 'text-accent-red'}`}>
+                        {weightDelta > 0 ? '+' : ''}{weightDelta}kg
+                      </span>
+                    )}
+                    {repsMet != null && (
+                      <span className={`text-[10px] ${repsMet ? 'text-accent-green' : 'text-accent-yellow'}`}>
+                        {repsMet ? 'reps hit' : 'reps short'}
+                      </span>
+                    )}
+                    {p.actual_rpe != null && (
+                      <span className={`text-[10px] ${
+                        p.actual_rpe <= (p.planned_rpe ?? 7) ? 'text-text-muted' :
+                        p.actual_rpe <= (p.planned_rpe ?? 7) + 1 ? 'text-accent-yellow' : 'text-accent-red'
+                      }`}>
+                        RPE {p.actual_rpe.toFixed(1)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </Card>
+  )
+}
+
+/** Format actual reps array compactly: [8,8,8] → "8" ; [8,8,7] → "8/8/7" */
+function formatActualReps(reps: number[]): string {
+  if (reps.length === 0) return '—'
+  const allSame = reps.every((r) => r === reps[0])
+  return allSame ? String(reps[0]) : reps.join('/')
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 4b. Lift Progression Detail (enhanced chart + decision history)
+// ═══════════════════════════════════════════════════════════════════
+
+function LiftProgressionDetail({
   sessions,
   sets,
   planned,
+  progression,
 }: {
   sessions: TrainingSession[]
   sets: TrainingSet[]
   planned: PlannedWorkout[]
+  progression: ExerciseProgression[]
 }) {
   const { week: currentWeek } = getProgramWeek(new Date())
 
@@ -766,90 +917,18 @@ function LiftProgressionTracker({
     return map
   }, [selectedLift, sessions, sets])
 
-  const analysis = useMemo(() => {
-    let lastActualWeight: number | null = null
-    let lastActualWeek: number | null = null
-    for (let w = currentWeek; w >= 1; w--) {
-      if (actualWeightsByWeek.has(w)) {
-        lastActualWeight = actualWeightsByWeek.get(w)!
-        lastActualWeek = w
-        break
-      }
-    }
+  // Engine decision history for selected exercise (past dates only)
+  const decisionHistory = useMemo(() => {
+    const today = fmtDate(new Date())
+    return progression
+      .filter((p) => exerciseNameMatch(p.exercise_name, selectedLift) && p.date <= today)
+      .slice(0, 5)
+  }, [progression, selectedLift])
 
-    if (lastActualWeight === null) {
-      return {
-        status: 'no_data' as const,
-        statusLabel: 'No sessions yet',
-        lastActualWeight: null,
-        trend: null as 'up' | 'flat' | 'down' | null,
-        weeksAtSameWeight: 0,
-      }
-    }
-
-    let weeksAtSameWeight = 0
-    for (let w = lastActualWeek!; w >= 1; w--) {
-      const wt = actualWeightsByWeek.get(w)
-      if (wt === lastActualWeight) weeksAtSameWeight++
-      else break
-    }
-
-    const recentWeights: number[] = []
-    for (let w = lastActualWeek!; w >= 1 && recentWeights.length < 3; w--) {
-      if (actualWeightsByWeek.has(w)) recentWeights.unshift(actualWeightsByWeek.get(w)!)
-    }
-    let trend: 'up' | 'flat' | 'down' | null = null
-    if (recentWeights.length >= 2) {
-      const last = recentWeights[recentWeights.length - 1]
-      const prev = recentWeights[recentWeights.length - 2]
-      if (last > prev) trend = 'up'
-      else if (last < prev) trend = 'down'
-      else trend = 'flat'
-    }
-
-    const plannedForLastWeek = plannedWeightsByWeek.get(lastActualWeek!)
-    let status: 'on_track' | 'ahead' | 'stalled' | 'behind' | 'no_data' = 'on_track'
-    let statusLabel = 'On track'
-
-    if (plannedForLastWeek != null) {
-      if (lastActualWeight > plannedForLastWeek) {
-        status = 'ahead'
-        statusLabel = 'Ahead of plan'
-      } else if (lastActualWeight >= plannedForLastWeek) {
-        status = 'on_track'
-        statusLabel = 'On track'
-      } else {
-        status = 'behind'
-        statusLabel = 'Behind plan'
-      }
-    }
-
-    if (status !== 'ahead') {
-      if (weeksAtSameWeight >= 3) {
-        status = 'stalled'
-        statusLabel = `Stalled ${weeksAtSameWeight} weeks`
-      } else if (weeksAtSameWeight >= 2 && status !== 'on_track') {
-        status = 'stalled'
-        statusLabel = `Same weight for ${weeksAtSameWeight} weeks`
-      }
-    }
-
-    return { status, statusLabel, lastActualWeight, trend, weeksAtSameWeight }
-  }, [selectedLift, currentWeek, actualWeightsByWeek, plannedWeightsByWeek])
-
-  const statusColors: Record<string, string> = {
-    on_track: 'text-accent-green',
-    ahead: 'text-accent-blue',
-    stalled: 'text-accent-red',
-    behind: 'text-accent-yellow',
-    no_data: 'text-text-dim',
-  }
-
-  const trendArrows: Record<string, string> = {
-    up: '\u2197',
-    flat: '\u2192',
-    down: '\u2198',
-  }
+  const latestDecision = decisionHistory[0]
+  const latestBadge = latestDecision
+    ? PROGRESSION_BADGES[latestDecision.progression_applied] ?? { label: latestDecision.progression_applied, color: 'bg-bg-primary/60 text-text-dim' }
+    : null
 
   const chartData = useMemo(() => {
     return Array.from({ length: 8 }, (_, i) => {
@@ -867,23 +946,32 @@ function LiftProgressionTracker({
   return (
     <Card>
       <div className="space-y-4">
+        {/* Header */}
         <div className="flex items-start justify-between">
           <div>
             <div className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold mb-1">Lift Progression</div>
             <div className="text-[16px] font-bold text-text-primary">{selectedLift}</div>
           </div>
           <div className="text-right">
-            <div className={`text-[14px] font-semibold ${statusColors[analysis.status]}`}>
-              {analysis.trend && trendArrows[analysis.trend]} {analysis.statusLabel}
-            </div>
-            {analysis.lastActualWeight != null && (
-              <div className="text-[12px] text-text-muted mt-0.5">
-                Last: {analysis.lastActualWeight}kg
+            {latestBadge && (
+              <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${latestBadge.color}`}>
+                {latestBadge.label}
+              </span>
+            )}
+            {latestDecision?.planned_weight_kg != null && (
+              <div className="text-[12px] text-text-muted mt-1.5">
+                Current: {latestDecision.planned_weight_kg}kg
+                {latestDecision.progression_amount != null && latestDecision.progression_amount !== 0 && (
+                  <span className={latestDecision.progression_amount > 0 ? ' text-accent-green' : ' text-accent-red'}>
+                    {' '}({latestDecision.progression_amount > 0 ? '+' : ''}{latestDecision.progression_amount}kg)
+                  </span>
+                )}
               </div>
             )}
           </div>
         </div>
 
+        {/* Exercise selector */}
         <div className="flex gap-1.5 flex-wrap">
           {liftOptions.withData.map((lift) => (
             <button
@@ -921,37 +1009,58 @@ function LiftProgressionTracker({
           )}
         </div>
 
+        {/* Chart */}
         <div className="h-48">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData} margin={{ top: 5, right: 10, left: 5, bottom: 0 }}>
               <XAxis dataKey="week" tick={{ fontSize: 11, fill: '#646478' }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11, fill: '#646478' }} axisLine={false} tickLine={false} domain={['auto', 'auto']} width={52} unit="kg" />
-              <Tooltip contentStyle={darkTooltipStyle} />
+              <Tooltip contentStyle={glassTooltipStyle} />
               <Line type="monotone" dataKey="planned" stroke="#646478" strokeDasharray="4 4" strokeWidth={1.5} dot={false} name="Planned" />
               <Line type="monotone" dataKey="actual" stroke="#a78bfa" strokeWidth={2.5} dot={{ r: 5, fill: '#a78bfa', stroke: '#16161e', strokeWidth: 2 }} connectNulls={false} name="Actual" />
             </LineChart>
           </ResponsiveContainer>
         </div>
 
-        <div className="flex items-center justify-between">
-          <div className="flex gap-4 text-[11px] text-text-muted">
-            <span className="flex items-center gap-1.5">
-              <span className="w-5 h-px inline-block" style={{ borderTop: '1.5px dashed #646478' }} />
-              Planned (DB)
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-gym inline-block" />
-              Your lifts
-            </span>
-          </div>
-          {analysis.weeksAtSameWeight >= 2 && (
-            <div className="text-[11px] text-accent-red font-semibold">
-              {analysis.weeksAtSameWeight >= 3
-                ? 'Drop 10% & rebuild recommended'
-                : 'Hold weight, focus on reps'}
-            </div>
-          )}
+        {/* Legend */}
+        <div className="flex gap-4 text-[11px] text-text-muted">
+          <span className="flex items-center gap-1.5">
+            <span className="w-5 h-px inline-block" style={{ borderTop: '1.5px dashed #646478' }} />
+            Planned
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-gym inline-block" />
+            Actual
+          </span>
         </div>
+
+        {/* Decision history */}
+        {decisionHistory.length > 0 && (
+          <div className="border-t border-border pt-3">
+            <div className="text-[11px] text-text-muted uppercase tracking-[0.06em] font-semibold mb-2">Engine Decisions</div>
+            <div className="space-y-1.5">
+              {decisionHistory.map((d, i) => {
+                const b = PROGRESSION_BADGES[d.progression_applied] ?? { label: d.progression_applied, color: 'bg-bg-primary/60 text-text-dim' }
+                return (
+                  <div key={i} className="flex items-center gap-2 text-[12px]">
+                    <span className="text-text-dim w-16 shrink-0">{d.date.slice(5)}</span>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${b.color}`}>
+                      {b.label}
+                    </span>
+                    {d.planned_weight_kg != null && (
+                      <span className="text-text-secondary">{d.planned_weight_kg}kg</span>
+                    )}
+                    {d.progression_amount != null && d.progression_amount !== 0 && (
+                      <span className={d.progression_amount > 0 ? 'text-accent-green' : 'text-accent-red'}>
+                        {d.progression_amount > 0 ? '+' : ''}{d.progression_amount}kg
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </Card>
   )
@@ -1064,7 +1173,7 @@ function EnduranceLoadTracker({ activities }: { activities: Activity[] }) {
             <BarChart data={weeklyData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
               <XAxis dataKey="weekNum" tick={{ fontSize: 11, fill: '#646478' }} tickFormatter={(w) => `Wk${w}`} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11, fill: '#646478' }} axisLine={false} tickLine={false} width={45} tickFormatter={(v) => `${v}m`} />
-              <Tooltip contentStyle={darkTooltipStyle} formatter={(value: unknown) => [`${Number(value).toLocaleString()}m`, 'Elevation']} labelFormatter={(w: unknown) => `Week ${w}`} />
+              <Tooltip contentStyle={glassTooltipStyle} formatter={(value: unknown) => [`${Number(value).toLocaleString()}m`, 'Elevation']} labelFormatter={(w: unknown) => `Week ${w}`} />
               <Bar dataKey="elevation" radius={[4, 4, 0, 0]}>
                 {weeklyData.map((_, idx) => (
                   <Cell key={idx} fill={idx === currentIdx ? '#38bdf8' : '#262636'} opacity={idx === currentIdx ? 1 : 0.7} />

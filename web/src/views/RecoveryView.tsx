@@ -1,9 +1,10 @@
 import { Card } from '../components/Card'
 import { LoadingState } from '../components/LoadingState'
+import { glassTooltipStyle, axisTickStyle, axisLineStyle } from '../lib/chartConfig'
 import {
   useHRV, useSleep, useDailyMetrics, useActivities, useSubjectiveWellness,
 } from '../hooks/useSupabase'
-import { format } from 'date-fns'
+import { format, subDays } from 'date-fns'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, ResponsiveContainer, Tooltip,
@@ -11,14 +12,6 @@ import {
 import { AlertTriangle, CheckCircle } from 'lucide-react'
 import { computeCoachingState } from '../lib/coachingDecision'
 import { MOUNTAIN_ACTIVITY_TYPES } from '../lib/activityTypes'
-
-const darkTooltipStyle = {
-  backgroundColor: '#16161e',
-  border: '1px solid #262636',
-  borderRadius: '12px',
-  color: '#f0f0f5',
-  fontSize: '12px',
-}
 
 export default function RecoveryView() {
   const hrv = useHRV(14)
@@ -215,13 +208,21 @@ export default function RecoveryView() {
       : `→ Stable around ${hrLater7Avg != null ? Math.round(hrLater7Avg) : '--'}bpm`
     : null
 
-  const axisTickStyle = { fill: '#646478', fontSize: 11 }
-  const axisLineStyle = { stroke: '#262636' }
-
   // ─── Coaching recommendation ───
   const sleepHoursLastNight = todaySleep?.total_sleep_seconds
     ? todaySleep.total_sleep_seconds / 3600
     : null
+  const deepSleepPctRV = todaySleep?.deep_sleep_seconds != null && todaySleep?.total_sleep_seconds
+    ? (todaySleep.deep_sleep_seconds / todaySleep.total_sleep_seconds) * 100 : null
+  const remSleepPctRV = todaySleep?.rem_sleep_seconds != null && todaySleep?.total_sleep_seconds
+    ? (todaySleep.rem_sleep_seconds / todaySleep.total_sleep_seconds) * 100 : null
+  const poorSleepNights7dRV = (sleep.data ?? []).slice(0, 7).filter(
+    (s) => s.total_sleep_seconds != null && s.total_sleep_seconds / 3600 < 6
+  ).length
+  const threeDaysAgoStr = format(subDays(new Date(), 3), 'yyyy-MM-dd')
+  const mountainDays3dRV = (activities.data ?? []).filter(
+    (a) => MOUNTAIN_ACTIVITY_TYPES.has(a.activity_type) && a.date >= threeDaysAgoStr
+  ).length
   const decision = computeCoachingState({
     hrvStatus: todayHRV?.status,
     hrvVal: todayHRV?.last_night_avg ?? null,
@@ -232,6 +233,13 @@ export default function RecoveryView() {
     bodyBattery,
     trainingReadiness,
     rhrElevated: flagHRElevated,
+    deepSleepPct: deepSleepPctRV,
+    remSleepPct: remSleepPctRV,
+    poorSleepNights7d: poorSleepNights7dRV,
+    mountainDays3d: mountainDays3dRV,
+    isDeload: false,
+    lastSrpe: null,
+    soreness: todayWellness?.muscle_soreness ?? null,
   })
 
   // ─── Days since last rest day ───
@@ -273,7 +281,7 @@ export default function RecoveryView() {
           {decision.recommendation}
         </p>
         {decision.reasons.length > 0 && (
-          <div className="mt-3 pt-3 border-t border-border-subtle">
+          <div className="mt-3 pt-3 border-t border-border-subtle-subtle">
             <div className="text-[10px] uppercase tracking-wider text-text-dim mb-1">Signals</div>
             <ul className="text-[12px] text-text-muted space-y-0.5">
               {decision.reasons.map((r) => (
@@ -282,7 +290,7 @@ export default function RecoveryView() {
             </ul>
           </div>
         )}
-        <div className="mt-3 pt-3 border-t border-border-subtle flex items-center justify-between text-[12px]">
+        <div className="mt-3 pt-3 border-t border-border-subtle-subtle flex items-center justify-between text-[12px]">
           <span className="text-text-muted">Days since last rest day</span>
           <span className={`font-bold font-data ${
             daysSinceRest >= 7 ? 'text-accent-red'
@@ -322,7 +330,7 @@ export default function RecoveryView() {
         </div>
 
         {/* Garmin Indicators */}
-        <details className="mt-3 pt-3 border-t border-border">
+        <details className="mt-3 pt-3 border-t border-border-subtle">
           <summary className="text-[12px] text-text-dim cursor-pointer hover:text-text-muted">
             Show Garmin indicators (estimates)
           </summary>
@@ -382,7 +390,7 @@ export default function RecoveryView() {
               </defs>
               <XAxis dataKey="date" tick={axisTickStyle} axisLine={axisLineStyle} tickLine={false} />
               <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={35} domain={['dataMin - 10', 'dataMax + 10']} />
-              <Tooltip contentStyle={darkTooltipStyle} />
+              <Tooltip contentStyle={glassTooltipStyle} />
               <Area type="monotone" dataKey="baselineHigh" stroke="none" fill="url(#baselineGrad)" fillOpacity={1} stackId="baseline" connectNulls />
               <Area type="monotone" dataKey="baselineLow" stroke="none" fill="#0a0a0f" fillOpacity={1} stackId="baseline" connectNulls />
               <Area type="monotone" dataKey="value" stroke="#60a5fa" fill="url(#hrvGrad)" strokeWidth={2} dot={{ fill: '#60a5fa', r: 3, strokeWidth: 0 }} connectNulls />
@@ -423,7 +431,7 @@ export default function RecoveryView() {
             <BarChart data={sleepChartData}>
               <XAxis dataKey="date" tick={axisTickStyle} axisLine={axisLineStyle} tickLine={false} />
               <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={30} unit="h" />
-              <Tooltip contentStyle={darkTooltipStyle} />
+              <Tooltip contentStyle={glassTooltipStyle} />
               <Bar dataKey="deep" stackId="sleep" fill="#1e3a5f" radius={[0, 0, 0, 0]} name="Deep" />
               <Bar dataKey="rem" stackId="sleep" fill="#7c3aed" radius={[0, 0, 0, 0]} name="REM" />
               <Bar dataKey="light" stackId="sleep" fill="#4a4a5c" radius={[2, 2, 0, 0]} name="Light" />
@@ -461,7 +469,7 @@ export default function RecoveryView() {
               <LineChart data={restingHRData}>
                 <XAxis dataKey="date" tick={axisTickStyle} axisLine={axisLineStyle} tickLine={false} />
                 <YAxis tick={axisTickStyle} axisLine={false} tickLine={false} width={30} domain={['dataMin - 3', 'dataMax + 3']} unit=" bpm" />
-                <Tooltip contentStyle={darkTooltipStyle} />
+                <Tooltip contentStyle={glassTooltipStyle} />
                 <Line
                   type="monotone"
                   dataKey="value"
