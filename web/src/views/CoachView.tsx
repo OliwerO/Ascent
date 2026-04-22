@@ -6,6 +6,7 @@ import {
   useCoachTurns,
   createCoachConversation,
   sendCoachMessage,
+  updateCoachModel,
 } from '../hooks/useSupabase'
 import type { CoachConversation, CoachTurn } from '../lib/types'
 
@@ -187,7 +188,8 @@ export default function CoachView() {
     try {
       let convId = selectedId
       if (!convId) {
-        const conv = await createCoachConversation(input.slice(0, 60))
+        const preferredModel = (localStorage.getItem('ascent_coach_model') ?? 'opus') as 'opus' | 'sonnet'
+        const conv = await createCoachConversation(input.slice(0, 60), preferredModel)
         convId = conv.id
         setSelectedId(convId)
       }
@@ -234,16 +236,37 @@ export default function CoachView() {
   if (loading) return <LoadingState />
   if (error) return <div className="text-accent-red text-sm">{error}</div>
 
-  // Hide conversations that never got a first message — they have no title
-  // and no turns. These accumulate if the user tapped + without sending.
-  const convs = (conversations ?? []).filter((c) => c.title !== null)
+  const convs = (conversations ?? []).filter((c) => c.title !== null).slice(0, 20)
+
+  const selectedConv = convs.find((c) => c.id === selectedId)
+  const currentModel = selectedConv?.model ?? 'opus'
+
+  const handleModelToggle = useCallback(async () => {
+    if (!selectedId) return
+    const newModel = currentModel === 'opus' ? 'sonnet' : 'opus'
+    localStorage.setItem('ascent_coach_model', newModel)
+    try {
+      await updateCoachModel(selectedId, newModel)
+    } catch { /* silent — realtime will refresh */ }
+  }, [selectedId, currentModel])
 
   return (
     <div className="space-y-3">
       <div className="bg-bg-card border border-border-subtle rounded-2xl p-4">
-        <div className="flex items-center gap-2 mb-1">
-          <MessageCircle size={15} className="text-accent-green" />
-          <h2 className="text-[14px] font-semibold text-text-primary">Coach</h2>
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <MessageCircle size={15} className="text-accent-green" />
+            <h2 className="text-[14px] font-semibold text-text-primary">Coach</h2>
+          </div>
+          {selectedId && (
+            <button
+              onClick={handleModelToggle}
+              className="text-[10px] px-2 py-0.5 rounded-full border border-border-subtle text-text-muted hover:text-text-secondary transition-colors"
+              title={currentModel === 'opus' ? 'Using Opus (powerful). Tap for Sonnet (fast).' : 'Using Sonnet (fast). Tap for Opus (powerful).'}
+            >
+              {currentModel === 'opus' ? 'Opus' : 'Sonnet'}
+            </button>
+          )}
         </div>
         <p className="text-[11px] text-text-muted leading-relaxed">
           Ask about today's training, recovery, or why a session was adjusted. Grounded in
