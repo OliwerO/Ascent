@@ -311,6 +311,7 @@ export interface CoachConversation {
   title: string | null
   cli_session_id: string
   status: 'active' | 'archived'
+  model: 'opus' | 'sonnet'
 }
 
 export interface CoachTurn {

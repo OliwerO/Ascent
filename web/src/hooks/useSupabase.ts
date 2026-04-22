@@ -344,14 +344,25 @@ export function useCoachTurns(conversationId: string | null) {
   }, [conversationId, rt])
 }
 
-export async function createCoachConversation(title: string | null = null): Promise<CoachConversation> {
+export async function createCoachConversation(
+  title: string | null = null,
+  model: 'opus' | 'sonnet' = 'opus',
+): Promise<CoachConversation> {
   const { data, error } = await supabase
     .from('coach_conversations')
-    .insert({ title })
+    .insert({ title, model })
     .select()
     .single()
   if (error) throw error
   return data as CoachConversation
+}
+
+export async function updateCoachModel(conversationId: string, model: 'opus' | 'sonnet'): Promise<void> {
+  const { error } = await supabase
+    .from('coach_conversations')
+    .update({ model })
+    .eq('id', conversationId)
+  if (error) throw error
 }
 
 export async function sendCoachMessage(conversationId: string, content: string): Promise<void> {

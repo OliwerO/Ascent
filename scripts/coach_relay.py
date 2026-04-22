@@ -86,7 +86,7 @@ def fetch_pending_turn(sb: Any) -> dict | None:
 def get_conversation(sb: Any, conv_id: str) -> dict | None:
     result = (
         sb.table("coach_conversations")
-        .select("id,cli_session_id,title")
+        .select("id,cli_session_id,title,model")
         .eq("id", conv_id)
         .single()
         .execute()
@@ -256,41 +256,113 @@ def check_claude_cli() -> bool:
     return shutil.which("claude") is not None
 
 
+STREAM_UPDATE_INTERVAL_S = 1.5
+STREAM_UPDATE_MIN_CHARS = 40
+
+MODEL_MAP = {
+    "opus": "claude-opus-4-7",
+    "sonnet": "claude-sonnet-4-6",
+}
+
+
 def call_claude_cli(
     user_message: str,
     session_id: str,
     grounding_file: Path,
+    model: str = "opus",
+    on_chunk: Any | None = None,
 ) -> str:
+    model_id = MODEL_MAP.get(model, MODEL_MAP["opus"])
     cmd = [
         "claude",
         "-p", user_message,
-        "--model", "claude-opus-4-7",
+        "--model", model_id,
         "--session-id", session_id,
         "--system-prompt-file", str(SKILL_FILE),
         "--append-system-prompt-file", str(grounding_file),
-        "--output-format", "json",
+        "--output-format", "stream-json" if on_chunk else "json",
         "--max-turns", "1",
     ]
 
-    log.info("Calling: %s", " ".join(cmd[:6]) + " ...")
+    log.info("Calling: claude -p --model %s (streaming=%s)", model_id, bool(on_chunk))
 
+    if on_chunk:
+        return _call_streaming(cmd, on_chunk)
+    return _call_blocking(cmd)
+
+
+def _call_blocking(cmd: list[str]) -> str:
     result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=CLI_TIMEOUT_S,
-        cwd=str(PROJECT_ROOT),
+        cmd, capture_output=True, text=True,
+        timeout=CLI_TIMEOUT_S, cwd=str(PROJECT_ROOT),
     )
-
     if result.returncode != 0:
-        stderr = result.stderr.strip()[:500]
-        log.error("claude -p failed (exit %d): %s", result.returncode, stderr)
-        raise RuntimeError(classify_cli_error(stderr))
+        raise RuntimeError(classify_cli_error(result.stderr.strip()[:500]))
+    return _parse_json_response(result.stdout.strip())
 
-    stdout = result.stdout.strip()
+
+def _call_streaming(cmd: list[str], on_chunk: Any) -> str:
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, cwd=str(PROJECT_ROOT),
+    )
+    accumulated = ""
+    last_update = time.monotonic()
+    last_update_len = 0
+
+    try:
+        for line in proc.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            text = _extract_text_from_stream_line(line)
+            if text:
+                accumulated += text
+                now = time.monotonic()
+                new_chars = len(accumulated) - last_update_len
+                if new_chars >= STREAM_UPDATE_MIN_CHARS and (now - last_update) >= STREAM_UPDATE_INTERVAL_S:
+                    on_chunk(accumulated)
+                    last_update = now
+                    last_update_len = len(accumulated)
+
+        proc.wait(timeout=10)
+        if proc.returncode != 0:
+            stderr = proc.stderr.read()[:500] if proc.stderr else ""
+            raise RuntimeError(classify_cli_error(stderr))
+    except Exception:
+        proc.kill()
+        raise
+
+    return accumulated if accumulated else "(No response)"
+
+
+def _extract_text_from_stream_line(line: str) -> str:
+    try:
+        obj = json.loads(line)
+    except json.JSONDecodeError:
+        return ""
+
+    if isinstance(obj, dict):
+        # content_block_delta format
+        delta = obj.get("delta", {})
+        if isinstance(delta, dict) and delta.get("type") == "text_delta":
+            return delta.get("text", "")
+        # message format with result
+        if "result" in obj:
+            return obj["result"]
+        # assistant message content blocks
+        if obj.get("type") == "assistant":
+            content = obj.get("content", "")
+            if isinstance(content, str):
+                return content
+            if isinstance(content, list):
+                return "".join(b.get("text", "") for b in content if b.get("type") == "text")
+    return ""
+
+
+def _parse_json_response(stdout: str) -> str:
     if not stdout:
         raise RuntimeError("Claude CLI returned empty output")
-
     try:
         parsed = json.loads(stdout)
     except json.JSONDecodeError:
@@ -303,11 +375,9 @@ def call_claude_cli(
             if isinstance(msg, dict) and msg.get("type") == "assistant":
                 content = msg.get("content", "")
                 if isinstance(content, list):
-                    texts = [b.get("text", "") for b in content if b.get("type") == "text"]
-                    return "\n".join(texts)
+                    return "".join(b.get("text", "") for b in content if b.get("type") == "text")
                 return str(content)
         return stdout
-
     return json.dumps(parsed, indent=2) if isinstance(parsed, (dict, list)) else stdout
 
 
@@ -479,6 +549,7 @@ def process_turn(sb: Any, turn: dict, live: bool) -> None:
         if not conv.get("title"):
             auto_title_conversation(sb, conversation_id, user_content)
 
+        model = conv.get("model", "opus") or "opus"
         history = get_turn_history(sb, conversation_id)
         ctx = fetch_coaching_context(sb)
         grounding = build_grounding_prompt(ctx, history)
@@ -489,11 +560,28 @@ def process_turn(sb: Any, turn: dict, live: bool) -> None:
             f.write(grounding)
             grounding_path = Path(f.name)
 
+        # Create a placeholder assistant turn for streaming updates
+        placeholder = sb.table("coach_turns").insert({
+            "conversation_id": conversation_id,
+            "role": "assistant",
+            "content": "",
+            "status": "in_progress",
+        }).execute()
+        assistant_turn_id = placeholder.data[0]["id"] if placeholder.data else None
+
+        def on_chunk(text_so_far: str) -> None:
+            if assistant_turn_id:
+                sb.table("coach_turns").update(
+                    {"content": text_so_far}
+                ).eq("id", assistant_turn_id).execute()
+
         try:
             response = call_claude_cli(
                 user_message=user_content,
                 session_id=conv["cli_session_id"],
                 grounding_file=grounding_path,
+                model=model,
+                on_chunk=on_chunk,
             )
         finally:
             grounding_path.unlink(missing_ok=True)
@@ -505,15 +593,18 @@ def process_turn(sb: Any, turn: dict, live: bool) -> None:
             snapshot["proposal"] = proposal
             log.info("Proposal detected: action=%s", proposal.get("action"))
 
-        write_assistant_turn(
-            sb,
-            conversation_id,
-            clean_text,
-            context_snapshot=snapshot,
-        )
+        if assistant_turn_id:
+            sb.table("coach_turns").update({
+                "content": clean_text,
+                "status": "complete",
+                "context_snapshot": snapshot,
+            }).eq("id", assistant_turn_id).execute()
+        else:
+            write_assistant_turn(sb, conversation_id, clean_text, context_snapshot=snapshot)
+
         mark_turn(sb, turn_id, "complete")
-        log.info("Turn %s answered (%d chars, proposal=%s)",
-                 turn_id[:8], len(clean_text), bool(proposal))
+        log.info("Turn %s answered (%d chars, model=%s, proposal=%s)",
+                 turn_id[:8], len(clean_text), model, bool(proposal))
 
     except subprocess.TimeoutExpired:
         log.error("Turn %s timed out (%ds)", turn_id[:8], CLI_TIMEOUT_S)
