@@ -8,6 +8,7 @@
     <array>
         <string>/Users/jarvisforoli/projects/ascent/venv/bin/python</string>
         <string>/Users/jarvisforoli/projects/ascent/scripts/coach_relay.py</string>
+        <string>--live</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
