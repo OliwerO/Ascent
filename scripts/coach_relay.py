@@ -43,6 +43,7 @@ VENV_PYTHON = PROJECT_ROOT / "venv" / "bin" / "python"
 POLL_INTERVAL_S = 2.0
 CLI_TIMEOUT_S = 120
 ADJUST_TIMEOUT_S = 60
+STUCK_TURN_THRESHOLD_S = 180
 SHUTDOWN = False
 
 CONFIRM_PREFIX = "CONFIRM_ACTION"
@@ -284,7 +285,7 @@ def call_claude_cli(
     if result.returncode != 0:
         stderr = result.stderr.strip()[:500]
         log.error("claude -p failed (exit %d): %s", result.returncode, stderr)
-        raise RuntimeError(f"Claude CLI exited {result.returncode}: {stderr}")
+        raise RuntimeError(classify_cli_error(stderr))
 
     stdout = result.stdout.strip()
     if not stdout:
@@ -522,6 +523,59 @@ def process_turn(sb: Any, turn: dict, live: bool) -> None:
         mark_turn(sb, turn_id, "error", str(exc)[:500])
 
 
+def recover_stuck_turns(sb: Any) -> int:
+    """Re-mark turns stuck in 'in_progress' for longer than the threshold as 'error'.
+    This handles daemon crashes mid-processing — without it the user's turn
+    shows "Coach is thinking…" forever."""
+    cutoff = datetime.now(timezone.utc).isoformat()
+    result = (
+        sb.table("coach_turns")
+        .select("id,created_at")
+        .eq("status", "in_progress")
+        .execute()
+    )
+    recovered = 0
+    for row in (result.data or []):
+        created = datetime.fromisoformat(row["created_at"].replace("Z", "+00:00"))
+        age_s = (datetime.now(timezone.utc) - created).total_seconds()
+        if age_s > STUCK_TURN_THRESHOLD_S:
+            mark_turn(sb, row["id"], "error",
+                      f"Turn was stuck in_progress for {int(age_s)}s — daemon likely crashed. Please retry.")
+            recovered += 1
+    if recovered:
+        log.warning("Recovered %d stuck turn(s) from prior crash", recovered)
+    return recovered
+
+
+def check_claude_auth() -> tuple[bool, str]:
+    """Check if Claude CLI is authenticated via Max subscription."""
+    try:
+        result = subprocess.run(
+            ["claude", "auth", "status"],
+            capture_output=True, text=True, timeout=10,
+        )
+        output = (result.stdout + result.stderr).strip()
+        if result.returncode == 0:
+            return True, output
+        return False, output
+    except FileNotFoundError:
+        return False, "claude CLI not found in PATH"
+    except subprocess.TimeoutExpired:
+        return False, "claude auth status timed out"
+
+
+def classify_cli_error(stderr: str) -> str:
+    """Turn cryptic CLI errors into user-friendly messages."""
+    lower = stderr.lower()
+    if "rate" in lower and "limit" in lower or "429" in lower or "too many" in lower:
+        return "Opus quota exhausted — try again in a few minutes, or ask a simpler question (uses less quota)."
+    if "auth" in lower or "unauthorized" in lower or "401" in lower:
+        return "Coach authentication expired. Run `claude login` on the Mac to re-authenticate."
+    if "timeout" in lower or "timed out" in lower:
+        return f"Coach timed out after {CLI_TIMEOUT_S}s. Try a shorter question."
+    return f"Coach error: {stderr[:200]}"
+
+
 def run_loop(live: bool) -> None:
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -529,6 +583,15 @@ def run_loop(live: bool) -> None:
         log.error("claude CLI not found in PATH — falling back to echo mode")
         live = False
 
+    if live:
+        auth_ok, auth_msg = check_claude_auth()
+        if not auth_ok:
+            log.error("Claude auth check failed: %s", auth_msg)
+            log.error("Run `claude login` to authenticate, then restart the relay.")
+            sys.exit(1)
+        log.info("Claude auth OK")
+
+    recover_stuck_turns(sb)
     log.info("Coach relay started (live=%s, poll=%.1fs)", live, POLL_INTERVAL_S)
 
     while not SHUTDOWN:
